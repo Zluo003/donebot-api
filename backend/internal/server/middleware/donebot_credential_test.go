@@ -101,15 +101,39 @@ func TestDoneBotCredentialsKeepPerUserBalanceEnforcement(t *testing.T) {
 	keys := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
 	router := doneBotModelsRouter(keys, cfg)
 
-	// Preserve the upstream gateway's existing status/code as requested.
 	response := doneBotModelsRequest(router, "sk-donebot-empty-balance")
-	require.Equal(t, http.StatusForbidden, response.Code)
+	require.Equal(t, http.StatusPaymentRequired, response.Code)
 	var authError struct {
 		Code string `json:"code"`
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &authError))
 	require.Equal(t, "INSUFFICIENT_BALANCE", authError.Code)
 	require.Equal(t, http.StatusOK, doneBotModelsRequest(router, "sk-donebot-funded").Code)
+}
+
+func TestDoneBotBalanceStatusMatchesBothNativeAuthProtocols(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	group := &service.Group{ID: 82, Platform: service.PlatformComposite, Status: service.StatusActive, Hydrated: true, SubscriptionType: service.SubscriptionTypeStandard}
+	user := &service.User{ID: 42, Role: service.RoleUser, Status: service.StatusActive}
+	for _, credential := range []string{"sk-donebot-empty", "sk-personal-empty"} {
+		for _, google := range []bool{false, true} {
+			repo := &doneBotCredentialRepository{keys: map[string]*service.APIKey{credential: {ID: 101, Key: credential, UserID: user.ID, User: user, GroupID: &group.ID, Group: group, Status: service.StatusActive}}}
+			cfg := &config.Config{RunMode: config.RunModeStandard}
+			keys := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
+			router := gin.New()
+			if google {
+				router.Use(middleware.APIKeyAuthGoogle(keys, cfg))
+			} else {
+				router.Use(gin.HandlerFunc(middleware.NewAPIKeyAuthMiddleware(keys, nil, cfg)))
+			}
+			router.GET("/v1/models", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+			want := http.StatusForbidden
+			if credential == "sk-donebot-empty" {
+				want = http.StatusPaymentRequired
+			}
+			require.Equal(t, want, doneBotModelsRequest(router, credential).Code, "credential=%s google=%t", credential, google)
+		}
+	}
 }
 
 func doneBotModelsRouter(keys *service.APIKeyService, cfg *config.Config) *gin.Engine {

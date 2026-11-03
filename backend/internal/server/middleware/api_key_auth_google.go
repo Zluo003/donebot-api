@@ -201,7 +201,11 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			c.Set(string(ContextKeySubscription), subscription)
 		} else {
 			if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
-				abortWithGoogleError(c, 403, "Insufficient account balance")
+				status := 403
+				if strings.HasPrefix(apiKey.Key, "sk-donebot-") {
+					status = 402
+				}
+				abortWithGoogleError(c, status, "Insufficient account balance")
 				return
 			}
 		}

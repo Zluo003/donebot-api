@@ -86,25 +86,29 @@ func TestDoneBotClaimedCredentialUsesGatewayAndRevokesCachedAuth(t *testing.T) {
 	require.Equal(t, "no-store", claimResponse.Header().Get("Cache-Control"))
 	var claimed struct {
 		Install struct {
-			ID      int64 `json:"id"`
-			UserID  int64 `json:"user_id"`
-			GroupID int64 `json:"group_id"`
+			ID string `json:"id"`
 		} `json:"install"`
 		Credential string `json:"credential"`
 	}
 	require.NoError(t, json.Unmarshal(claimResponse.Body.Bytes(), &claimed))
 	credential = claimed.Credential
 	require.NotEmpty(t, credential)
-	require.Equal(t, user.ID, claimed.Install.UserID)
-	require.Equal(t, group.ID, claimed.Install.GroupID)
-	firstInstallID := claimed.Install.ID
+	require.Equal(t, installationID, claimed.Install.ID)
+	require.NotContains(t, claimResponse.Body.String(), "user_id")
+	require.NotContains(t, claimResponse.Body.String(), "api_key_id")
+	require.NotContains(t, claimResponse.Body.String(), "group_id")
+	stored, err := NewDoneBotInstallRepository(client).GetByInstallationID(ctx, installationID)
+	require.NoError(t, err)
+	require.Equal(t, user.ID, stored.UserID)
+	require.Equal(t, group.ID, stored.GroupID)
+	firstInstallID := stored.ID
 
 	claimResponse = claimRequest()
 	require.Equal(t, http.StatusOK, claimResponse.Code, claimResponse.Body.String())
 	var repeated map[string]any
 	require.NoError(t, json.Unmarshal(claimResponse.Body.Bytes(), &repeated))
 	require.NotContains(t, repeated, "credential", "a repeated claim must never reveal the generated key again")
-	require.Equal(t, float64(firstInstallID), repeated["install"].(map[string]any)["id"])
+	require.Equal(t, installationID, repeated["install"].(map[string]any)["id"])
 
 	apiRouter := gin.New()
 	apiRouter.Use(gin.HandlerFunc(middleware.NewAPIKeyAuthMiddleware(keys, nil, cfg)))

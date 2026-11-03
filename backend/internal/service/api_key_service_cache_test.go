@@ -23,6 +23,38 @@ type authRepoStub struct {
 	listKeysByGroupID func(ctx context.Context, groupID int64) ([]string, error)
 }
 
+func TestDoneBotCredentialAuthBypassesStaleCachesAndSingleflight(t *testing.T) {
+	ctx := context.Background()
+	var lookups int
+	active := true
+	repo := &authRepoStub{getByKeyForAuth: func(context.Context, string) (*APIKey, error) {
+		lookups++
+		if !active {
+			return nil, ErrAPIKeyNotFound
+		}
+		return &APIKey{ID: 1, Status: StatusActive, UserID: 2}, nil
+	}}
+	cache := &authCacheStub{getAuthCache: func(context.Context, string) (*APIKeyAuthCacheEntry, error) {
+		t.Fatal("installation authentication must not trust shared cache snapshots")
+		return nil, nil
+	}}
+	svc := &APIKeyService{apiKeyRepo: repo, cache: cache}
+	cfg := &config.Config{}
+	cfg.APIKeyAuth.L1Size = 100
+	cfg.APIKeyAuth.L1TTLSeconds = 60
+	cfg.APIKeyAuth.L2TTLSeconds = 60
+	cfg.APIKeyAuth.Singleflight = true
+	svc.initAuthCache(cfg)
+	key := "sk-donebot-fresh-auth"
+	_, err := svc.GetByKey(ctx, key)
+	require.NoError(t, err)
+	active = false
+	_, err = svc.GetByKey(ctx, key)
+	require.ErrorIs(t, err, ErrAPIKeyNotFound)
+	require.Equal(t, 2, lookups)
+	require.Empty(t, cache.setAuthKeys)
+}
+
 func (s *authRepoStub) Create(ctx context.Context, key *APIKey) error {
 	panic("unexpected Create call")
 }

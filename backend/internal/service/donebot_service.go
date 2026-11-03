@@ -23,6 +23,7 @@ var (
 	ErrDoneBotDisabled         = infraerrors.NotFound("DONEBOT_DISABLED", "DoneBot mode is disabled")
 	ErrDoneBotInstallNotFound  = infraerrors.NotFound("DONEBOT_INSTALL_NOT_FOUND", "installation not found")
 	ErrDoneBotInstallConflict  = infraerrors.Conflict("DONEBOT_INSTALL_CONFLICT", "installation is already claimed")
+	ErrDoneBotInstallInactive  = infraerrors.Conflict("DONEBOT_INSTALL_INACTIVE", "installation is not active")
 	ErrDoneBotGroupUnavailable = infraerrors.ServiceUnavailable("DONEBOT_GROUP_UNAVAILABLE", "DoneBot group is unavailable")
 	ErrDoneBotUserInactive     = infraerrors.Forbidden("DONEBOT_USER_INACTIVE", "active user account required")
 )
@@ -62,6 +63,8 @@ type DoneBotInstallRepository interface {
 	Create(context.Context, *DoneBotInstall) error
 	MarkRevoked(context.Context, int64) error
 	List(context.Context, pagination.PaginationParams) ([]DoneBotInstall, *pagination.PaginationResult, error)
+	ListByUserID(context.Context, int64, pagination.PaginationParams) ([]DoneBotInstall, *pagination.PaginationResult, error)
+	RotateCredential(context.Context, *DoneBotInstall, string) (string, error)
 }
 
 type DoneBotService struct {
@@ -123,11 +126,10 @@ func (s *DoneBotService) Claim(ctx context.Context, userID int64, req DoneBotCla
 		if err != nil {
 			return err
 		}
-		var secret [32]byte
-		if _, err = rand.Read(secret[:]); err != nil {
-			return fmt.Errorf("generate installation credential: %w", err)
+		credential, err := newDoneBotCredential()
+		if err != nil {
+			return err
 		}
-		credential := "sk-donebot-" + hex.EncodeToString(secret[:])
 		claimCtx := context.WithValue(txCtx, doneBotClaimContext{}, true)
 		key, err := s.keys.Create(claimCtx, userID, CreateAPIKeyRequest{Name: req.InstallName, GroupID: &groupID, CustomKey: &credential})
 		if err != nil {
@@ -153,6 +155,95 @@ func (s *DoneBotService) List(ctx context.Context, params pagination.PaginationP
 		return nil, nil, err
 	}
 	return s.repo.List(ctx, params)
+}
+
+func newDoneBotCredential() (string, error) {
+	var secret [32]byte
+	if _, err := rand.Read(secret[:]); err != nil {
+		return "", fmt.Errorf("generate installation credential: %w", err)
+	}
+	return "sk-donebot-" + hex.EncodeToString(secret[:]), nil
+}
+
+func (s *DoneBotService) ListForUser(ctx context.Context, userID int64, params pagination.PaginationParams) ([]DoneBotInstall, *pagination.PaginationResult, error) {
+	if err := s.enabled(); err != nil {
+		return nil, nil, err
+	}
+	if userID <= 0 {
+		return nil, nil, ErrDoneBotUserInactive
+	}
+	return s.repo.ListByUserID(ctx, userID, params)
+}
+
+func (s *DoneBotService) InstallationForUser(ctx context.Context, userID int64, installationID string) (*DoneBotInstall, error) {
+	install, err := s.installationForUser(ctx, userID, installationID)
+	if err != nil {
+		return nil, err
+	}
+	if install.Status != StatusActive || install.ExpiresAt != nil && !install.ExpiresAt.After(time.Now()) {
+		return nil, ErrDoneBotInstallInactive
+	}
+	return install, nil
+}
+
+func (s *DoneBotService) installationForUser(ctx context.Context, userID int64, installationID string) (*DoneBotInstall, error) {
+	if err := s.enabled(); err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(installationID)
+	if err != nil || id == uuid.Nil || userID <= 0 {
+		return nil, ErrDoneBotInstallNotFound
+	}
+	install, err := s.repo.GetByInstallationID(ctx, id.String())
+	if err != nil {
+		return nil, err
+	}
+	if install.UserID != userID {
+		return nil, ErrDoneBotInstallNotFound
+	}
+	return install, nil
+}
+
+func (s *DoneBotService) RotateForUser(ctx context.Context, userID int64, installationID string) (*DoneBotClaimResult, error) {
+	install, err := s.InstallationForUser(ctx, userID, installationID)
+	if err != nil {
+		return nil, err
+	}
+	var result *DoneBotClaimResult
+	var previous string
+	err = s.repo.WithInstallationLock(ctx, install.InstallationID, func(txCtx context.Context) error {
+		current, err := s.InstallationForUser(txCtx, userID, install.InstallationID)
+		if err != nil {
+			return err
+		}
+		if current.Status != StatusActive || current.ExpiresAt != nil && !current.ExpiresAt.After(time.Now()) {
+			return ErrDoneBotInstallInactive
+		}
+		credential, err := newDoneBotCredential()
+		if err != nil {
+			return err
+		}
+		previous, err = s.repo.RotateCredential(txCtx, current, credential)
+		if err != nil {
+			return err
+		}
+		result = &DoneBotClaimResult{Install: current, Credential: credential}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.keys.InvalidateAuthCacheByKey(ctx, previous)
+	s.keys.InvalidateAuthCacheByKey(ctx, result.Credential)
+	return result, nil
+}
+
+func (s *DoneBotService) RevokeForUser(ctx context.Context, userID int64, installationID string) error {
+	install, err := s.installationForUser(ctx, userID, installationID)
+	if err != nil {
+		return err
+	}
+	return s.Revoke(ctx, install.ID)
 }
 
 type doneBotKeyManagementContext struct{}

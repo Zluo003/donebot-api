@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"sync"
 	"testing"
@@ -13,7 +15,9 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -153,4 +157,70 @@ func TestDoneBotRestrictedUserCanClaimWithoutGrantingGroup(t *testing.T) {
 	groupID := group.ID
 	_, err = keys.Create(ctx, user.ID, service.CreateAPIKeyRequest{Name: "ordinary key", GroupID: &groupID})
 	require.ErrorIs(t, err, service.ErrGroupNotAllowed)
+}
+
+func TestDoneBotUserRotationKeepsTaskIdentityAndInvalidatesOtherNodeCredentials(t *testing.T) {
+	svc, _, repo, user, _ := doneBotInstallServices(t)
+	ctx := context.Background()
+	req := service.DoneBotClaimRequest{InstallationID: uuid.NewString(), InstallName: "Rotating Mac"}
+	claimed, err := svc.Claim(ctx, user.ID, req)
+	require.NoError(t, err)
+	apiKeyID := claimed.Install.APIKeyID
+	_, err = integrationDB.ExecContext(ctx, `UPDATE api_keys SET quota_used=1.25 WHERE id=$1`, apiKeyID)
+	require.NoError(t, err)
+	cfg := &config.Config{}
+	cfg.APIKeyAuth.L1Size = 100
+	cfg.APIKeyAuth.L1TTLSeconds = 60
+	cfg.APIKeyAuth.L2TTLSeconds = 60
+	cfg.APIKeyAuth.Singleflight = true
+	otherNode := service.NewAPIKeyService(NewAPIKeyRepository(integrationEntClient, integrationDB), nil, nil, nil, nil, NewAPIKeyCache(integrationRedis), cfg)
+	router := gin.New()
+	router.Use(gin.HandlerFunc(middleware.NewAPIKeyAuthMiddleware(otherNode, nil, cfg)))
+	router.GET("/v1/usage", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	authenticate := func(credential string) int {
+		request := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+		request.Header.Set("Authorization", "Bearer "+credential)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		return response.Code
+	}
+	_, err = otherNode.GetByKey(ctx, claimed.Credential)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, authenticate(claimed.Credential))
+	rotated, err := svc.RotateForUser(ctx, user.ID, req.InstallationID)
+	require.NoError(t, err)
+	require.NotEqual(t, claimed.Credential, rotated.Credential)
+	require.Equal(t, apiKeyID, rotated.Install.APIKeyID)
+	_, err = otherNode.GetByKey(ctx, claimed.Credential)
+	require.ErrorIs(t, err, service.ErrAPIKeyNotFound)
+	require.Equal(t, http.StatusUnauthorized, authenticate(claimed.Credential))
+	require.Equal(t, http.StatusNoContent, authenticate(rotated.Credential))
+	current, err := otherNode.GetByKey(ctx, rotated.Credential)
+	require.NoError(t, err)
+	require.Equal(t, apiKeyID, current.ID)
+	require.Equal(t, 1.25, current.QuotaUsed)
+	listed, page, err := svc.ListForUser(ctx, user.ID, pagination.DefaultPagination())
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.Total)
+	require.Len(t, listed, 1)
+	_, err = svc.RotateForUser(ctx, user.ID+1000000, req.InstallationID)
+	require.ErrorIs(t, err, service.ErrDoneBotInstallNotFound)
+	require.ErrorIs(t, svc.RevokeForUser(ctx, user.ID+1000000, req.InstallationID), service.ErrDoneBotInstallNotFound)
+	require.NoError(t, svc.RevokeForUser(ctx, user.ID, req.InstallationID))
+	require.Equal(t, http.StatusUnauthorized, authenticate(rotated.Credential))
+	current, err = otherNode.GetByKey(ctx, rotated.Credential)
+	require.NoError(t, err)
+	require.Equal(t, service.StatusDisabled, current.Status)
+	_, err = svc.RotateForUser(ctx, user.ID, req.InstallationID)
+	require.ErrorIs(t, err, service.ErrDoneBotInstallInactive)
+	stored, err := repo.GetByID(ctx, claimed.Install.ID)
+	require.NoError(t, err)
+	require.Equal(t, apiKeyID, stored.APIKeyID)
+	repeated, err := svc.Claim(ctx, user.ID, req)
+	require.NoError(t, err)
+	require.Empty(t, repeated.Credential)
+	for _, credential := range []string{claimed.Credential, rotated.Credential} {
+		_, err = integrationDB.ExecContext(ctx, `DELETE FROM auth_cache_invalidation_outbox WHERE cache_key=encode(sha256(convert_to($1,'UTF8')),'hex')`, credential)
+		require.NoError(t, err)
+	}
 }

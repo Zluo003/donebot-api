@@ -128,6 +128,8 @@ type DoneBotConfig struct {
 	GroupName       string                `mapstructure:"group_name"`
 	AutoCreateGroup bool                  `mapstructure:"auto_create_group"`
 	Features        DoneBotFeaturesConfig `mapstructure:"features"`
+	// CatalogCurrency confirms that this deployment's configured prices and balances are already CNY; it performs no conversion.
+	CatalogCurrency string `mapstructure:"catalog_currency"`
 }
 
 // DoneBotFeaturesConfig reserves switches for future media support.
@@ -137,6 +139,9 @@ type DoneBotFeaturesConfig struct {
 }
 
 func (c *DoneBotConfig) Validate() error {
+	if c.CatalogCurrency != "" && c.CatalogCurrency != "CNY" {
+		return fmt.Errorf("donebot.catalog_currency must be empty or CNY")
+	}
 	c.GroupName = strings.TrimSpace(c.GroupName)
 	if c.Enabled && (c.GroupName == "" || len([]rune(c.GroupName)) > 100) {
 		return fmt.Errorf("donebot.group_name must contain between 1 and 100 characters when enabled")
@@ -2160,6 +2165,7 @@ func setDefaults() {
 	viper.SetDefault("donebot.auto_create_group", true)
 	viper.SetDefault("donebot.features.video", false)
 	viper.SetDefault("donebot.features.audio", false)
+	viper.SetDefault("donebot.catalog_currency", "CNY")
 	viper.SetDefault("run_mode", RunModeStandard)
 	viper.SetDefault("gateway.min_output_tokens", 128)
 	viper.SetDefault("simple_mode.auto_create_default_groups", true)

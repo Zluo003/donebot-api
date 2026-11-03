@@ -66,7 +66,7 @@ func (h *AsyncImageHandler) reserveDoneBotBalanceBeforeSubmit(c *gin.Context, ke
 		}
 	}
 	if err != nil {
-		status, code, message, _ := billingErrorDetails(err)
+		status, code, message, _ := billingErrorDetailsForRequest(c, err)
 		imageTaskJSONError(c, status, code, message)
 		return nil, false
 	}

@@ -900,6 +900,8 @@ var ProviderSet = wire.NewSet(
 	NewDoneBotStorageService,
 	NewDoneBotService,
 	NewDoneBotAdminService,
+	NewDoneBotCatalogService,
+	NewDoneBotAccountService,
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,

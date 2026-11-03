@@ -9,6 +9,12 @@ import (
 func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handlers) {
 	if h.DoneBot != nil {
 		authenticated.POST("/donebot/installations/claim", h.DoneBot.Claim)
+		authenticated.GET("/donebot/installations", h.DoneBot.ListInstallations)
+		authenticated.GET("/donebot/models", h.DoneBot.Models)
+		authenticated.GET("/donebot/account", h.DoneBot.Account)
+		authenticated.GET("/donebot/receipts/:id", h.DoneBot.Receipt)
+		authenticated.POST("/donebot/installations/:id/rotate", h.DoneBot.RotateInstallation)
+		authenticated.DELETE("/donebot/installations/:id", h.DoneBot.RevokeInstallation)
 	}
 }
 

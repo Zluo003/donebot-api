@@ -107,7 +107,7 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 	subscription, _ := middleware.GetSubscriptionFromContext(c)
 	if !lookup {
 		if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), key.User, key, key.Group, subscription, service.QuotaPlatform(c.Request.Context(), key)); err != nil {
-			status, code, message, _ := billingErrorDetails(err)
+			status, code, message, _ := billingErrorDetailsForRequest(c, err)
 			h.errorResponse(c, status, code, message)
 			return
 		}
@@ -209,7 +209,7 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 			reservation, err = h.billingCacheService.ReserveFixedCharge(ctx, key.User, key, key.Group, subscription, amount)
 		}
 		if err != nil {
-			status, code, msg, _ := billingErrorDetails(err)
+			status, code, msg, _ := billingErrorDetailsForRequest(c, err)
 			h.errorResponse(c, status, code, msg)
 			return
 		}

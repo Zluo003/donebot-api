@@ -747,6 +747,17 @@ func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, erro
 	if len(key) == 0 || len(key) > MaxAPIKeyCredentialBytes {
 		return nil, ErrAPIKeyNotFound
 	}
+	if strings.HasPrefix(key, "sk-donebot-") {
+		// Installation rotations and revocations must take effect across nodes
+		// before the next request, independently of cache invalidation delivery.
+		apiKey, err := s.lookupAPIKeyForAuth(ctx, key)
+		if err != nil {
+			return nil, fmt.Errorf("get api key: %w", err)
+		}
+		apiKey.Key = key
+		s.compileAPIKeyIPRules(apiKey)
+		return apiKey, nil
+	}
 	cacheKey := s.authCacheKey(key)
 
 	if entry, ok := s.getAuthCacheEntry(ctx, cacheKey); ok {

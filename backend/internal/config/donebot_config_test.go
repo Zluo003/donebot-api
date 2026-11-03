@@ -18,6 +18,20 @@ func TestLoadDoneBotDefaults(t *testing.T) {
 	require.True(t, cfg.DoneBot.AutoCreateGroup)
 	require.False(t, cfg.DoneBot.Features.Video)
 	require.False(t, cfg.DoneBot.Features.Audio)
+	require.Equal(t, "CNY", cfg.DoneBot.CatalogCurrency)
+}
+
+func TestDoneBotCatalogCurrencyRequiresExplicitCNY(t *testing.T) {
+	for _, currency := range []string{"USD", "cny", "EUR"} {
+		cfg := DoneBotConfig{CatalogCurrency: currency}
+		require.ErrorContains(t, cfg.Validate(), "donebot.catalog_currency")
+	}
+	require.NoError(t, (&DoneBotConfig{CatalogCurrency: "CNY"}).Validate())
+	resetViperWithJWTSecret(t)
+	t.Setenv("DONEBOT_CATALOG_CURRENCY", "CNY")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "CNY", cfg.DoneBot.CatalogCurrency)
 }
 
 func TestLoadDoneBotFromYAMLAndEnv(t *testing.T) {

@@ -128,3 +128,69 @@ func (r *doneBotInstallRepository) List(ctx context.Context, params pagination.P
 	}
 	return installs, paginationResultFromTotal(total, params), nil
 }
+
+func (r *doneBotInstallRepository) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams) ([]service.DoneBotInstall, *pagination.PaginationResult, error) {
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, `SELECT COUNT(*) FROM donebot_installs WHERE user_id=$1`, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var total int64
+	if rows.Next() {
+		err = rows.Scan(&total)
+	} else {
+		err = rows.Err()
+	}
+	_ = rows.Close()
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err = client.QueryContext(ctx, doneBotInstallSelect+`WHERE i.user_id=$1 ORDER BY i.id DESC LIMIT $2 OFFSET $3`, userID, params.Limit(), params.Offset())
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	items := make([]service.DoneBotInstall, 0)
+	for rows.Next() {
+		install, err := scanDoneBotInstall(rows)
+		if err != nil {
+			return nil, nil, err
+		}
+		items = append(items, *install)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	return items, paginationResultFromTotal(total, params), nil
+}
+
+func (r *doneBotInstallRepository) RotateCredential(ctx context.Context, install *service.DoneBotInstall, credential string) (string, error) {
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, `WITH current AS (
+ SELECT k.id,k.key FROM api_keys k JOIN donebot_installs i ON i.api_key_id=k.id
+ WHERE i.id=$1 AND i.user_id=$2 AND i.status='active' AND k.id=$3
+ AND k.status='active' AND k.deleted_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>NOW())
+ FOR UPDATE OF i,k
+), changed AS (
+ UPDATE api_keys k SET key=$4,updated_at=NOW() FROM current WHERE k.id=current.id RETURNING current.key
+), touched AS (
+ UPDATE donebot_installs SET updated_at=NOW() WHERE id=$1 AND EXISTS (SELECT 1 FROM changed)
+ RETURNING updated_at
+)
+SELECT changed.key,touched.updated_at FROM changed CROSS JOIN touched`, install.ID, install.UserID, install.APIKeyID, credential)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return "", err
+		}
+		return "", service.ErrDoneBotInstallInactive
+	}
+	var previous string
+	if err := rows.Scan(&previous, &install.UpdatedAt); err != nil {
+		return "", err
+	}
+	return previous, nil
+}

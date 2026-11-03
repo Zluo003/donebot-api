@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,7 +17,9 @@ type doneBotInstallFake struct {
 	sync.Mutex
 	DoneBotInstallRepository
 	installs  map[string]*DoneBotInstall
+	keys      map[int64]*APIKey
 	insertErr error
+	rotateErr error
 }
 
 func (r *doneBotInstallFake) WithInstallationLock(ctx context.Context, id string, fn func(context.Context) error) error {
@@ -54,6 +57,24 @@ func (r *doneBotInstallFake) MarkRevoked(_ context.Context, id int64) error {
 		}
 	}
 	return nil
+}
+func (r *doneBotInstallFake) ListByUserID(_ context.Context, userID int64, params pagination.PaginationParams) ([]DoneBotInstall, *pagination.PaginationResult, error) {
+	items := []DoneBotInstall{}
+	for _, install := range r.installs {
+		if install.UserID == userID {
+			items = append(items, *install)
+		}
+	}
+	return items, &pagination.PaginationResult{Total: int64(len(items)), Page: params.Page, PageSize: params.Limit()}, nil
+}
+func (r *doneBotInstallFake) RotateCredential(_ context.Context, install *DoneBotInstall, credential string) (string, error) {
+	if r.rotateErr != nil {
+		return "", r.rotateErr
+	}
+	key := r.keys[install.APIKeyID]
+	old := key.Key
+	key.Key = credential
+	return old, nil
 }
 
 type doneBotSettingFake struct {
@@ -117,6 +138,7 @@ func (r *doneBotKeyFake) IsDoneBotInstallKey(_ context.Context, id int64) (bool,
 func newDoneBotServiceTest() (*DoneBotService, *doneBotInstallFake, *doneBotKeyFake) {
 	repo := &doneBotInstallFake{installs: map[string]*DoneBotInstall{}}
 	kr := &doneBotKeyFake{keys: map[int64]*APIKey{}}
+	repo.keys = kr.keys
 	groups := &doneBotGroupFake{group: &Group{ID: 9, Platform: PlatformComposite, Status: StatusActive}}
 	keys := &APIKeyService{apiKeyRepo: kr, userRepo: &doneBotUserFake{}, groupRepo: groups}
 	cfg := &config.Config{}
@@ -240,4 +262,79 @@ func TestDoneBotOrdinaryKeyManagementCannotReadOrReactivateManagedKey(t *testing
 	require.ErrorIs(t, err, ErrAPIKeyNotFound)
 	err = s.keys.Delete(ctx, 1, 4)
 	require.ErrorIs(t, err, ErrAPIKeyNotFound)
+}
+
+func TestDoneBotUserInstallationManagementIsScopedAndDoesNotReviveRevokedInstallations(t *testing.T) {
+	s, _, keys := newDoneBotServiceTest()
+	ctx := context.Background()
+	first, err := s.Claim(ctx, 7, DoneBotClaimRequest{InstallationID: "1b39147b-a079-4343-b156-514332d56f09", InstallName: "First"})
+	require.NoError(t, err)
+	second, err := s.Claim(ctx, 8, DoneBotClaimRequest{InstallationID: "b8158099-3e88-4bf9-82b3-927b5b161c34", InstallName: "Second"})
+	require.NoError(t, err)
+	items, page, err := s.ListForUser(ctx, 7, pagination.DefaultPagination())
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, first.Install.InstallationID, items[0].InstallationID)
+	require.EqualValues(t, 1, page.Total)
+	_, err = s.RotateForUser(ctx, 7, second.Install.InstallationID)
+	require.ErrorIs(t, err, ErrDoneBotInstallNotFound)
+	require.ErrorIs(t, s.RevokeForUser(ctx, 7, second.Install.InstallationID), ErrDoneBotInstallNotFound)
+	require.Equal(t, StatusActive, keys.keys[second.Install.APIKeyID].Status)
+	require.NoError(t, s.RevokeForUser(ctx, 7, first.Install.InstallationID))
+	require.NoError(t, s.RevokeForUser(ctx, 7, first.Install.InstallationID))
+	_, err = s.RotateForUser(ctx, 7, first.Install.InstallationID)
+	require.ErrorIs(t, err, ErrDoneBotInstallInactive)
+	require.Equal(t, StatusDisabled, keys.keys[first.Install.APIKeyID].Status)
+}
+
+func TestDoneBotUserInstallationManagementRejectsInvalidIdentity(t *testing.T) {
+	s, _, _ := newDoneBotServiceTest()
+	ctx := context.Background()
+	_, _, err := s.ListForUser(ctx, 0, pagination.DefaultPagination())
+	require.Error(t, err)
+	for _, id := range []string{"12", "bad", "00000000-0000-0000-0000-000000000000"} {
+		_, err = s.RotateForUser(ctx, 7, id)
+		require.Error(t, err)
+		require.Error(t, s.RevokeForUser(ctx, 7, id))
+	}
+}
+
+func TestDoneBotRotationReplacesOnlyCredentialAndClaimNeverReturnsItAgain(t *testing.T) {
+	s, _, keys := newDoneBotServiceTest()
+	ctx := context.Background()
+	req := DoneBotClaimRequest{InstallationID: "1b39147b-a079-4343-b156-514332d56f09", InstallName: "Mac"}
+	claimed, err := s.Claim(ctx, 7, req)
+	require.NoError(t, err)
+	keyID := claimed.Install.APIKeyID
+	keys.keys[keyID].QuotaUsed = 1.25
+	rotated, err := s.RotateForUser(ctx, 7, req.InstallationID)
+	require.NoError(t, err)
+	require.NotEqual(t, claimed.Credential, rotated.Credential)
+	require.True(t, strings.HasPrefix(rotated.Credential, "sk-donebot-"))
+	require.Equal(t, keyID, rotated.Install.APIKeyID)
+	require.Len(t, keys.keys, 1)
+	require.Equal(t, rotated.Credential, keys.keys[keyID].Key)
+	require.Equal(t, 1.25, keys.keys[keyID].QuotaUsed)
+	again, err := s.Claim(ctx, 7, req)
+	require.NoError(t, err)
+	require.Empty(t, again.Credential)
+}
+
+func TestDoneBotRotationFailureDoesNotReturnOrReplaceCredential(t *testing.T) {
+	s, repo, keys := newDoneBotServiceTest()
+	ctx := context.Background()
+	req := DoneBotClaimRequest{InstallationID: "1b39147b-a079-4343-b156-514332d56f09", InstallName: "Mac"}
+	claimed, err := s.Claim(ctx, 7, req)
+	require.NoError(t, err)
+	repo.rotateErr = context.DeadlineExceeded
+	result, err := s.RotateForUser(ctx, 7, req.InstallationID)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Nil(t, result)
+	require.Equal(t, claimed.Credential, keys.keys[claimed.Install.APIKeyID].Key)
+	expired := time.Now().Add(-time.Minute)
+	claimed.Install.ExpiresAt = &expired
+	result, err = s.RotateForUser(ctx, 7, req.InstallationID)
+	require.ErrorIs(t, err, ErrDoneBotInstallInactive)
+	require.Nil(t, result)
+	require.Equal(t, claimed.Credential, keys.keys[claimed.Install.APIKeyID].Key)
 }
