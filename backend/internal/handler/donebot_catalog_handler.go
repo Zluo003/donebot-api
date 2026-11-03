@@ -23,9 +23,10 @@ type doneBotAccountReader interface {
 }
 
 func ProvideDoneBotUserHandler(installs *service.DoneBotService, settings service.SettingRepository, cfg *config.Config,
-	catalog *service.DoneBotCatalogService, account *service.DoneBotAccountService) *DoneBotHandler {
+	catalog *service.DoneBotCatalogService, account *service.DoneBotAccountService, media *service.DoneBotMediaService) *DoneBotHandler {
 	h := NewDoneBotHandler(installs, settings, cfg)
 	h.catalog, h.account = catalog, account
+	h.media = media
 	return h
 }
 
@@ -96,6 +97,17 @@ func (h *DoneBotHandler) Receipt(c *gin.Context) {
 	if h.account == nil {
 		response.Error(c, http.StatusServiceUnavailable, "DoneBot receipts unavailable")
 		return
+	}
+	if h.media != nil {
+		receipt, err := h.media.Receipt(c.Request.Context(), subject.UserID, c.GetHeader("X-DoneBot-Installation"), c.Param("id"))
+		if err == nil {
+			c.JSON(http.StatusOK, receipt)
+			return
+		}
+		if !errors.Is(err, service.ErrDoneBotMediaNotFound) {
+			response.ErrorFrom(c, err)
+			return
+		}
 	}
 	receipt, err := h.account.Receipt(c.Request.Context(), subject.UserID, c.GetHeader("X-DoneBot-Installation"), c.Param("id"))
 	if errors.Is(err, service.ErrUsageLogNotFound) {

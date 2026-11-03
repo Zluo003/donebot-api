@@ -182,7 +182,7 @@ func TestDoneBotPublicCatalogMediaPricesUseCNYWithoutConversion(t *testing.T) {
 	speech.Model, speech.Kind, speech.AudioPriceUnit, speech.EffectivePerRequestPrice = "speech", "audio", "million_characters", &speechPrice
 	result, err := buildDoneBotPublicCatalog(group, 42, "one", []DoneBotModel{video, speech, music, image}, []Account{account}, nil, nil)
 	require.NoError(t, err)
-	require.Len(t, result.Models, 3)
+	require.Len(t, result.Models, 4)
 	byID := map[string]DoneBotCatalogModel{}
 	for _, model := range result.Models {
 		byID[model.ID] = model
@@ -191,9 +191,10 @@ func TestDoneBotPublicCatalogMediaPricesUseCNYWithoutConversion(t *testing.T) {
 		require.False(t, model.Capabilities.Reasoning.Supported)
 	}
 	require.Equal(t, imagePrice, byID["image"].Pricing.ImageSizes["1K"])
-	_, advertisedVideo := byID["video"]
-	require.False(t, advertisedVideo)
-	require.NotContains(t, result.Defaults, "openai.videos")
+	require.Equal(t, videoPrice, byID["video"].Pricing.Tiers["720p|standard"])
+	require.Equal(t, "second", byID["video"].Pricing.Unit)
+	require.Equal(t, []string{"720p"}, byID["video"].MediaParameters.Resolutions)
+	require.Equal(t, "video", result.Defaults["openai.videos"])
 	require.Equal(t, musicPrice, *byID["music"].Pricing.PerRequest)
 	require.Equal(t, []string{"openai.music"}, byID["music"].Interfaces)
 	require.Equal(t, speechPrice, *byID["speech"].Pricing.PerRequest)

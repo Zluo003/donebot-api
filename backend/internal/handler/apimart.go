@@ -247,6 +247,15 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 		writeAPIMartResponse(c, response)
 		return
 	}
+	if !lookup {
+		c.Set(middleware.DoneBotMediaProvider, "apimart")
+		if response.TaskID != "" {
+			c.Set(middleware.DoneBotMediaTaskID, response.TaskID)
+		}
+		if endpoint == service.APIMartTTS && response.Result != nil {
+			c.Set(middleware.DoneBotMediaUsageRequestID, response.Result.RequestID)
+		}
+	}
 	if !lookup && endpoint != service.APIMartTTS {
 		taskKey = service.APIMartTaskKey(endpoint, response.TaskID)
 		p := service.APIMartPending{Endpoint: endpoint, Model: info.Model, UpstreamModel: response.Result.UpstreamModel, OriginalModel: clientRequestedModel(c, info.Model), Tier: info.Tier, Units: info.Units, CreatedAt: service.GrokVideoPendingCreatedAtNow(), LayerDecomposition: info.LayerDecomposition, BillingModel: info.BillingModel}

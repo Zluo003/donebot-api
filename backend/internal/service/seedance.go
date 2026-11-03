@@ -24,7 +24,7 @@ const (
 )
 
 func (e GrokMediaEndpoint) IsSeedance() bool {
-	return e == SeedanceEndpointCreate || e == SeedanceEndpointStatus || e == SeedanceEndpointDelete
+	return e == SeedanceEndpointCreate || e == SeedanceEndpointStatus || e == SeedanceEndpointDelete || e == SeedanceEndpointContent
 }
 
 // SeedanceTaskKey isolates ownership and billing keys from other video providers.

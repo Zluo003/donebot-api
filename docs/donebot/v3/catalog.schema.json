@@ -312,18 +312,243 @@
           "$ref": "#/$defs/price"
         },
         "media_parameters": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "resolutions": {
-              "type": "array",
-              "uniqueItems": true,
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
+          "$ref": "#/$defs/media_parameters"
+        }
+      }
+    },
+    "media_protocol": {
+      "oneOf": [
+        {
+          "const": {
+            "adapter": "openai.images.v1",
+            "submit": {
+              "method": "POST",
+              "path": "/v1/images/generations",
+              "content_type": "application/json",
+              "response_kind": "json"
             }
           }
+        },
+        {
+          "const": {
+            "adapter": "apimart.images.v1",
+            "submit": {
+              "method": "POST",
+              "path": "/v1/images/generations",
+              "content_type": "application/json",
+              "response_kind": "json"
+            },
+            "task_id_path": "data.0.task_id",
+            "poll": {
+              "method": "GET",
+              "path": "/v1/tasks/{task_id}",
+              "response_kind": "json",
+              "status_paths": [
+                "data.status",
+                "status"
+              ],
+              "completed_statuses": [
+                "success"
+              ],
+              "failed_statuses": [
+                "failed",
+                "cancelled"
+              ],
+              "result_paths": [
+                "data.result.images",
+                "result.images"
+              ]
+            }
+          }
+        },
+        {
+          "const": {
+            "adapter": "apimart.music.v1",
+            "submit": {
+              "method": "POST",
+              "path": "/v1/music/generations",
+              "content_type": "application/json",
+              "response_kind": "json"
+            },
+            "task_id_path": "data.0.task_id",
+            "poll": {
+              "method": "GET",
+              "path": "/v1/music/tasks/{task_id}",
+              "response_kind": "json",
+              "status_paths": [
+                "data.status",
+                "status"
+              ],
+              "completed_statuses": [
+                "completed"
+              ],
+              "failed_statuses": [
+                "failed",
+                "cancelled"
+              ],
+              "result_paths": [
+                "data.result.music",
+                "result.music"
+              ]
+            }
+          }
+        },
+        {
+          "const": {
+            "adapter": "apimart.speech.v1",
+            "submit": {
+              "method": "POST",
+              "path": "/v1/audio/speech",
+              "content_type": "application/json",
+              "response_kind": "binary"
+            }
+          }
+        },
+        {
+          "const": {
+            "adapter": "seedance.videos.v1",
+            "submit": {
+              "method": "POST",
+              "path": "/v1/videos",
+              "content_type": "application/json",
+              "response_kind": "json"
+            },
+            "task_id_path": "id",
+            "poll": {
+              "method": "GET",
+              "path": "/v1/videos/{task_id}",
+              "response_kind": "json",
+              "status_paths": [
+                "status"
+              ],
+              "completed_statuses": [
+                "succeeded"
+              ],
+              "failed_statuses": [
+                "failed",
+                "cancelled",
+                "expired"
+              ],
+              "result_paths": [
+                "content.video_url"
+              ]
+            },
+            "content": {
+              "method": "GET",
+              "path": "/v1/videos/{task_id}/content",
+              "response_kind": "binary"
+            }
+          }
+        }
+      ]
+    },
+    "media_parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol"
+      ],
+      "properties": {
+        "sizes": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^/\\\\{}\\r\\n\\t]+$"
+          }
+        },
+        "aspect_ratios": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^/\\\\{}\\r\\n\\t]+$"
+          }
+        },
+        "resolutions": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^/\\\\{}\\r\\n\\t]+$"
+          }
+        },
+        "voices": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^/\\\\{}\\r\\n\\t]+$"
+          }
+        },
+        "formats": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^/\\\\{}\\r\\n\\t]+$"
+          }
+        },
+        "music_versions": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^/\\\\{}\\r\\n\\t]+$"
+          }
+        },
+        "duration_seconds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "min",
+            "max",
+            "step"
+          ],
+          "properties": {
+            "min": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600
+            },
+            "step": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600
+            },
+            "automatic": {
+              "type": "boolean"
+            },
+            "requires_custom": {
+              "type": "boolean"
+            }
+          }
+        },
+        "protocol": {
+          "$ref": "#/$defs/media_protocol"
         }
       }
     }

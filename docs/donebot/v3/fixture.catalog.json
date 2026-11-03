@@ -192,8 +192,58 @@
       },
       "pricing": {
         "currency": "CNY",
-        "per_request": 0.2,
-        "unit": "fixture_request"
+        "image_sizes": {
+          "1K": 0.2,
+          "2K": 0.4
+        }
+      },
+      "media_parameters": {
+        "sizes": [
+          "auto",
+          "1K",
+          "1.5K",
+          "2K"
+        ],
+        "aspect_ratios": [
+          "1:1",
+          "16:9",
+          "9:16"
+        ],
+        "resolutions": [
+          "1K",
+          "1.5K",
+          "2K"
+        ],
+        "protocol": {
+          "adapter": "apimart.images.v1",
+          "submit": {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "content_type": "application/json",
+            "response_kind": "json"
+          },
+          "task_id_path": "data.0.task_id",
+          "poll": {
+            "method": "GET",
+            "path": "/v1/tasks/{task_id}",
+            "response_kind": "json",
+            "status_paths": [
+              "data.status",
+              "status"
+            ],
+            "completed_statuses": [
+              "success"
+            ],
+            "failed_statuses": [
+              "failed",
+              "cancelled"
+            ],
+            "result_paths": [
+              "data.result.images",
+              "result.images"
+            ]
+          }
+        }
       }
     },
     {
@@ -220,13 +270,65 @@
       },
       "pricing": {
         "currency": "CNY",
-        "per_request": 0.2,
-        "unit": "fixture_request"
+        "tiers": {
+          "720p|standard": 0.2,
+          "720p|reference": 0.3
+        },
+        "unit": "second"
       },
       "media_parameters": {
+        "aspect_ratios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "21:9",
+          "4:3",
+          "3:4",
+          "adaptive"
+        ],
         "resolutions": [
           "720p"
-        ]
+        ],
+        "duration_seconds": {
+          "min": 4,
+          "max": 15,
+          "step": 1,
+          "automatic": true
+        },
+        "protocol": {
+          "adapter": "seedance.videos.v1",
+          "submit": {
+            "method": "POST",
+            "path": "/v1/videos",
+            "content_type": "application/json",
+            "response_kind": "json"
+          },
+          "task_id_path": "id",
+          "poll": {
+            "method": "GET",
+            "path": "/v1/videos/{task_id}",
+            "response_kind": "json",
+            "status_paths": [
+              "status"
+            ],
+            "completed_statuses": [
+              "succeeded"
+            ],
+            "failed_statuses": [
+              "failed",
+              "cancelled",
+              "expired"
+            ],
+            "result_paths": [
+              "content.video_url"
+            ]
+          },
+          "content": {
+            "method": "GET",
+            "path": "/v1/videos/{task_id}/content",
+            "response_kind": "binary"
+          }
+        }
       }
     },
     {
@@ -253,8 +355,58 @@
       },
       "pricing": {
         "currency": "CNY",
-        "per_request": 0.2,
-        "unit": "fixture_request"
+        "tiers": {
+          "v6": 0.2,
+          "v6-mini": 0.1
+        },
+        "unit": "request"
+      },
+      "media_parameters": {
+        "music_versions": [
+          "v6",
+          "v6-mini"
+        ],
+        "formats": [
+          "mp3",
+          "m4a",
+          "wav"
+        ],
+        "duration_seconds": {
+          "min": 10,
+          "max": 360,
+          "step": 1,
+          "requires_custom": true
+        },
+        "protocol": {
+          "adapter": "apimart.music.v1",
+          "submit": {
+            "method": "POST",
+            "path": "/v1/music/generations",
+            "content_type": "application/json",
+            "response_kind": "json"
+          },
+          "task_id_path": "data.0.task_id",
+          "poll": {
+            "method": "GET",
+            "path": "/v1/music/tasks/{task_id}",
+            "response_kind": "json",
+            "status_paths": [
+              "data.status",
+              "status"
+            ],
+            "completed_statuses": [
+              "completed"
+            ],
+            "failed_statuses": [
+              "failed",
+              "cancelled"
+            ],
+            "result_paths": [
+              "data.result.music",
+              "result.music"
+            ]
+          }
+        }
       }
     },
     {
@@ -281,8 +433,36 @@
       },
       "pricing": {
         "currency": "CNY",
-        "per_request": 0.2,
-        "unit": "fixture_request"
+        "tiers": {
+          "tts": 12
+        },
+        "unit": "million_characters"
+      },
+      "media_parameters": {
+        "voices": [
+          "alloy",
+          "echo",
+          "fable",
+          "onyx",
+          "nova",
+          "shimmer"
+        ],
+        "formats": [
+          "opus",
+          "aac",
+          "flac",
+          "wav",
+          "pcm"
+        ],
+        "protocol": {
+          "adapter": "apimart.speech.v1",
+          "submit": {
+            "method": "POST",
+            "path": "/v1/audio/speech",
+            "content_type": "application/json",
+            "response_kind": "binary"
+          }
+        }
       }
     }
   ]

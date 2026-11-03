@@ -58,6 +58,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	if endpoint.IsSeedance() {
 		platform = service.PlatformOpenAI
 		noAccountCode, noAccountMessage = "seedance_no_eligible_account", "No eligible Seedance accounts"
+		c.Set(middleware2.DoneBotMediaProvider, "seedance")
+	} else {
+		c.Set(middleware2.DoneBotMediaProvider, "grok")
 	}
 	streamStarted := false
 	defer h.recoverResponsesPanic(c, &streamStarted)
@@ -166,9 +169,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		defer userReleaseFunc()
 	}
 
-	// Existing Seedance tasks remain accessible after their completion charge
-	// exhausts the balance; the ownership binding is still checked below.
-	if !endpoint.IsSeedance() || endpoint.IsGenerationRequest() {
+	// Accepted tasks remain retrievable after their completion charge exhausts
+	// the balance; ownership and authentication are still checked below.
+	if !endpoint.IsVideoLookupRequest() {
 		if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 			reqLog.Info("grok_media.billing_eligibility_check_failed", zap.Error(err))
 			status, code, message, retryAfter := billingErrorDetailsForRequest(c, err)
@@ -442,7 +445,11 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer releaseAccount()
 			if endpoint.IsSeedance() {
-				return h.gatewayService.ForwardSeedanceForBilling(requestCtx, c, account, endpoint, requestID, body)
+				forwardEndpoint := endpoint
+				if endpoint == service.SeedanceEndpointContent {
+					forwardEndpoint = service.SeedanceEndpointStatus
+				}
+				return h.gatewayService.ForwardSeedanceForBilling(requestCtx, c, account, forwardEndpoint, requestID, body)
 			}
 			return h.gatewayService.ForwardGrokMedia(requestCtx, c, account, endpoint, requestID, body, contentType)
 		}()
@@ -536,6 +543,12 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account, grokMediaScheduleModel(account, routingModel, result), true, nil)
 		if isGrokVideoCreateEndpoint(endpoint) && strings.TrimSpace(result.ResponseID) != "" {
+			taskID := result.ResponseID
+			if endpoint.IsSeedance() {
+				taskID = strings.TrimPrefix(taskID, "seedance:")
+			}
+			c.Set(middleware2.DoneBotMediaTaskID, taskID)
+			c.Set(middleware2.DoneBotMediaUsageRequestID, service.StableGrokVideoBillingRequestID(result.ResponseID))
 			persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(requestCtx), 15*time.Second)
 			defer persistCancel()
 			// Defer billing until status polling observes video.url. Persist create-time
@@ -604,12 +617,23 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 		// Status poll OR content download can observe official done+video.url.
 		// Both paths share the same claim key so the customer is charged once.
-		if endpoint == service.SeedanceEndpointStatus {
+		if endpoint == service.SeedanceEndpointStatus || endpoint == service.SeedanceEndpointContent {
 			if err := h.settleSeedanceCompletionBilling(c, reqLog, apiKey, subject, subscription, account, requestID, result); err != nil {
 				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Task billing is unavailable; retry task lookup")
 				return
 			}
-			h.gatewayService.WriteSeedanceCreateResponse(c, result)
+			if endpoint == service.SeedanceEndpointContent {
+				if err := h.gatewayService.WriteSeedanceVideoContent(requestCtx, c, result, apiKey.ID); err != nil && !service.IsResponseCommitted(c) {
+					if errors.Is(err, service.ErrSeedanceVideoNotReady) {
+						c.Header("Retry-After", "3")
+						h.errorResponse(c, http.StatusConflict, "video_not_ready", "Video content is not ready")
+					} else {
+						h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Video content is unavailable")
+					}
+				}
+			} else {
+				h.gatewayService.WriteSeedanceCreateResponse(c, result)
+			}
 		} else if endpoint == service.GrokMediaEndpointVideoStatus || endpoint == service.GrokMediaEndpointVideoContent {
 			taskID := strings.TrimSpace(requestID)
 			if billResult := prepareGrokVideoCompletionBilling(requestCtx, h, reqLog, apiKey, subject, taskID, result); billResult != nil {

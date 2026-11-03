@@ -302,7 +302,7 @@ func TestGatewayRoutesCompositeChatCompletionsWithGrokModelUsesOpenAIGateway(t *
 	}
 }
 
-func TestGatewayRoutesNonGrokVideosAreRejectedAtPlatformGate(t *testing.T) {
+func TestGatewayRoutesUnconfiguredVideoModelsAndUnauthenticatedTaskLookupsAreRejected(t *testing.T) {
 	router := newGatewayRoutesTestRouter(service.PlatformOpenAI)
 
 	for _, tc := range []struct {
@@ -340,6 +340,11 @@ func TestGatewayRoutesNonGrokVideosAreRejectedAtPlatformGate(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
+		if tc.method == http.MethodGet {
+			require.Equal(t, http.StatusUnauthorized, w.Code, "method=%s path=%s", tc.method, tc.path)
+			require.Contains(t, w.Body.String(), "Invalid user")
+			continue
+		}
 		require.Equal(t, http.StatusNotFound, w.Code, "method=%s path=%s", tc.method, tc.path)
 		require.Contains(t, w.Body.String(), "Videos API is not supported for this platform")
 	}

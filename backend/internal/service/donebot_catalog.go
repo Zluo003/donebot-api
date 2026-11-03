@@ -48,16 +48,17 @@ type DoneBotCatalogModel struct {
 	MediaParameters *DoneBotCatalogMediaParameters `json:"media_parameters,omitempty"`
 }
 
-type DoneBotCatalogMediaParameters struct {
-	Resolutions []string `json:"resolutions,omitempty"`
-}
-
 type DoneBotCatalogCapabilities struct {
 	ContextWindowTokens int64                              `json:"context_window_tokens,omitempty"`
 	MaxOutputTokens     int64                              `json:"max_output_tokens,omitempty"`
 	ToolCalling         bool                               `json:"tool_calling"`
 	Reasoning           DoneBotCatalogReasoning            `json:"reasoning"`
 	ByInterface         map[string]DoneBotCatalogReasoning `json:"by_interface,omitempty"`
+}
+
+type doneBotCatalogConfiguredCapabilities struct {
+	DoneBotCatalogCapabilities
+	MediaParameters *DoneBotCatalogMediaParameters `json:"media_parameters,omitempty"`
 }
 
 type DoneBotCatalogReasoning struct {
@@ -115,7 +116,7 @@ type doneBotCatalogInputs struct {
 	rows         []DoneBotModel
 	accounts     []Account
 	routes       []CompositeModelRoute
-	capabilities map[string]DoneBotCatalogCapabilities
+	capabilities map[string]doneBotCatalogConfiguredCapabilities
 }
 
 func (s *DoneBotCatalogService) loadCatalog(ctx context.Context, groupID int64) (*doneBotCatalogInputs, error) {
@@ -354,8 +355,8 @@ func doneBotUnsupportedReasoning() DoneBotCatalogReasoning {
 	return DoneBotCatalogReasoning{Control: "none", Levels: []string{}}
 }
 
-func parseDoneBotCatalogCapabilities(raw string) (map[string]DoneBotCatalogCapabilities, error) {
-	capabilities := map[string]DoneBotCatalogCapabilities{}
+func parseDoneBotCatalogCapabilities(raw string) (map[string]doneBotCatalogConfiguredCapabilities, error) {
+	capabilities := map[string]doneBotCatalogConfiguredCapabilities{}
 	if strings.TrimSpace(raw) == "" {
 		return capabilities, nil
 	}
@@ -385,6 +386,9 @@ func parseDoneBotCatalogCapabilities(raw string) (map[string]DoneBotCatalogCapab
 		}
 		if capability.ContextWindowTokens < 0 || capability.MaxOutputTokens < 0 {
 			return nil, fmt.Errorf("token capabilities must not be negative")
+		}
+		if err := validateDoneBotMediaMetadata(capability.MediaParameters); err != nil {
+			return nil, err
 		}
 		if err := validateDoneBotCatalogReasoning(capability.Reasoning, ""); err != nil {
 			return nil, err
@@ -470,7 +474,7 @@ func doneBotReasoningFieldAllowed(iface, control, field string) bool {
 	return slices.Contains(allowed[iface][control], field)
 }
 
-func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, rows []DoneBotModel, accounts []Account, routes []CompositeModelRoute, configured map[string]DoneBotCatalogCapabilities) (*DoneBotCatalogResult, error) {
+func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, rows []DoneBotModel, accounts []Account, routes []CompositeModelRoute, configured map[string]doneBotCatalogConfiguredCapabilities) (*DoneBotCatalogResult, error) {
 	result := &DoneBotCatalogResult{GatewayContractVersion: 3, Models: []DoneBotCatalogModel{}, Defaults: map[string]string{}}
 	scope := sha256.Sum256([]byte(fmt.Sprintf("donebot:3:%d:%s:%d", userID, installation, group.ID)))
 	result.CatalogScopeID = "dbs_" + hex.EncodeToString(scope[:16])
@@ -482,10 +486,13 @@ func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, 
 		if len(interfaces) == 0 {
 			continue
 		}
-		capability := doneBotPublicCapabilities(group, row.Model, interfaces, configured[row.Model])
+		capability := doneBotPublicCapabilities(group, row.Model, interfaces, configured[row.Model].DoneBotCatalogCapabilities)
 		mediaType := map[string]string{"llm": "text", "images": "image", "video": "video", "audio": "audio"}[row.Kind]
 		if mediaType == "" {
 			continue
+		}
+		if slices.Contains(interfaces, "openai.music") {
+			mediaType = "music"
 		}
 		pricing := DoneBotCatalogPricing{Currency: "CNY"}
 		switch row.Kind {
@@ -510,10 +517,14 @@ func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, 
 			}
 		}
 		model := DoneBotCatalogModel{ID: row.Model, DisplayName: row.Model, MediaTypes: []string{mediaType}, Platforms: []string{row.Platform}, Interfaces: interfaces, Capabilities: capability, Pricing: pricing}
-		if row.Kind == "video" && len(row.VideoResolutions) > 0 {
-			model.MediaParameters = &DoneBotCatalogMediaParameters{Resolutions: slices.Clone(row.VideoResolutions)}
-			sort.Strings(model.MediaParameters.Resolutions)
+		media, err := doneBotPublicMediaParameters(group.ID, row, accounts, routes, configured[row.Model].MediaParameters)
+		if err != nil {
+			return nil, ErrDoneBotCatalogCapabilities
 		}
+		if row.Kind != "llm" && media == nil {
+			continue
+		}
+		model.MediaParameters = media
 		result.Models = append(result.Models, model)
 	}
 	sort.Slice(result.Models, func(i, j int) bool { return result.Models[i].ID < result.Models[j].ID })
@@ -557,9 +568,6 @@ func doneBotCatalogPrices(values map[string]*float64) map[string]float64 {
 
 func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account, routes []CompositeModelRoute) []string {
 	interfaces := []string{}
-	if row.Kind == "video" {
-		return interfaces
-	}
 	activeAccounts := []Account{}
 	activeRoutes := []CompositeModelRoute{}
 	for i := range accounts {
@@ -576,6 +584,9 @@ func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account
 	endpoints := map[string]string{"anthropic.messages": CompositeRouteEndpointMessages, "openai.responses": CompositeRouteEndpointResponses, "openai.chat_completions": CompositeRouteEndpointChatCompletions, "gemini.generate_content": CompositeRouteEndpointGemini}
 	if row.Kind == "images" {
 		endpoints = map[string]string{"openai.images": CompositeRouteEndpointImages}
+	}
+	if row.Kind == "video" {
+		endpoints = map[string]string{"openai.videos": CompositeRouteEndpointAny}
 	}
 	if row.Kind == "audio" {
 		endpoints = map[string]string{}
@@ -636,10 +647,13 @@ func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account
 
 func doneBotAccountUsesNativeInterface(account *Account, model, kind, iface string) bool {
 	if kind == "images" {
-		return iface == "openai.images"
+		return iface == "openai.images" && (account.Platform == PlatformOpenAI || account.Platform == PlatformGrok)
 	}
 	if kind == "audio" {
 		return doneBotHasAudioAccount(model, account.Platform, []Account{*account})
+	}
+	if kind == "video" {
+		return iface == "openai.videos" && doneBotHasNativeMediaAccount(model, account.Platform, "video", []Account{*account})
 	}
 	switch iface {
 	case "anthropic.messages":

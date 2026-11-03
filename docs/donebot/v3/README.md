@@ -56,7 +56,21 @@
 
 生成使用原生 `/v1/images/generations|edits`、`/v1/videos`（及 edits/extensions）、`/v1/music/generations`、`/v1/audio/speech`。speech 是同步音频，不能按旧方案读 chat-completions 音频字段。
 
-夹具异步响应为 `{id,status,receipt_id,poll_path}`。其中 `/v1/images/tasks/:id` 和 `/v1/music/tasks/:id` 是**夹具专用路径，不代表生产已存在**；正式查询、下载路径以网关实际实现冻结后为准。模型顶层 `media_parameters` 当前只冻结已知的视频 `resolutions`；时长、音色、格式未获真实目录证据时不推测、不硬编码。后续媒体阶段必须补全目录能力再开放对应控件。
+模型顶层 `media_parameters` 可包含已知的 `sizes`、`aspect_ratios`、`resolutions`、`duration_seconds`、`voices`、`formats`、`music_versions` 与 `protocol`。未知字段省略。时长范围含 `min/max/step`；`automatic:true` 表示原生 `duration:-1`，`requires_custom:true` 表示仅在 Suno custom 模式接受时长。参数由实时可售模型对应账号的原生解析器和规格生成，并与账号分辨率限制、实际价格及所有可路由账号能力取交集。静态 schema 和夹具不能增加可用模型。
+
+`protocol.adapter` 只允许下表的固定实现。submit/poll 路径、任务 ID、状态与结果字段是其协议描述，客户端选择内置适配器，不执行目录提供的任意 URL、路径模板或对象选择器。schema 和服务端元数据验证要求完整描述与白名单精确一致。`donebot.model_capabilities.v3` 的 `media_parameters` 只能缩小已知参数，不能增加不存在的音色、格式、版本、时长或协议。
+
+| adapter | 原生提交与返回 | 原生轮询 |
+| --- | --- | --- |
+| `openai.images.v1` | `POST /v1/images/generations`，JSON 图片结果 | 同步，无任务轮询 |
+| `apimart.images.v1` | `POST /v1/images/generations`，任务 ID 在 `data.0.task_id` | `GET /v1/tasks/{task_id}`；`data.status` 或 `status` 为 `success` 时读取 images |
+| `apimart.music.v1` | `POST /v1/music/generations`，任务 ID 在 `data.0.task_id` | `GET /v1/music/tasks/{task_id}`；状态 `completed` 时读取 music |
+| `apimart.speech.v1` | `POST /v1/audio/speech`，同步二进制音频 | 无任务轮询 |
+| `seedance.videos.v1` | `POST /v1/videos`，保持 Seedance `content[]` 请求体，返回 `id` | `GET /v1/videos/{task_id}`；状态 `succeeded` 时读取 `content.video_url`，内容代理为 `GET /v1/videos/{task_id}/content` |
+
+APIMart 图片的尺寸、比例、分辨率来自 `apimartImageTier`，未知输出格式不声明。Suno 只显示已有本地 tariff 的 `v6/v6-wild/v6-mini`；TTS 只声明原生解析器接受的六种音色与五种显式格式，不把省略字段的上游默认值硬填进请求。Seedance 使用账号配置的官方规格，2.0 时长为 4–15 秒，2.5 为 4–30 秒；多个账号取最窄范围，分辨率还必须有已定价的标准生成 tier。参数不是任意组合：2.5 首尾帧需要 `ratio:adaptive`，2.0 音频参考需要图像或视频参考，edit/extend 的输入约束继续由原生适配器和网关验证。
+
+默认恢复夹具保留 `{id,status,receipt_id,poll_path}` 合成响应，用来独立验证 journal、轮换与进程重启；它不代表生产统一媒体 BFF。额外的 `nativeMedia:true` 夹具模式使用上述 APIMart 和 Seedance 原生 envelope，并验证同步 speech 与视频内容代理的二进制形状。生产已有可选 `/v1/images/generations/async`、`/v1/images/edits/async` 和 `/v1/images/tasks/:id` 包装路径；本目录不在未确认该功能启用时对外宣告这些路径。
 
 幂等绑定稳定安装身份和 operation key，不能绑定会轮换的 API Key ID。同键同参返回同任务，同键异参 409。余额不足 402 发生在创建任务前；429 保留 Retry-After，不隐式重提或切模型。
 

@@ -103,70 +103,11 @@ func RegisterGatewayRoutes(
 			})
 		}
 	}
-	videoGenerationHandler := func(c *gin.Context) {
-		// Video status/content lookups below already allow Composite groups; keep
-		// task creation aligned so composite keys that route to Grok accounts can
-		// submit video generation jobs.
-		if platform := getGroupPlatform(c); platform == service.PlatformGrok || platform == service.PlatformComposite {
-			h.OpenAIGateway.GrokVideoGeneration(c)
-			return
-		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": gin.H{
-				"type":    "not_found_error",
-				"message": "Videos API is not supported for this platform",
-			},
-		})
-	}
-	videoStatusHandler := func(c *gin.Context) {
-		// Video status requests do not carry a model, so composite groups cannot
-		// be resolved by compositeTargetPlatformMiddleware. Route them through
-		// the Grok handler and let scheduler/account selection enforce capacity.
-		if getGroupPlatform(c) == service.PlatformGrok || getGroupPlatform(c) == service.PlatformComposite {
-			h.OpenAIGateway.GrokVideoStatus(c)
-			return
-		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": gin.H{
-				"type":    "not_found_error",
-				"message": "Videos API is not supported for this platform",
-			},
-		})
-	}
-	videoContentHandler := func(c *gin.Context) {
-		// Video content requests do not carry a model, so composite groups cannot
-		// be resolved by compositeTargetPlatformMiddleware. Route them through
-		// the Grok handler just like video status lookups.
-		if getGroupPlatform(c) == service.PlatformGrok || getGroupPlatform(c) == service.PlatformComposite {
-			h.OpenAIGateway.GrokVideoContent(c)
-			return
-		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": gin.H{
-				"type":    "not_found_error",
-				"message": "Videos API is not supported for this platform",
-			},
-		})
-	}
-	videoEditHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformGrok {
-			h.OpenAIGateway.GrokVideoEdit(c)
-			return
-		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
-	}
-	videoExtensionHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformGrok {
-			h.OpenAIGateway.GrokVideoExtension(c)
-			return
-		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
-	}
+	videoGenerationHandler := h.OpenAIGateway.DoneBotVideoGeneration
+	videoStatusHandler := h.OpenAIGateway.DoneBotVideoStatus
+	videoContentHandler := h.OpenAIGateway.DoneBotVideoContent
+	videoEditHandler := h.OpenAIGateway.DoneBotVideoEdit
+	videoExtensionHandler := h.OpenAIGateway.DoneBotVideoExtension
 	// /responses/*subpath 的子路径会被转发到上游同名端点之后，因此在入口就拒掉
 	// 不可转发的子路径，不让它进入调度与转发流程。可转发的判定见
 	// service.IsForwardableOpenAIResponsesRequestPath 及 upstream_path_guard.go。
@@ -198,7 +139,7 @@ func RegisterGatewayRoutes(
 	gateway.Use(opsErrorLogger)
 	gateway.Use(endpointNorm)
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
-	gateway.Use(doneBotReasoning, doneBotReceipt)
+	gateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot))
 	gateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
 	gateway.Use(groupModelAllowlist)
 	gateway.Use(compositeTarget)
@@ -389,7 +330,7 @@ func RegisterGatewayRoutes(
 	// 根路径别名共用中间件链：白名单准入在 apiKeyAuth 之后、compositeTarget
 	// 之前，避免逐条路由手工维护链导致漏挂。
 	rootRoute := func(method, path string, limit gin.HandlerFunc, handler gin.HandlerFunc) {
-		r.Handle(method, path, mediaGate, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, handler)
+		r.Handle(method, path, mediaGate, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot), groupModelAllowlist, compositeTarget, requireGroupAnthropic, handler)
 	}
 	for _, prefix := range []string{"/api/v3", "/v3", "/v1", ""} {
 		rootRoute(http.MethodPost, prefix+"/contents/generations/tasks", bodyLimit, h.OpenAIGateway.SeedanceTasks)

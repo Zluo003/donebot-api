@@ -169,7 +169,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// Async image task polling only reads data that already belongs to the
 		// authenticated key and must remain available after the completed
 		// generation consumes the key's remaining balance.
-		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path) || isSeedanceTaskLookup(c.Request.Method, c.Request.URL.Path) || isAPIMartTaskLookup(c.Request.Method, c.Request.URL.Path)
+		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path) || isSeedanceTaskLookup(c.Request.Method, c.Request.URL.Path) || isAPIMartTaskLookup(c.Request.Method, c.Request.URL.Path) || isVideoTaskRead(c.Request.Method, c.Request.URL.Path)
 
 		// ── 4. SimpleMode → early return ─────────────────────────────
 
@@ -342,6 +342,27 @@ func isAsyncImageTaskRead(method, path string) bool {
 		return false
 	}
 	return strings.HasPrefix(path, "/v1/images/tasks/") || strings.HasPrefix(path, "/images/tasks/")
+}
+
+func isVideoTaskRead(method, path string) bool {
+	if method != http.MethodGet {
+		return false
+	}
+	if strings.HasPrefix(path, "/v1/") {
+		path = strings.TrimPrefix(path, "/v1")
+	}
+	if !strings.HasPrefix(path, "/videos/") {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	if len(parts) < 2 || parts[0] != "videos" {
+		return false
+	}
+	parts = parts[1:]
+	if parts[0] == "generations" || parts[0] == "edits" || parts[0] == "extensions" {
+		parts = parts[1:]
+	}
+	return len(parts) == 1 && parts[0] != "" || len(parts) == 2 && parts[0] != "" && parts[1] == "content"
 }
 
 func isAPIMartTaskLookup(method, path string) bool {

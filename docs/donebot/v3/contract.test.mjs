@@ -19,9 +19,11 @@ function validate(value, rule, at = '$') {
   if (rule.type) assert.ok([rule.type].flat().some((type) => types[type]), `${at} type`);
   if (typeof value === 'string') {
     if (rule.minLength !== undefined) assert.ok(value.length >= rule.minLength, `${at} length`);
+	if (rule.maxLength !== undefined) assert.ok(value.length <= rule.maxLength, `${at} length`);
     if (rule.pattern) assert.match(value, new RegExp(rule.pattern), `${at} pattern`);
   }
   if (typeof value === 'number' && rule.minimum !== undefined) assert.ok(value >= rule.minimum, `${at} minimum`);
+  if (typeof value === 'number' && rule.maximum !== undefined) assert.ok(value <= rule.maximum, `${at} maximum`);
   if (Array.isArray(value)) {
     if (rule.minItems !== undefined) assert.ok(value.length >= rule.minItems, `${at} minItems`);
     if (rule.maxItems !== undefined) assert.ok(value.length <= rule.maxItems, `${at} maxItems`);
@@ -37,6 +39,10 @@ function validate(value, rule, at = '$') {
     }
   }
   if (rule.allOf) rule.allOf.forEach((item) => validate(value, item, at));
+  if (rule.oneOf) {
+    const matches = rule.oneOf.filter((item) => { try { validate(value, item, at); return true; } catch { return false; } });
+    assert.equal(matches.length, 1, `${at} oneOf`);
+  }
   if (rule.if) {
     let matches = true;
     try { validate(value, rule.if, at); } catch { matches = false; }
@@ -98,6 +104,61 @@ test('v3 schema accepts the fixture and rejects unsupported, mixed-currency and 
     assert.equal(model.pricing.currency, 'CNY');
     if (model.media_types.includes('text')) assert.equal(model.pricing.input_per_million, 1);
   }
+});
+
+test('media metadata uses exact adapter contracts and rejects URL, path, selector and adapter injection', () => {
+  for (const change of [
+    (protocol) => { protocol.adapter = 'unrecognized'; },
+    (protocol) => { protocol.submit.path = 'https://attacker.invalid/collect'; },
+    (protocol) => { protocol.poll.path = '/api/v1/auth/me'; },
+    (protocol) => { protocol.poll.status_paths = ['authorization']; },
+    (protocol) => { protocol.poll.path = '/v1/tasks/{task_id}?key={credential}'; },
+  ]) {
+    const invalid = structuredClone(fixtureCatalog);
+    change(invalid.models.find((model) => model.id === 'fixture-image').media_parameters.protocol);
+    assert.throws(() => validate(invalid, schema));
+  }
+  for (const model of fixtureCatalog.models.filter((item) => item.media_parameters)) {
+    const { protocol } = model.media_parameters;
+    assert.ok(['openai.images.v1', 'apimart.images.v1', 'apimart.music.v1', 'apimart.speech.v1', 'seedance.videos.v1'].includes(protocol.adapter));
+    assert.equal(protocol.submit.method, 'POST');
+    assert.equal(model.pricing.currency, 'CNY');
+  }
+});
+
+test('native media fixture matches APIMart task envelopes, Seedance content/status and binary speech', async (t) => {
+  const gateway = await fixture(t, { nativeMedia: true });
+  const { credential } = await claim(gateway);
+  const select = (document, path) => path.split('.').reduce((value, segment) => value?.[segment], document);
+  for (const id of ['fixture-image', 'fixture-music', 'fixture-video']) {
+    const model = fixtureCatalog.models.find((item) => item.id === id);
+    const { protocol } = model.media_parameters;
+    const request = { model: id, ...(id === 'fixture-video' ? { content: [{ type: 'text', text: 'fixture-only' }], resolution: '720p', duration: 5 } : { prompt: 'fixture-only', ...(id === 'fixture-music' ? { version: 'v6' } : {}) }) };
+    const submitted = await call(gateway, protocol.submit.path, { credential, method: protocol.submit.method, body: request, headers: { 'idempotency-key': randomUUID() } });
+    assert.equal(submitted.status, 202);
+    const response = await submitted.json();
+    const taskId = select(response, protocol.task_id_path);
+    assert.match(taskId, /^fixture-task-/);
+    const path = protocol.poll.path.replace('{task_id}', encodeURIComponent(taskId));
+    const pending = await (await call(gateway, path, { credential })).json();
+    const status = protocol.poll.status_paths.map((selector) => select(pending, selector)).find((value) => value !== undefined);
+    assert.equal(protocol.poll.completed_statuses.includes(status), false);
+    const completed = await (await call(gateway, path, { credential })).json();
+    const finalStatus = protocol.poll.status_paths.map((selector) => select(completed, selector)).find((value) => value !== undefined);
+    assert.equal(protocol.poll.completed_statuses.includes(finalStatus), true);
+    assert.ok(protocol.poll.result_paths.some((selector) => select(completed, selector) !== undefined));
+    if (protocol.content) {
+      const content = await call(gateway, protocol.content.path.replace('{task_id}', encodeURIComponent(taskId)), { credential });
+      assert.equal(content.headers.get('content-type'), 'video/mp4');
+      assert.equal(await content.text(), 'fixture-only-video');
+    }
+  }
+  const speech = fixtureCatalog.models.find((item) => item.id === 'fixture-speech').media_parameters.protocol;
+  assert.equal(speech.submit.response_kind, 'binary');
+  assert.equal(Object.hasOwn(speech, 'poll'), false);
+  const audio = await call(gateway, speech.submit.path, { credential, method: 'POST', body: { model: 'fixture-speech', input: 'fixture', voice: 'alloy', response_format: 'wav' } });
+  assert.equal(audio.headers.get('content-type'), 'audio/wav');
+  assert.match(await audio.text(), /^RIFF/);
 });
 
 test('fixture login, claim-once, safe installation list and account summary', async (t) => {

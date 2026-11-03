@@ -1,0 +1,38 @@
+{
+  "time": "2026-11-03T20:07:29.316Z",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "model": "deepseek-flash",
+  "status": 200,
+  "request_id": "a8f6e9ec-7c08-4a64-8e2a-4557e8d36469",
+  "receipt_id": "43ec9b67-c743-4ddd-b97c-480925829cc3",
+  "installation_id": "47d5abf8-c08d-49e5-8c2e-8ad350bdd66c",
+  "usage": {
+    "prompt_tokens": 36,
+    "completion_tokens": 2,
+    "total_tokens": 38,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 36
+  },
+  "reply": "收到",
+  "receipt_request_id": "74e6d8fc-708e-4a1f-9489-e763d68f324c",
+  "receipt_status": 200,
+  "receipt": {
+    "receipt_id": "43ec9b67-c743-4ddd-b97c-480925829cc3",
+    "request_id": "client:43ec9b67-c743-4ddd-b97c-480925829cc3",
+    "installation_id": "47d5abf8-c08d-49e5-8c2e-8ad350bdd66c",
+    "status": "completed",
+    "model": "deepseek-flash",
+    "currency": "CNY",
+    "estimated_cents": null,
+    "actual_cents": 0.0088,
+    "requested_reasoning": null,
+    "effective_reasoning": null
+  }
+}

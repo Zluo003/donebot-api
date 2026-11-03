@@ -103,7 +103,7 @@ function reasoningSelection(protocol, value) {
   return budget === undefined ? undefined : budget === 1024 ? 'low' : budget === 4096 ? 'high' : 'invalid';
 }
 
-export async function createFixtureGateway({ maxEffort = null } = {}) {
+export async function createFixtureGateway({ maxEffort = null, nativeMedia = false } = {}) {
   const installations = new Map();
   const credentials = new Map();
   const tasks = new Map();
@@ -208,10 +208,21 @@ export async function createFixtureGateway({ maxEffort = null } = {}) {
         }
         return json(res, 200, nativeResult(spec.name, callTool));
       }
-      const taskPath = /^\/v1\/(videos|images\/tasks|music\/tasks)\/([^/]+)$/.exec(path);
+      const taskPath = /^\/v1\/(videos|tasks|images\/tasks|music\/tasks)\/([^/]+)(\/content)?$/.exec(path);
       if (taskPath && req.method === 'GET') {
         const task = tasks.get(taskPath[2]);
         if (!task || task.installation_id !== install.id) return error(res, 404, 'FIXTURE_TASK_NOT_FOUND');
+        if (nativeMedia && task.adapter) {
+          const completed = task.polls++ >= 1;
+          if (taskPath[3]) {
+            if (task.adapter !== 'seedance.videos.v1' || !completed) return error(res, 409, 'FIXTURE_NOT_COMPLETED');
+            res.writeHead(200, { 'content-type': 'video/mp4' });
+            return res.end(Buffer.from('fixture-only-video'));
+          }
+          if (task.adapter === 'seedance.videos.v1') return json(res, 200, { id: task.id, status: completed ? 'succeeded' : 'running', ...(completed ? { content: { video_url: `https://fixture.invalid/${task.id}.mp4` } } : {}) });
+          const music = task.adapter === 'apimart.music.v1';
+          return json(res, 200, { code: 200, data: { id: task.id, status: completed ? (music ? 'completed' : 'success') : 'processing', ...(completed ? { result: music ? { music: [{ audio_url: `https://fixture.invalid/${task.id}.wav` }] } : { images: [{ url: [`https://fixture.invalid/${task.id}.png`] }] } } : {}) } });
+        }
         task.polls += 1;
         if (task.polls >= 2) {
           task.status = 'completed';
@@ -224,6 +235,9 @@ export async function createFixtureGateway({ maxEffort = null } = {}) {
       const media = new Map([['/v1/videos', 'videos'], ['/v1/videos/edits', 'videos'], ['/v1/videos/extensions', 'videos'], ['/v1/images/generations', 'images/tasks'], ['/v1/images/edits', 'images/tasks'], ['/v1/music/generations', 'music/tasks']]);
       if (media.has(path) && req.method === 'POST') {
         const value = await body(req);
+        const declaredProtocol = nativeMedia ? fixtureCatalog.models.find((model) => model.id === value.model)?.media_parameters?.protocol : null;
+        if (nativeMedia && (!declaredProtocol || declaredProtocol.submit.path !== path)) return error(res, 400, 'FIXTURE_MEDIA_MODEL_UNSUPPORTED');
+        if (nativeMedia && declaredProtocol.adapter === 'seedance.videos.v1' && !value.content?.some((part) => part.type === 'text' && part.text)) return error(res, 400, 'FIXTURE_SEEDANCE_CONTENT_REQUIRED');
         const key = req.headers['idempotency-key'];
         if (!key) return error(res, 400, 'FIXTURE_IDEMPOTENCY_REQUIRED');
         const identityKey = `${install.id}:${key}`;
@@ -235,10 +249,10 @@ export async function createFixtureGateway({ maxEffort = null } = {}) {
         }
         const id = `fixture-task-${randomUUID()}`;
         const receiptId = `fixture-receipt-${randomUUID()}`;
-        const task = { id, installation_id: install.id, receipt_id: receiptId, status: 'queued', polls: 0 };
+        const task = { id, installation_id: install.id, receipt_id: receiptId, status: 'queued', polls: 0, ...(declaredProtocol ? { adapter: declaredProtocol.adapter } : {}) };
         tasks.set(id, task);
         receipts.set(receiptId, { receipt_id: receiptId, installation_id: install.id, status: 'pending', currency: 'CNY', estimated_cents: 20, actual_cents: null });
-        const response = { id, status: 'queued', receipt_id: receiptId, poll_path: `/v1/${media.get(path)}/${id}` };
+        const response = declaredProtocol ? (declaredProtocol.adapter === 'seedance.videos.v1' ? { id, status: 'queued' } : { code: 200, data: [{ status: 'submitted', task_id: id }] }) : { id, status: 'queued', receipt_id: receiptId, poll_path: `/v1/${media.get(path)}/${id}` };
         operations.set(identityKey, { hash, response });
         return json(res, 202, response);
       }

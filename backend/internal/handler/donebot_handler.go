@@ -47,6 +47,7 @@ type DoneBotHandler struct {
 	cfg      *config.Config
 	catalog  doneBotCatalogReader
 	account  doneBotAccountReader
+	media    *service.DoneBotMediaService
 }
 
 func NewDoneBotHandler(installs *service.DoneBotService, settings service.SettingRepository, cfg *config.Config) *DoneBotHandler {

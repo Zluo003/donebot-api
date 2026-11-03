@@ -1,0 +1,142 @@
+{
+  "origin": "https://test.donebot.cn",
+  "deployed_source_sha": "4fefb6a63d111d204103708871aa4e113884cea6",
+  "implementation_sha": "5d0045b",
+  "binary_sha256": "0f51679508f8a3a6a34c6f0dee9f0c8dee66577075ced31b88000a1a53b8859c",
+  "records": [
+    {
+      "step": "login",
+      "at": "2026-11-03T19:26:09.180Z",
+      "status": 403,
+      "request_id": "ce065996-5e6f-42d0-aabb-905f38f9ed0e",
+      "client_request_id": null,
+      "authenticated": false
+    },
+    {
+      "time": "2026-11-03T19:37:01.950Z",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "request_id": "f308d3b2-1c62-4488-9a1f-aac0bb77cb51",
+      "authenticated": true,
+      "code": 0
+    },
+    {
+      "time": "2026-11-03T19:47:08.092Z",
+      "method": "POST",
+      "path": "/api/v1/donebot/installations/claim",
+      "status": 200,
+      "request_id": "efc1566a-4846-45eb-b52d-b8e124f610a4",
+      "installation_id": "9e06bbdf-74fe-4d12-b9b7-6f3780c6c317",
+      "credential_received": true
+    },
+    {
+      "time": "2026-11-03T19:55:14.954Z",
+      "method": "GET",
+      "path": "/api/v1/donebot/models",
+      "status": 200,
+      "request_id": "06ffec88-7555-419f-b7bd-18643f2324c0",
+      "scope": "dbs_f430cf1d3b3155bf4c6567cd27441b4f",
+      "version": "dbv_5e85d861b53cec80c2ae4a19e55aa45aa45f098ca4608f07d3e2786c1e18d487",
+      "etag": "W/\"dbv_5e85d861b53cec80c2ae4a19e55aa45aa45f098ca4608f07d3e2786c1e18d487\"",
+      "model_count": 8
+    },
+    {
+      "time": "2026-11-03T19:55:47.953Z",
+      "method": "GET",
+      "path": "/api/v1/donebot/account",
+      "status": 200,
+      "request_id": "3b1c5360-ef14-46e7-91d9-dfd7b8c70551",
+      "currency": "CNY",
+      "balance_cents": 20000,
+      "usage": {
+        "requests": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "actual_cents": 0
+      }
+    },
+    {
+      "time": "2026-11-03T19:55:48.474Z",
+      "method": "GET",
+      "path": "/api/v1/donebot/models",
+      "case": "same_scope_304",
+      "status": 304,
+      "request_id": "e23a278c-7ade-4925-a594-5dcc5f7af3ea"
+    },
+    {
+      "time": "2026-11-03T19:55:49.527Z",
+      "method": "GET",
+      "path": "/api/v1/donebot/models",
+      "case": "invalid_scope_never_304",
+      "status": 404,
+      "request_id": "50d9cd50-71cb-44aa-96b4-9c11dc78f5b6"
+    },
+    {
+      "time": "2026-11-03T19:56:36.228Z",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "model": "deepseek-flash",
+      "status": 200,
+      "request_id": "84fc8dea-c0b6-47cf-8d96-74aa399c0bfe",
+      "receipt_id": "d288a747-3463-4098-ab0a-406e969ff079",
+      "client_request_id": "d288a747-3463-4098-ab0a-406e969ff079",
+      "content_type": "text/event-stream",
+      "sse_frames": 13,
+      "done": true,
+      "body_sha256": "b3ca012fe5bad87c66e64221298f5a3419d97824efaa7953edc1209ecad61aa9"
+    },
+    {
+      "time": "2026-11-03T19:56:37.250Z",
+      "method": "GET",
+      "path": "/api/v1/donebot/receipts/d288a747-3463-4098-ab0a-406e969ff079",
+      "status": 200,
+      "request_id": "68ef229d-8fde-4efc-a8a1-2c1189e12f42",
+      "receipt": {
+        "receipt_id": "d288a747-3463-4098-ab0a-406e969ff079",
+        "request_id": "client:d288a747-3463-4098-ab0a-406e969ff079",
+        "installation_id": "9e06bbdf-74fe-4d12-b9b7-6f3780c6c317",
+        "status": "completed",
+        "model": "deepseek-flash",
+        "currency": "CNY",
+        "estimated_cents": null,
+        "actual_cents": 0.0158,
+        "requested_reasoning": null,
+        "effective_reasoning": null
+      }
+    },
+    {
+      "time": "2026-11-03T19:56:51.917Z",
+      "method": "POST",
+      "path": "/api/v1/donebot/installations/9e06bbdf-74fe-4d12-b9b7-6f3780c6c317/rotate",
+      "status": 200,
+      "request_id": "7358a0b4-fa5d-4162-8d84-9c181bcc652a",
+      "new_credential_received": true
+    },
+    {
+      "time": "2026-11-03T19:56:53.287Z",
+      "case": "rotation_old_key",
+      "status": 401,
+      "request_id": "0cca8dd2-1d30-4e8f-9da0-3eeb93599f64"
+    },
+    {
+      "time": "2026-11-03T19:56:53.287Z",
+      "case": "rotation_new_key",
+      "status": 200,
+      "request_id": "2dc19b01-ecfe-4da3-88d0-09268eec0b37"
+    },
+    {
+      "time": "2026-11-03T19:57:20.751Z",
+      "method": "DELETE",
+      "path": "/api/v1/donebot/installations/9e06bbdf-74fe-4d12-b9b7-6f3780c6c317",
+      "status": 204,
+      "request_id": "879434ff-b694-4839-aa25-10744c26b81d"
+    },
+    {
+      "time": "2026-11-03T19:57:20.751Z",
+      "case": "revoked_key",
+      "status": 401,
+      "request_id": "37c83402-e121-4af6-8770-dc6a2456eb3b"
+    }
+  ]
+}

@@ -69,6 +69,7 @@ var ProviderSet = wire.NewSet(
 	ProvideDoneBotStorageFactory,
 	ProvideAssetStorage,
 	NewDoneBotInstallRepository,
+	NewDoneBotMediaOperationRepository,
 	NewUserRepository,
 	NewMCPOAuthRepository,
 	NewAPIKeyRepository,
