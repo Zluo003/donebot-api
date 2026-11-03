@@ -178,10 +178,10 @@ func validateSeedanceModelRequest(body []byte, info GrokMediaRequestInfo, frames
 			return fmt.Errorf("too many Seedance reference materials")
 		}
 		if !is25 && audios > 0 && images == 0 && videos == 0 {
-			return fmt.Errorf("Seedance 2.0 audio references require an image or video reference")
+			return fmt.Errorf("seedance 2.0 audio references require an image or video reference")
 		}
 		if is25 && frames && info.AspectRatio != "" && info.AspectRatio != "adaptive" {
-			return fmt.Errorf("Seedance 2.5 first/last frames require ratio adaptive")
+			return fmt.Errorf("seedance 2.5 first/last frames require ratio adaptive")
 		}
 	}
 	if draft := gjson.GetBytes(body, "draft"); draft.Exists() {
@@ -256,7 +256,7 @@ func (s *OpenAIGatewayService) ForwardSeedance(ctx context.Context, c *gin.Conte
 		model = info.Model
 		upstreamModel = account.GetMappedModel(model)
 		if !account.SeedanceAllowsResolution(model, info.Resolution) {
-			return nil, fmt.Errorf("Seedance resolution is not allowed by the selected account or model")
+			return nil, fmt.Errorf("seedance resolution is not allowed by the selected account or model")
 		}
 		body, err = sjson.SetBytes(body, "model", upstreamModel)
 		if err != nil {

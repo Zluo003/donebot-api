@@ -149,7 +149,7 @@ func (h *AssetHandler) Download(c *gin.Context) {
 		assetError(c, err)
 		return
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("X-Content-Type-Options", "nosniff")
 	if a.MIME != "image/png" && a.MIME != "image/jpeg" && a.MIME != "image/webp" && a.MIME != "image/gif" {

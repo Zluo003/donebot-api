@@ -47,7 +47,7 @@ func (r *doneBotInstallRepository) get(ctx context.Context, where string, value 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
 			return nil, err
@@ -71,7 +71,7 @@ func (r *doneBotInstallRepository) Create(ctx context.Context, i *service.DoneBo
 	if err != nil {
 		return translatePersistenceError(err, nil, service.ErrDoneBotInstallConflict)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
 			return err
@@ -114,7 +114,7 @@ func (r *doneBotInstallRepository) List(ctx context.Context, params pagination.P
 	if err != nil {
 		return nil, nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	installs := make([]service.DoneBotInstall, 0)
 	for rows.Next() {
 		i, err := scanDoneBotInstall(rows)

@@ -24,7 +24,11 @@ func (s *assetStorageSet) ForKind(kind string) (service.AssetStorage, bool) {
 	return driver, ok
 }
 func (s *assetStorageSet) Open(ctx context.Context, key string) (io.ReadCloser, error) {
-	return s.drivers["local"].(service.LocalAssetReader).Open(ctx, key)
+	reader, ok := s.drivers["local"].(service.LocalAssetReader)
+	if !ok {
+		return nil, fmt.Errorf("local asset reader is not configured")
+	}
+	return reader.Open(ctx, key)
 }
 
 func NewLocalAssetStorage(root string) *LocalAssetStorage { return &LocalAssetStorage{root: root} }
@@ -51,7 +55,7 @@ func (s *LocalAssetStorage) Save(ctx context.Context, key, contentType string, d
 		return "", err
 	}
 	name := file.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, err = file.Write(data); err != nil {
 		_ = file.Close()
 		return "", err

@@ -398,7 +398,7 @@ func (r *usageLogRepository) loadAPIKeys(ctx context.Context, ids []int64) (map[
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {

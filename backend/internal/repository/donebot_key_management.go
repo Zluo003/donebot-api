@@ -18,7 +18,7 @@ func (r *apiKeyRepository) IsDoneBotInstallKey(ctx context.Context, id int64) (b
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
 			return false, err

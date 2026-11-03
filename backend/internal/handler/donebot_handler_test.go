@@ -67,7 +67,9 @@ func TestDoneBotClaimUsesSessionUserAndReturnsCredentialOnce(t *testing.T) {
 		require.Equal(t, "http://gateway.example.com", body["gateway_url"])
 		_, hasCredential := body["credential"]
 		require.Equal(t, initial, hasCredential)
-		require.Equal(t, float64(12), body["install"].(map[string]any)["id"])
+		install, ok := body["install"].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, float64(12), install["id"])
 	}
 	require.Equal(t, int64(7), svc.userID)
 	require.Equal(t, "我的 Mac", svc.req.InstallName)

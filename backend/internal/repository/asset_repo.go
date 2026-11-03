@@ -43,7 +43,7 @@ func (r *assetRepository) get(ctx context.Context, where string, value any) (*se
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		if err = rows.Err(); err != nil {
 			return nil, err
@@ -71,7 +71,7 @@ func (r *assetRepository) HasOwner(ctx context.Context, id string, keyID int64) 
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return false, fmt.Errorf("asset owner query returned no row")
 	}
@@ -88,7 +88,7 @@ func (r *assetRepository) RemoveOwner(ctx context.Context, id string, keyID int6
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return false, fmt.Errorf("asset owners query returned no row")
 	}
@@ -108,7 +108,7 @@ func (r *assetRepository) ListExpired(ctx context.Context, now time.Time, limit 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []service.GatewayAsset
 	for rows.Next() {
 		a, err := scanAsset(rows)

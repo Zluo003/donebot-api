@@ -5,8 +5,25 @@ import (
 	"io"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAssetStorageSetOpenRejectsMissingOrNonLocalDriver(t *testing.T) {
+	for _, drivers := range []map[string]service.AssetStorage{
+		nil,
+		{},
+		{"local": nil},
+		{"local": &S3AssetStorage{}},
+	} {
+		storage := &assetStorageSet{drivers: drivers}
+		require.NotPanics(t, func() {
+			reader, err := storage.Open(context.Background(), "ab/asset.png")
+			require.Error(t, err)
+			require.Nil(t, reader)
+		})
+	}
+}
 
 func TestLocalAssetStorageAtomicWriteReadDeleteAndPathIsolation(t *testing.T) {
 	storage := NewLocalAssetStorage(t.TempDir())
