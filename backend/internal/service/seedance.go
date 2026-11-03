@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,17 +44,175 @@ func ParseSeedanceRequest(body []byte) (GrokMediaRequestInfo, error) {
 		return info, fmt.Errorf("content must be a non-empty array")
 	}
 	info.Model = strings.TrimSpace(model.String())
+	if resolution := gjson.GetBytes(body, "resolution"); resolution.Exists() {
+		if resolution.Type != gjson.String || !slices.Contains([]string{"480p", "720p", "1080p", "4k"}, resolution.String()) {
+			return info, fmt.Errorf("resolution must be 480p, 720p, 1080p, or 4k")
+		}
+		info.Resolution = resolution.String()
+	}
 	var texts []string
+	images, videos, audios := 0, 0, 0
+	firsts, lasts, references, unassigned := 0, 0, 0, 0
+	draftReference := false
 	for _, item := range content.Array() {
+		if !item.IsObject() {
+			return info, fmt.Errorf("content entries must be objects")
+		}
 		switch item.Get("type").String() {
 		case "text":
-			texts = append(texts, item.Get("text").String())
+			if text := item.Get("text"); text.Type == gjson.String && strings.TrimSpace(text.String()) != "" {
+				texts = append(texts, text.String())
+			}
 		case "image_url":
-			info.InputImageURLs = append(info.InputImageURLs, item.Get("image_url.url").String())
+			images++
+			imageURL := item.Get("image_url.url")
+			if imageURL.Type != gjson.String || !validSeedanceMaterialURL(imageURL.String(), true) {
+				return info, fmt.Errorf("image_url.url must be an asset reference, HTTP(S) URL, or image data URL")
+			}
+			info.InputImageURLs = append(info.InputImageURLs, imageURL.String())
+			switch item.Get("role").String() {
+			case "first_frame":
+				firsts++
+			case "last_frame":
+				lasts++
+			case "reference_image":
+				references++
+			case "":
+				unassigned++
+			default:
+				return info, fmt.Errorf("invalid image role")
+			}
+		case "video_url", "audio_url":
+			kind := item.Get("type").String()
+			material := item.Get(kind + ".url")
+			if material.Type != gjson.String || !validSeedanceMaterialURL(material.String(), false) {
+				return info, fmt.Errorf("%s.url must be an asset reference or HTTP(S) URL", kind)
+			}
+			if kind == "video_url" {
+				videos++
+				if item.Get("role").String() != "reference_video" {
+					return info, fmt.Errorf("video role must be reference_video")
+				}
+			} else {
+				audios++
+				if item.Get("role").String() != "reference_audio" {
+					return info, fmt.Errorf("audio role must be reference_audio")
+				}
+			}
+		case "draft_task":
+			draftReference = true
+			if id := item.Get("draft_task.id"); id.Type != gjson.String || strings.TrimSpace(id.String()) == "" {
+				return info, fmt.Errorf("draft_task.id is required")
+			}
 		}
 	}
 	info.Prompt = strings.Join(texts, "\n")
+	if info.Prompt == "" {
+		return info, fmt.Errorf("content must contain a non-empty text entry")
+	}
+	if unassigned > 0 {
+		if images != 1 {
+			return info, fmt.Errorf("multiple images require explicit roles")
+		}
+		firsts++ // Native Ark permits the single first-frame image without role.
+	}
+	if firsts > 1 || lasts > 1 || (lasts > 0 && firsts == 0) {
+		return info, fmt.Errorf("first and last frames must each occur at most once, with a first frame before a last frame")
+	}
+	if (firsts > 0 || lasts > 0) && (images > 2 || references > 0 || videos > 0 || audios > 0) {
+		return info, fmt.Errorf("first/last frames cannot be mixed with reference images, videos, or audio")
+	}
+	if ratio := gjson.GetBytes(body, "ratio"); ratio.Exists() {
+		if ratio.Type != gjson.String || !slices.Contains([]string{"16:9", "9:16", "1:1", "21:9", "4:3", "3:4", "adaptive"}, ratio.String()) {
+			return info, fmt.Errorf("invalid Seedance ratio")
+		}
+		info.AspectRatio = ratio.String()
+	}
+	if duration := gjson.GetBytes(body, "duration"); duration.Exists() {
+		if duration.Type != gjson.Number || math.Trunc(duration.Float()) != duration.Float() {
+			return info, fmt.Errorf("duration must be an integer")
+		}
+		info.DurationSeconds = int(duration.Int())
+	}
+	if err := validateSeedanceModelRequest(body, info, firsts > 0 || lasts > 0, images, videos, audios, draftReference); err != nil {
+		return info, err
+	}
 	return info, nil
+}
+
+func validSeedanceMaterialURL(raw string, image bool) bool {
+	if image && strings.HasPrefix(raw, "data:image/") && strings.Contains(raw, ";base64,") {
+		return true
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil {
+		return false
+	}
+	switch u.Scheme {
+	case "asset", "http", "https":
+		return u.Host != ""
+	default:
+		return false
+	}
+}
+
+func validateSeedanceModelRequest(body []byte, info GrokMediaRequestInfo, frames bool, images, videos, audios int, draftReference bool) error {
+	supported, known := seedanceModelResolutions[info.Model]
+	is25 := info.Model == "doubao-seedance-2-5-260628"
+	if known {
+		resolution := info.Resolution
+		if resolution == "" {
+			resolution = "720p"
+		}
+		if !slices.Contains(supported, resolution) {
+			return fmt.Errorf("resolution must be supported by model %s", info.Model)
+		}
+		maxDuration, maxImages, maxVideos, maxAudios := 15, 9, 3, 3
+		if is25 {
+			maxDuration, maxImages, maxVideos, maxAudios = 30, 30, 10, 10
+		}
+		if duration := gjson.GetBytes(body, "duration"); duration.Exists() && info.DurationSeconds != -1 && (info.DurationSeconds < 4 || info.DurationSeconds > maxDuration) {
+			return fmt.Errorf("duration must be -1 or between 4 and %d seconds", maxDuration)
+		}
+		if images > maxImages || videos > maxVideos || audios > maxAudios {
+			return fmt.Errorf("too many Seedance reference materials")
+		}
+		if !is25 && audios > 0 && images == 0 && videos == 0 {
+			return fmt.Errorf("Seedance 2.0 audio references require an image or video reference")
+		}
+		if is25 && frames && info.AspectRatio != "" && info.AspectRatio != "adaptive" {
+			return fmt.Errorf("Seedance 2.5 first/last frames require ratio adaptive")
+		}
+	}
+	if draft := gjson.GetBytes(body, "draft"); draft.Exists() {
+		if draft.Type != gjson.True && draft.Type != gjson.False {
+			return fmt.Errorf("draft must be a boolean")
+		}
+		if known && !is25 {
+			return fmt.Errorf("draft is only supported by Seedance 2.5")
+		}
+	}
+	if draftReference && known && !is25 {
+		return fmt.Errorf("draft_task is only supported by Seedance 2.5")
+	}
+	if mode := gjson.GetBytes(body, "omni_reference_task_type"); mode.Exists() {
+		if mode.Type != gjson.String || !slices.Contains([]string{"auto", "reference", "edit", "extend"}, mode.String()) {
+			return fmt.Errorf("invalid omni_reference_task_type")
+		}
+		if known && !is25 {
+			return fmt.Errorf("omni_reference_task_type is only supported by Seedance 2.5")
+		}
+		if videos == 0 && (mode.String() == "edit" || mode.String() == "extend") {
+			return fmt.Errorf("omni_reference_task_type requires a reference video")
+		}
+		if mode.String() == "edit" && (info.AspectRatio != "adaptive" || info.DurationSeconds != -1) {
+			return fmt.Errorf("video edit requires ratio adaptive and duration -1")
+		}
+		if mode.String() == "extend" && (info.AspectRatio != "adaptive" || (info.DurationSeconds != -1 && (info.DurationSeconds < 4 || info.DurationSeconds > 30))) {
+			return fmt.Errorf("video extend requires ratio adaptive and total duration -1 or between 4 and 30")
+		}
+	}
+	return nil
 }
 
 func buildSeedanceURL(base string, endpoint GrokMediaEndpoint, taskID string) (string, error) {
@@ -94,8 +255,14 @@ func (s *OpenAIGatewayService) ForwardSeedance(ctx context.Context, c *gin.Conte
 		}
 		model = info.Model
 		upstreamModel = account.GetMappedModel(model)
+		if !account.SeedanceAllowsResolution(model, info.Resolution) {
+			return nil, fmt.Errorf("Seedance resolution is not allowed by the selected account or model")
+		}
 		body, err = sjson.SetBytes(body, "model", upstreamModel)
 		if err != nil {
+			return nil, err
+		}
+		if _, err = ParseSeedanceRequest(body); err != nil {
 			return nil, err
 		}
 		method = http.MethodPost
@@ -147,7 +314,7 @@ func (s *OpenAIGatewayService) ForwardSeedance(ctx context.Context, c *gin.Conte
 		result.ResponseID = taskID
 		result.UpstreamModel = gjson.GetBytes(responseBody, "model").String()
 		if gjson.GetBytes(responseBody, "status").String() == "succeeded" {
-			result.Usage.OutputTokens = max(0, int(gjson.GetBytes(responseBody, "usage.completion_tokens").Int()))
+			result.Usage.OutputTokens = seedanceCompletionTokens(responseBody)
 		}
 	}
 	writeGrokMediaResponse(c, resp, responseBody, s.responseHeaderFilter)

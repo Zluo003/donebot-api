@@ -128,7 +128,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
 
 	if endpoint.IsGenerationRequest() {
-		if !service.GroupAllowsImageGeneration(apiKey.Group) {
+		if !endpoint.IsSeedance() && !service.GroupAllowsImageGeneration(apiKey.Group) {
 			h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 			return
 		}
@@ -139,12 +139,14 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				return
 			}
 		}
-		imageReleaseFunc, acquired := h.acquireImageGenerationSlot(c, streamStarted)
-		if !acquired {
-			return
-		}
-		if imageReleaseFunc != nil {
-			defer imageReleaseFunc()
+		if !endpoint.IsSeedance() {
+			imageReleaseFunc, acquired := h.acquireImageGenerationSlot(c, streamStarted)
+			if !acquired {
+				return
+			}
+			if imageReleaseFunc != nil {
+				defer imageReleaseFunc()
+			}
 		}
 	}
 
@@ -163,14 +165,18 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		defer userReleaseFunc()
 	}
 
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
-		reqLog.Info("grok_media.billing_eligibility_check_failed", zap.Error(err))
-		status, code, message, retryAfter := billingErrorDetails(err)
-		if retryAfter > 0 {
-			c.Header("Retry-After", strconv.Itoa(retryAfter))
+	// Existing Seedance tasks remain accessible after their completion charge
+	// exhausts the balance; the ownership binding is still checked below.
+	if !endpoint.IsSeedance() || endpoint.IsGenerationRequest() {
+		if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+			reqLog.Info("grok_media.billing_eligibility_check_failed", zap.Error(err))
+			status, code, message, retryAfter := billingErrorDetails(err)
+			if retryAfter > 0 {
+				c.Header("Retry-After", strconv.Itoa(retryAfter))
+			}
+			h.errorResponse(c, status, code, message)
+			return
 		}
-		h.errorResponse(c, status, code, message)
-		return
 	}
 
 	// 余额模式在途预留（与计费同口径估算；计费任务扣减余额缓存后才释放）。
@@ -334,6 +340,14 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		)
 
 		account := selection.Account
+		if endpoint == service.SeedanceEndpointCreate && !account.SeedanceAllowsResolution(routingModel, requestInfo.Resolution) {
+			// Resolution is an account capability, not an upstream failure. Skip
+			// before forwarding and release any eagerly acquired scheduler slot.
+			releaseAccount()
+			mediaEligibilityRejected = true
+			failedAccountIDs[account.ID] = struct{}{}
+			continue
+		}
 		if endpoint.IsGenerationRequest() && !endpoint.IsSeedance() {
 			eligible, eligibilityReason, eligibilityErr := h.ensureGrokMediaAccountEligibility(requestCtx, account)
 			if !eligible {

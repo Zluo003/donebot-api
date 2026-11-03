@@ -15,6 +15,7 @@
             :loading="loading"
             @refresh="handleManualRefresh"
             @create="showCreate = true"
+            @create-video="openVideoAccountCreate"
           >
             <template #after>
               <!-- Auto Refresh Dropdown -->
@@ -455,6 +456,7 @@
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
     <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
+    <VideoAccountModal :show="showVideoAccount" :account="videoAccount" :proxies="proxies" :groups="groups" @close="showVideoAccount = false" @created="reload" @updated="handleAccountUpdated" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
@@ -508,7 +510,8 @@ import DataTable from '@/components/common/DataTable.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
+import { CreateAccountModal, VideoAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
+import { isSeedanceVideoAccount } from '@/components/account/videoAccount'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
@@ -594,6 +597,12 @@ const selTypes = computed<AccountType[]>(() => {
   return [...types]
 })
 const showCreate = ref(false)
+const showVideoAccount = ref(false)
+const videoAccount = ref<Account | null>(null)
+const openVideoAccountCreate = () => {
+  videoAccount.value = null
+  showVideoAccount.value = true
+}
 const showEdit = ref(false)
 const showSync = ref(false)
 const showImportData = ref(false)
@@ -1399,6 +1408,7 @@ watch(accounts, (rows) => {
 const isAnyModalOpen = computed(() => {
   return (
     showCreate.value ||
+    showVideoAccount.value ||
     showEdit.value ||
     showSync.value ||
     showImportData.value ||
@@ -1881,6 +1891,11 @@ const loadAccountDetails = async (account: Pick<AccountListItem, 'id'>): Promise
 const handleEdit = async (a: AccountListItem) => {
   const account = await loadAccountDetails(a)
   if (!account) return
+  if (isSeedanceVideoAccount(account)) {
+    videoAccount.value = account
+    showVideoAccount.value = true
+    return
+  }
   edAcc.value = account
   showEdit.value = true
 }

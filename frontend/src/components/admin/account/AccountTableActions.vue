@@ -7,6 +7,7 @@
     <slot name="after"></slot>
     <slot name="beforeCreate"></slot>
     <button @click="$emit('create')" class="btn btn-primary">{{ t('admin.accounts.createAccount') }}</button>
+    <button @click="$emit('create-video')" class="btn btn-secondary" data-testid="create-video-account">{{ t('admin.accounts.videoAccount.createTitle') }}</button>
     <slot name="afterCreate"></slot>
   </div>
 </template>
@@ -16,7 +17,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 
 defineProps(['loading'])
-defineEmits(['refresh', 'create'])
+defineEmits(['refresh', 'create', 'create-video'])
 
 const { t } = useI18n()
 </script>

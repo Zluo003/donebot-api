@@ -83,6 +83,11 @@ const EditAccountModalStub = defineComponent({
   template: '<div data-test="edit-account">{{ show ? account?.name : "" }}</div>'
 })
 
+const VideoAccountModalStub = defineComponent({
+  props: { show: Boolean, account: { type: Object, default: null } },
+  template: '<div data-test="video-account">{{ show ? (account?.name || "new-video") : "" }}</div>'
+})
+
 const AccountTestModalStub = defineComponent({
   props: { show: Boolean, account: { type: Object, default: null } },
   template: '<div data-test="test-account">{{ show ? account?.name : "" }}</div>'
@@ -101,7 +106,7 @@ function mountView(stubActionMenu = true) {
         AppLayout: { template: '<div><slot /></div>' },
         TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
         DataTable: DataTableStub,
-        AccountTableActions: { template: '<div><slot name="after" /></div>' },
+        AccountTableActions: { template: '<div><button data-test="create-video" @click="$emit(\'create-video\')">video</button><slot name="after" /></div>' },
         AccountTableFilters: true,
         AccountBulkActionsBar: true,
         Pagination: true,
@@ -117,6 +122,7 @@ function mountView(stubActionMenu = true) {
         ErrorPassthroughRulesModal: true,
         TLSFingerprintProfilesModal: true,
         CreateAccountModal: true,
+        VideoAccountModal: VideoAccountModalStub,
         EditAccountModal: EditAccountModalStub,
         BulkEditAccountModal: true,
         PlatformTypeBadge: true,
@@ -174,6 +180,27 @@ describe('admin AccountsView lite account list', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+  })
+
+  it('opens a dedicated panel when adding a video account', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="create-video"]').trigger('click')
+    expect(wrapper.get('[data-test="video-account"]').text()).toBe('new-video')
+    expect(wrapper.get('[data-test="edit-account"]').text()).toBe('')
+    wrapper.unmount()
+  })
+
+  it('opens the dedicated video editor after loading a Seedance account', async () => {
+    getById.mockResolvedValueOnce({ ...fullAccount, type: 'apikey', credentials: { openai_capabilities: ['seedance'] } })
+    const wrapper = mountView()
+    await flushPromises()
+    const edit = wrapper.findAll('button').find(button => button.text().includes('common.edit'))!
+    await edit.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="video-account"]').text()).toBe(fullAccount.name)
+    expect(wrapper.get('[data-test="edit-account"]').text()).toBe('')
+    wrapper.unmount()
   })
 
   it('keeps lite=1 on the initial list request', async () => {

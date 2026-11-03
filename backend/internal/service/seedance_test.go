@@ -21,7 +21,7 @@ func seedanceTestAccount() *Account {
 }
 
 func TestSeedanceNativeForwarding(t *testing.T) {
-	body := []byte(`{"model":"video","content":[{"type":"text","text":"waves"},{"type":"image_url","image_url":{"url":"https://example.com/first.png"},"role":"first_frame"},{"type":"audio_url","audio_url":{"url":"https://example.com/audio.mp3"}}],"duration":-1,"generate_audio":true,"future_field":{"keep":true}}`)
+	body := []byte(`{"model":"video","content":[{"type":"text","text":"waves"},{"type":"image_url","image_url":{"url":"https://example.com/first.png"},"role":"reference_image"},{"type":"audio_url","audio_url":{"url":"https://example.com/audio.mp3"},"role":"reference_audio"}],"duration":-1,"generate_audio":true,"future_field":{"keep":true}}`)
 	upstream := &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(`{"id":"task-1"}`)}
 	svc := &OpenAIGatewayService{httpUpstream: upstream}
 	c, w := grokMediaContentTestContext(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
@@ -43,9 +43,9 @@ func TestSeedanceNativeForwarding(t *testing.T) {
 }
 
 func TestSeedanceStatusAndDelete(t *testing.T) {
-	for _, status := range []string{"queued", "running", "failed", "cancelled", "expired", "succeeded"} {
+	for _, status := range []string{"queued", "processing", "running", "failed", "cancelled", "expired", "succeeded"} {
 		t.Run(status, func(t *testing.T) {
-			body := `{"id":"task-1","status":"` + status + `","model":"ep-seedance","content":{"video_url":"https://cdn.example/video.mp4"},"usage":{"completion_tokens":12345}}`
+			body := `{"id":"task-1","status":"` + status + `","model":"ep-seedance","content":{"video_url":"https://cdn.example/video.mp4"},"usage":{"completion_tokens":12345,"total_tokens":23456}}`
 			upstream := &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(body)}
 			svc := &OpenAIGatewayService{httpUpstream: upstream}
 			c, w := grokMediaContentTestContext(http.MethodGet, "/api/v3/contents/generations/tasks/task-1", nil)
@@ -54,7 +54,7 @@ func TestSeedanceStatusAndDelete(t *testing.T) {
 			require.JSONEq(t, body, w.Body.String())
 			require.Equal(t, "/api/v3/contents/generations/tasks/task-1", upstream.request.URL.Path)
 			if status == "succeeded" {
-				require.Equal(t, 12345, result.Usage.OutputTokens)
+				require.Equal(t, 23456, result.Usage.OutputTokens)
 			} else {
 				require.Zero(t, result.Usage.OutputTokens)
 			}
@@ -109,4 +109,37 @@ func TestSeedancePreservesUpstreamErrorsWithoutRetry(t *testing.T) {
 	require.Equal(t, 429, w.Code)
 	require.Contains(t, w.Body.String(), "QuotaExceeded")
 	require.Len(t, upstream.requests, 1)
+}
+
+func TestSeedanceNewTokenAllModesPreserveMaterialReferences(t *testing.T) {
+	for _, tc := range []struct{ name, content, options string }{
+		{"text", `{"type":"text","text":"waves"}`, `"duration":8`},
+		{"first", `{"type":"text","text":"animate"},{"type":"image_url","image_url":{"url":"asset://ast-first"},"role":"first_frame"}`, `"ratio":"adaptive"`},
+		{"first_last", `{"type":"text","text":"transition"},{"type":"image_url","image_url":{"url":"https://cdn.example/first.png?sig=abc"},"role":"first_frame"},{"type":"image_url","image_url":{"url":"asset://ast-last"},"role":"last_frame"}`, `"ratio":"adaptive"`},
+		{"reference", `{"type":"text","text":"create"},{"type":"image_url","image_url":{"url":"asset://ast-image"},"role":"reference_image"},{"type":"video_url","video_url":{"url":"https://cdn.example/video.mp4?sig=abc"},"role":"reference_video"},{"type":"audio_url","audio_url":{"url":"asset://ast-audio"},"role":"reference_audio"}`, `"omni_reference_task_type":"reference"`},
+		{"edit", `{"type":"text","text":"recolor"},{"type":"video_url","video_url":{"url":"asset://ast-video"},"role":"reference_video"}`, `"omni_reference_task_type":"edit","ratio":"adaptive","duration":-1`},
+		{"extend", `{"type":"text","text":"continue"},{"type":"video_url","video_url":{"url":"https://cdn.example/video.mp4"},"role":"reference_video"}`, `"omni_reference_task_type":"extend","ratio":"adaptive","duration":30`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := []byte(`{"model":"public-video","resolution":"1080p","content":[` + tc.content + `],` + tc.options + `,"future_field":{"keep":true}}`)
+			account := seedanceTestAccount()
+			account.Credentials["base_url"] = SeedanceNewTokenBaseURL
+			account.Credentials["seedance_allowed_resolutions"] = []string{"1080p"}
+			account.Credentials["model_mapping"] = map[string]any{"public-video": "doubao-seedance-2-5-260628"}
+			upstream := &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(`{"id":"newtoken-task"}`)}
+			svc := &OpenAIGatewayService{httpUpstream: upstream}
+			c, w := grokMediaContentTestContext(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
+			_, err := svc.ForwardSeedance(context.Background(), c, account, SeedanceEndpointCreate, "", body)
+			require.NoError(t, err)
+			require.Equal(t, 200, w.Code)
+			require.Equal(t, "https://api.newtoken.club/api/v3/contents/generations/tasks", upstream.request.URL.String())
+			forwarded, err := io.ReadAll(upstream.request.Body)
+			require.NoError(t, err)
+			require.Equal(t, "doubao-seedance-2-5-260628", gjson.GetBytes(forwarded, "model").String())
+			for _, field := range []string{"content", "resolution", "duration", "ratio", "omni_reference_task_type", "future_field"} {
+				require.Equal(t, gjson.GetBytes(body, field).Raw, gjson.GetBytes(forwarded, field).Raw, field)
+			}
+			require.False(t, gjson.GetBytes(forwarded, "draft").Exists(), "optional fields must not be injected")
+		})
+	}
 }
