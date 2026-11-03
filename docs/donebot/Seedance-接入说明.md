@@ -1,6 +1,6 @@
 # Seedance 接入说明
 
-核对日期：2026-11-03。本次按 NewToken 的 Seedance 官方格式接入，视频需求取代早期方案中“视频仅留开关”的范围限制；音频不新增独立生成接口，参考音频属于视频请求中的素材。
+核对日期：2026-11-03。本次按 NewToken 的 Seedance 官方格式接入，视频需求取代早期方案中“视频仅留开关”的范围限制；本页的参考音频属于视频请求中的素材，独立音频生成另见 [APIMart 接入说明](APIMart-接入说明.md)。
 
 ## 来源与差异
 
@@ -28,7 +28,9 @@ NewToken 要求请求显式提供 `resolution`，且 `content` 至少包含一�
 2. 上游 Base URL 默认为 `https://api.newtoken.club`；使用供应商原生 Bearer API Key。视频账号复用现有 OpenAI API Key 账号类型，并启用 `seedance` 端点能力。
 3. 分辨率多选存放在 `credentials.seedance_allowed_resolutions`，例如 `["720p", "1080p"]`。新建面板默认勾选 `720p`。旧账号未保存该字段时不增加账号级限制，仍需满足模型与供应商 Key 的限制。
 4. 可调度能力取模型支持、账号勾选及上游 Key 权限的交集。请求不满足时应拒绝，不能把请求的分辨率静默降到其他值。
-5. DoneBot 模式需要设置 `DONEBOT_FEATURES_VIDEO=true`。分组模型开关、模型映射、用户余额、安装凭据、限流、账号调度和渠道定价继续使用现有链路。
+5. DoneBot 模式需要设置 `DONEBOT_FEATURES_VIDEO=true`。视频页按模型、官方分辨率、是否含参考视频设置最终售价（USD/输出秒）；缺少请求对应档位的价格时在调用上游前拒绝。分组模型开关、模型映射、用户余额、安装凭据、限流和账号调度继续使用现有链路。
+
+视频专用账号面板另有“上游产物存储方式”：默认“转发 URL”直接返回供应商地址；选择“系统存储策略”时将产物保存至 DoneBot 共享生成产物存储。该选择保存为账号 `extra.seedance_output_storage`（`upstream` / `system`），旧账号未设置时按 `upstream`。存储配置见[存储管理说明](存储管理说明.md)。
 
 模型别名映射到其他 Seedance 模型时，也必须满足映射后的模型能力。账号允许 `1080p` 不代表 Fast 或 Mini 支持 `1080p`。
 
@@ -191,11 +193,13 @@ GET  /api/v3/contents/generations/tasks/{id}
 
 NewToken 描述的状态为 `queued`、`processing`、`succeeded`、`failed`；官方还有 `running`、`cancelled`、`expired`。轮询方应保留并识别这些原生状态。任务绑定创建凭据及上游账号，查询继续使用原账号，避免素材归属或任务 ID 在其他渠道不可见。
 
-视频计费使用任务成功后返回的实际 `usage.total_tokens`，复用渠道 token 定价、分组倍率、用户余额和用量日志。`completion_tokens` 不一定等于总量；不能按视频秒数虚构 token，也不能使用 Grok 的按秒价格替代 Seedance 计量。重复查询同一成功任务只能记账一次；失败、取消或过期任务不按成功生成扣费。异步任务结果查询需要允许余额已经耗尽的创建者读取自己的结果，不能让用户因完成扣费而失去产物访问。
+视频按成功任务的实际输出秒数结算，复用现有分组模型价格卡、倍率、用户余额及用量日志。只有状态为 `succeeded` 且包含有效 `content.video_url` 才计费；优先使用正数 `frames / framespersecond`，否则使用正数 `duration`。请求时长和 token 数均不替代实际产出时长。重复查询同一成功任务只记账一次；失败、取消或过期任务不按成功生成扣费。余额耗尽的创建者仍可查询自己的已创建任务。
 
-兼容旧 Ark 响应时，仅在 `total_tokens` 字段不存在的情况下使用 `completion_tokens`；明确返回 0 或无效总量时不猜测用量。创建前的余额准入使用现有 token 预留估算，最终仍按成功查询中的实际总量结算。异步视频扣费复用原计费队列，队列满时同步降级执行，计费失败释放任务 claim 以供后续查询重试。Seedance 不使用图片生成权限开关或图片并发池；用户并发、账号并发和安装凭据归属校验继续生效。
+创建前按请求秒数估算余额，自动时长 `duration=-1` 保守估算 30 秒；最终按实际输出结算。视频延长按输出视频总时长计费，而非只算新增秒数。价格严格匹配模型、分辨率和有/无参考视频档位；图片或音频参考不算参考视频，不回退到其他档位或 Grok 价格。详情见[模型定价说明](模型定价说明.md)。
 
-NewToken 页面价格单位是人民币/百万 token，并按分辨率及是否包含参考视频区分。它不是现有美元账本的可直接填入值；运营方应在既有渠道定价中配置相应模型价格并确认币种和倍率。本次不新建报价单、预授权单或独立账本，也不把网页报价硬编码进网关。
+异步扣费复用原计费队列，队列满时同步降级，计费失败释放任务 claim 以供后续查询重试。Seedance 不使用图片生成权限开关或图片并发池；用户并发、账号并发和安装凭据归属校验继续生效。原生 `usage` 字段保持不变，可用于供应商成本核对。
+
+NewToken 页面按人民币/百万 token 报供应商成本，网关面向用户的本地售价按美元/输出秒配置，两者是不同计量口径。运营方应自行测算成本、币种及售价；网关不硬编码汇率或网页报价，不新建报价单、预授权单或独立账本。
 
 官方产物 URL 和任务记录有有效期，但 NewToken 未承诺完全相同的保留策略。需要长期保留的产物应在实际有效期内转存；上线前应确认供应商的保留、取消和异常任务收费政策。
 
@@ -204,9 +208,9 @@ NewToken 页面价格单位是人民币/百万 token，并按分辨率及是否�
 | 文件 | 改动原因 |
 | --- | --- |
 | `backend/internal/service/seedance.go`、`seedance_account.go` | 原生六种模式、素材引用、官方模型约束与账号分辨率筛选 |
-| `backend/internal/service/seedance_usage.go` | 按供应商实际总 token 计量，兼容旧 Ark 用量字段 |
+| `backend/internal/service/seedance_seconds_pricing.go`、`donebot_model_pricing.go` | 实际输出秒数、按模型/分辨率/参考视频档位定价 |
 | `backend/internal/service/admin_account.go`、`admin_seedance_account.go` | 创建、更新和批量更新时验证分辨率配置 |
-| `backend/internal/handler/grok_media.go`、`gateway_inflight_reservation.go`、`openai_gateway_handler.go` | 分辨率路由、并发槽释放、视频独立权限、token 预留及不可丢弃的异步计费 |
+| `backend/internal/handler/grok_media.go`、`gateway_inflight_reservation.go`、`openai_gateway_handler.go` | 分辨率路由、并发槽释放、视频独立权限、秒数余额估算及不可丢弃的异步计费 |
 | `backend/internal/server/middleware/api_key_auth.go` | 余额耗尽后仍允许鉴权通过的创建者查询原有任务 |
 | `frontend/src/components/account/VideoAccountModal.vue`、`videoAccount.ts`、`index.ts` | 专用创建和编辑面板、模型与官方分辨率选项 |
 | `frontend/src/views/admin/AccountsView.vue`、`components/admin/account/AccountTableActions.vue`、`i18n/locales/{zh,en}/admin/accounts.ts` | 添加视频账号入口、编辑分流与中英文文案 |
@@ -222,7 +226,7 @@ GOTOOLCHAIN=auto go test -tags=unit -p 1 ./...
 GOTOOLCHAIN=auto go test -race -tags=unit ./internal/service ./internal/handler ./internal/server/middleware -run '^Test(Seedance|CreateVideoAccount|CreateSeedanceAccount|UpdateSeedanceAccount|BulkUpdateSeedanceAccount|ValidateSeedance)' -count=1
 ```
 
-三条后端命令均通过，覆盖原生六种模式、素材引用原样透传、官方分辨率与映射后模型校验、连续跳过多个不合格账号、并发槽释放、任务归属、余额耗尽查询、token 预留、成功任务只计一次及计费队列溢出降级。未调用真实上游产生视频费用。
+初版 Seedance 接入时以上三条后端命令均通过，覆盖原生六种模式、素材引用原样透传、官方分辨率与映射后模型校验、连续跳过多个不合格账号、并发槽释放、任务归属、余额耗尽查询、余额预留、成功任务只计一次及计费队列溢出降级。未调用真实上游产生视频费用。
 
 前端在 `frontend/` 执行：
 
@@ -233,7 +237,7 @@ pnpm test:run
 pnpm build
 ```
 
-前端全量 387 个文件、3077 项测试通过，lint、类型检查和构建通过。构建保留既有的大 chunk、Browserslist 和导入方式提示，未因此升级依赖。页面使用本地 API fixture 验证桌面 1280×960 和手机 390×844，页面与面板均无横向溢出；编辑时密钥输入为空，原有分辨率勾选正确。
+当前前端全量 393 个文件、3116 项测试通过，包含 APIMart、逐模型定价、统一存储、视频产物策略及备份页兼容；最后移除过时静态存储警告后相关 3 项测试通过。lint、类型检查和构建通过。构建保留既有的大 chunk、Browserslist 和导入方式提示，未因此升级依赖。页面使用本地 API fixture 验证桌面 1280×960 和手机 390×844，页面与面板均无横向溢出；编辑时密钥输入为空，原有分辨率勾选正确。
 
 | 桌面编辑 | 手机分辨率选项 |
 | --- | --- |
@@ -243,5 +247,5 @@ pnpm build
 
 - 使用真实 NewToken Key，分别验证上面的六种输入模式以及 `asset://` / 公网 URL 混合输入；离线测试不证明供应商账号拥有这些权限。
 - 确认 Key 分组支持勾选的分辨率，尤其 2.0 的 `4k`、2.5 的 `1080p`；Fast/Mini 只申请其支持的分辨率。
-- 对照供应商账单检查成功任务的 `usage.total_tokens`、渠道币种、倍率及重复轮询只扣一次；确认余额耗尽后仍可查询自己的已创建任务。
+- 核对成功任务的实际输出时长、模型/分辨率/参考视频秒价与最终扣费，并单独对照供应商 token 成本；确认重复轮询只扣一次；确认余额耗尽后仍可查询自己的已创建任务。
 - 如需取消，单独验证 NewToken 对 `DELETE` 的支持及其计费规则。

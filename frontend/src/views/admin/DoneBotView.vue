@@ -12,7 +12,7 @@
         </div>
       </div>
       <div class="card min-w-0 space-y-5 p-4 sm:p-6">
-        <div role="tablist" class="flex gap-2 border-b border-gray-200 pb-3 dark:border-gray-700">
+        <div role="tablist" class="flex flex-wrap gap-2 border-b border-gray-200 pb-3 dark:border-gray-700">
           <button
             v-for="tab in tabs"
             :key="tab.id"
@@ -23,13 +23,11 @@
             @click="active = tab.id"
           >{{ tab.label }}</button>
         </div>
-        <p
-          v-if="active === 'images' && overview?.asset_storage?.driver === 'local' && !overview.asset_storage.public_base_url_configured"
-          role="alert"
-          class="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
-        >当前地址无法被上游拉取，图片编辑和多模态请求会失败。请配置 asset_storage.public_base_url。</p>
         <LlmModelsPanel v-if="active === 'llm'" />
-        <ImageModelsPanel v-else />
+        <ImageModelsPanel v-else-if="active === 'images'" />
+        <AudioModelsPanel v-else-if="active === 'audio'" />
+        <VideoModelsPanel v-else-if="active === 'video'" />
+        <StoragePanel v-else-if="active === 'storage'" />
       </div>
       <div class="card p-4 sm:p-6"><InstallList /></div>
     </div>
@@ -38,17 +36,22 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LlmModelsPanel from '@/components/admin/donebot/LlmModelsPanel.vue'
 import ImageModelsPanel from '@/components/admin/donebot/ImageModelsPanel.vue'
+import AudioModelsPanel from '@/components/admin/donebot/AudioModelsPanel.vue'
+import VideoModelsPanel from '@/components/admin/donebot/VideoModelsPanel.vue'
+import StoragePanel from '@/components/admin/donebot/StoragePanel.vue'
 import InstallList from '@/components/admin/donebot/InstallList.vue'
 import donebot, { type Overview, type Modality } from '@/api/admin/donebot'
 import { useAppStore } from '@/stores/app'
 
 const app = useAppStore()
-const active = ref<Modality>('llm')
+const route = useRoute()
+const active = ref<Modality | 'storage'>(route.query.tab === 'storage' ? 'storage' : 'llm')
 const overview = ref<Overview | null>(null)
-const tabs = [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }]
+const tabs = computed(() => [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }, ...(overview.value?.features?.audio ? [{ id: 'audio' as const, label: '音频' }] : []), ...(overview.value?.features?.video ? [{ id: 'video' as const, label: '视频' }] : []), { id: 'storage' as const, label: '存储' }])
 const metrics = computed(() => [
   { label: '已绑定用户', value: overview.value?.user_count },
   { label: '启用模型', value: overview.value?.model_count },

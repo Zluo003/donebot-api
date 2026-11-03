@@ -22,7 +22,7 @@ func doneBotMediaGate(cfg *config.Config) gin.HandlerFunc {
 				video = true
 			case "contents":
 				video = true
-			case "tts", "stt", "custom-voices", "realtime", "live":
+			case "tts", "stt", "custom-voices", "realtime", "live", "audio", "music":
 				audio = true
 			}
 		}

@@ -15,6 +15,8 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUp middleware.StepUpAuthMiddleware) {
 	if h.Admin.DoneBot != nil {
 		donebot := admin.Group("/donebot")
+		donebot.GET("/storage", h.Admin.DoneBot.Storage)
+		donebot.PUT("/storage", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateStorage)
 		donebot.GET("/overview", h.Admin.DoneBot.Overview)
 		donebot.GET("/llm/models", h.Admin.DoneBot.LlmModels)
 		donebot.PUT("/llm/models", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateLlmModels)
@@ -25,6 +27,14 @@ func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, ste
 		donebot.PUT("/images/models", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateImageModels)
 		donebot.PUT("/images/pricing", gin.HandlerFunc(stepUp), h.Admin.DoneBot.ImagePricing)
 		donebot.POST("/images/models/sync", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SyncImageModels)
+		donebot.GET("/audio/models", h.Admin.DoneBot.AudioModels)
+		donebot.PUT("/audio/models", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateAudioModels)
+		donebot.PUT("/audio/pricing", gin.HandlerFunc(stepUp), h.Admin.DoneBot.AudioPricing)
+		donebot.POST("/audio/models/sync", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SyncAudioModels)
+		donebot.GET("/video/models", h.Admin.DoneBot.VideoModels)
+		donebot.PUT("/video/models", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateVideoModels)
+		donebot.PUT("/video/pricing", gin.HandlerFunc(stepUp), h.Admin.DoneBot.VideoPricing)
+		donebot.POST("/video/models/sync", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SyncVideoModels)
 		installs := donebot.Group("/installs")
 		installs.GET("", h.Admin.DoneBot.List)
 		installs.DELETE("/:id", gin.HandlerFunc(stepUp), h.Admin.DoneBot.Revoke)

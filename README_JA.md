@@ -6,11 +6,12 @@ DoneBot 専用のモデルゲートウェイです。開発・配布元は **[Zl
 
 ## 機能
 
-- DoneBot composite グループ、モデル許可リスト、チャネル価格と倍率。
+- DoneBot composite グループ、モデル許可リスト、モデル別の販売単価。既存のグループ価格カードを使い、チャネル既定価格より優先します。
 - ログインしたユーザーと端末に紐づくインストール認証情報。DoneBot モードでは通常の API Key 管理を非表示にします。
 - LLM、同期・非同期画像生成、ローカル / S3 互換ストレージ（R2、OSS、MinIO）。
 - NewToken 経由の Seedance 2.0 / Fast / Mini / 2.5。最初のフレーム、最初と最後のフレーム、参照素材、2.5 の動画編集・延長に対応します。動画アカウント専用パネルで解像度を選択できます。
-- LLM と Seedance は実際の token 使用量、画像は枚数・サイズで課金します。
+- APIMart Seedream 5.0 Flash、Suno の歌曲・器楽生成、TTS。専用アカウントパネルと音声モデル管理を提供します。
+- LLM は token、画像は実際の枚数・サイズ、Seedance は出力秒数、Suno は生成回数、TTS は Unicode 文字数で課金します。
 
 ## Linux インストール
 
@@ -54,9 +55,11 @@ donebot:
 
 Docker では生成された `.env`、バイナリインストールでは `/etc/sub2api/environment` を編集します。ローカル素材と非同期画像を使う前に `ASSET_STORAGE_PUBLIC_BASE_URL=https://ゲートウェイの公開ドメイン` を設定し、`/assets/*` をゲートウェイへプロキシしてください。変更後は再起動します。Docker では設定全体を `/app/data/config.yaml` にマウントすることもできます。詳細は[設定例](deploy/config.example.yaml)と[導入記録](docs/donebot/验收记录.md)を参照してください。
 
-管理画面で上流アカウントとチャネル価格を設定し、DoneBot モデルを同期・有効化します。ログイン済みユーザーは `POST /api/v1/donebot/installations/claim` から端末の認証情報を取得します。認証情報は初回のみ返され、そのユーザーと端末に紐づきます。
+DoneBot → ストレージでアップロード素材と生成結果の共有ポリシーを管理します。容量、保存期間、ローカル/S3 の設定は[ストレージガイド](docs/donebot/存储管理说明.md)を参照してください。
 
-Seedance を使う場合は `DONEBOT_FEATURES_VIDEO=true` を設定し、動画アカウントの上流 URL を `https://api.newtoken.club` にします。公式解像度、`asset://` / 公開 URL 素材、編集・延長と token 課金については [Seedance ガイド](docs/donebot/Seedance-接入说明.md)を参照してください。独立した音声生成フローは追加していません。
+管理画面で上流アカウントを設定し、DoneBot の各モデルの販売単価を入力して同期・有効化します。グループのモデル価格はチャネル既定価格より優先します。[価格ガイド](docs/donebot/模型定价说明.md)を参照してください。ログイン済みユーザーは `POST /api/v1/donebot/installations/claim` から端末の認証情報を取得します。認証情報は初回のみ返され、そのユーザーと端末に紐づきます。
+
+Seedance を使う場合は `DONEBOT_FEATURES_VIDEO=true` を設定し、動画アカウントの上流 URL を `https://api.newtoken.club` にします。公式解像度、`asset://` / 公開 URL 素材、編集・延長と秒単価については [Seedance ガイド](docs/donebot/Seedance-接入说明.md)を参照してください。APIMart の上流 URL は `https://api.apimart.ai` です。Suno / TTS は `DONEBOT_FEATURES_AUDIO=true` で有効化します。[APIMart ガイド](docs/donebot/APIMart-接入说明.md)を参照してください。管理者はサイドバーのバージョン表示から正式バイナリをオンライン更新できます。
 
 ## ソースからビルド
 
@@ -74,7 +77,10 @@ GOTOOLCHAIN=auto CGO_ENABLED=0 go build -tags=embed -trimpath -o bin/sub2api ./c
 ## ドキュメント・問い合わせ
 
 - [デプロイガイド](deploy/README.md)
+- [ストレージ管理](docs/donebot/存储管理说明.md)
 - [DoneBot ゲートウェイドキュメント](docs/donebot/README.md)
+- [モデル価格](docs/donebot/模型定价说明.md)
+- [APIMart](docs/donebot/APIMart-接入说明.md)
 - [Seedance](docs/donebot/Seedance-接入说明.md)
 - [Issues](https://github.com/Zluo003/donebot-api/issues) · [Releases](https://github.com/Zluo003/donebot-api/releases)
 

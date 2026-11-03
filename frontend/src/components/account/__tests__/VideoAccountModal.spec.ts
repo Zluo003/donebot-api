@@ -35,6 +35,7 @@ describe('Seedance video account panel', () => {
     expect(wrapper.get<HTMLInputElement>('[data-testid="video-resolution-720p"]').element.checked).toBe(true)
     expect(wrapper.findAll('[data-testid^="video-resolution-"]')).toHaveLength(4)
     expect(wrapper.findAll('[data-testid^="video-model-"]')).toHaveLength(4)
+    expect(wrapper.get<HTMLSelectElement>('[data-testid=video-output-storage]').element.value).toBe('upstream')
     await wrapper.get('[data-testid="video-name"]').setValue('Video upstream')
     await wrapper.get('[data-testid="video-api-key"]').setValue('upstream-test-secret')
     await wrapper.get('[data-testid="video-resolution-1080p"]').setValue(true)
@@ -43,7 +44,7 @@ describe('Seedance video account panel', () => {
     await flushPromises()
     expect(mocks.run).toHaveBeenCalledOnce()
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Video upstream', platform: 'openai', type: 'apikey', group_ids: [7],
+      name: 'Video upstream', platform: 'openai', type: 'apikey', group_ids: [7], extra: { seedance_output_storage: 'upstream' },
       credentials: {
         api_key: 'upstream-test-secret', base_url: 'https://api.newtoken.club', openai_capabilities: ['seedance'],
         seedance_allowed_resolutions: ['720p', '1080p'], model_mapping: Object.fromEntries(SEEDANCE_MODELS.map(model => [model.id, model.id]))
@@ -75,6 +76,16 @@ describe('Seedance video account panel', () => {
     expect(wrapper.emitted('updated')).toHaveLength(1)
   })
 
+  it('supports the shared generated storage policy and preserves other account settings', async () => {
+    const wrapper = setup({ id: 2, name: 'Stored video', platform: 'openai', type: 'apikey', extra: { seedance_output_storage: 'system', existing_setting: true }, credentials: { openai_capabilities: ['seedance'] } } as Account)
+    expect(wrapper.get<HTMLSelectElement>('[data-testid=video-output-storage]').element.value).toBe('system')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(mocks.update).toHaveBeenCalledWith(2, expect.objectContaining({ extra: { seedance_output_storage: 'system', existing_setting: true } }))
+    await wrapper.get('[data-testid=video-output-storage]').setValue('upstream')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(mocks.update).toHaveBeenLastCalledWith(2, expect.objectContaining({ extra: { seedance_output_storage: 'upstream', existing_setting: true } }))
+  })
+
   it('rejects an empty resolution selection before writing', async () => {
     const wrapper = setup()
     await wrapper.get('[data-testid="video-name"]').setValue('Video')
@@ -89,6 +100,7 @@ describe('Seedance video account panel', () => {
   it('initializes legacy unrestricted Seedance accounts with supported models and clears replacement keys on close', async () => {
     const wrapper = setup({ id: 3, name: 'Legacy', platform: 'openai', type: 'apikey', credentials: { openai_capabilities: ['seedance'] } } as Account)
     expect(wrapper.findAll<HTMLInputElement>('[data-testid^="video-model-"]').every(input => input.element.checked)).toBe(true)
+    expect(wrapper.get<HTMLSelectElement>('[data-testid=video-output-storage]').element.value).toBe('upstream')
     await wrapper.get('[data-testid="video-api-key"]').setValue('replacement-key')
     await wrapper.setProps({ show: false })
     await wrapper.setProps({ show: true })

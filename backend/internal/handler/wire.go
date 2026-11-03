@@ -139,13 +139,16 @@ func ProvideOpenAIGatewayHandler(
 	cfg *config.Config,
 	coordinator *securityaudit.Coordinator,
 	compositeResolver *service.CompositeRouteResolver,
+	assets *service.AssetService,
 ) *OpenAIGatewayHandler {
 	gatewayService.SetPluginManager(pluginManager)
+	gatewayService.SetGeneratedMediaAssets(assets)
 	h := NewOpenAIGatewayHandler(gatewayService, concurrencyService, billingCacheService, apiKeyService,
 		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, cfg)
 	h.compositeResolver = compositeResolver
 	h.securityAuditCoordinator = coordinator
 	h.grokMediaEligibilityProber = grokQuotaService
+	gatewayService.StartAPIMartSettlements(apiKeyService)
 	return h
 }
 
@@ -243,7 +246,7 @@ func ProvideHandlers(
 var ProviderSet = wire.NewSet(
 	NewAssetHandler,
 	NewDoneBotHandler,
-	admin.NewDoneBotHandler,
+	admin.ProvideDoneBotHandler,
 	// Top-level handlers
 	NewAuthHandler,
 	NewUserHandler,

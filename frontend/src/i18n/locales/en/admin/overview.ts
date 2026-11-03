@@ -104,6 +104,9 @@ export default {
         saved: 'S3 configuration saved'
       },
       imageStorage: {
+        donebotTitle: 'Generated output storage',
+        donebotDescription: 'Videos, music and async images share the DoneBot generated output policy. Uploads use a separate policy. Configure both in DoneBot storage.',
+        donebotAction: 'Manage DoneBot storage',
         title: 'Async image object storage',
         description: 'Enables the asynchronous image endpoints and offloads generated images to object storage, keeping only short links in Redis. Shares the S3 client with backups and takes effect on save — no restart needed.',
         enabled: 'Enable async image tasks',

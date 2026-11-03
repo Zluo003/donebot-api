@@ -453,3 +453,17 @@ func TestReleaseUsageBillingBatchImageBalance_SkipsWhenHoldNeverReserved(t *test
 	require.NoError(t, tx.Commit())
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestUsageChargeLookupChecksLiveAndArchiveKeys(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	repo := &usageBillingRepository{db: db}
+	for _, found := range []bool{true, false} {
+		mock.ExpectQuery(`(?s)SELECT EXISTS.*usage_billing_dedup.*usage_billing_dedup_archive`).WithArgs("seedance:task", int64(7)).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(found))
+		got, err := repo.HasUsageCharge(context.Background(), "seedance:task", 7)
+		require.NoError(t, err)
+		require.Equal(t, found, got)
+	}
+	require.NoError(t, mock.ExpectationsWereMet())
+}

@@ -6,9 +6,9 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// NewToken settles the native Seedance task from total_tokens. Older Ark
-// responses may expose only completion_tokens; never estimate real usage from
-// video duration, or fall back when total_tokens was explicitly invalid.
+// Preserve native token counts for usage reporting; local Seedance billing uses
+// actual output seconds. Older Ark responses expose only completion_tokens; an
+// explicitly invalid total_tokens must not be replaced with a different value.
 func seedanceCompletionTokens(body []byte) int {
 	tokens := gjson.GetBytes(body, "usage.total_tokens")
 	if !tokens.Exists() {

@@ -1,8 +1,17 @@
 import { describe, it, expect, vi } from 'vitest'
-import donebot from '../donebot'
+import donebot, { type StorageSettings } from '../donebot'
 import { apiClient } from '../../client'
 vi.mock('../../client', () => ({ apiClient: { get: vi.fn(), put: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 describe('DoneBot admin API', () => {
+ it('loads and saves the two shared storage policies', async () => {
+  const policies = { upload: { driver: 'local' }, generated: { driver: 's3' } } as StorageSettings
+  vi.mocked(apiClient.get).mockResolvedValue({ data: policies })
+  vi.mocked(apiClient.put).mockResolvedValue({ data: policies })
+  expect(await donebot.storage()).toEqual(policies)
+  expect(apiClient.get).toHaveBeenCalledWith('/admin/donebot/storage')
+  expect(await donebot.saveStorage(policies)).toEqual(policies)
+  expect(apiClient.put).toHaveBeenCalledWith('/admin/donebot/storage', policies)
+ })
  it('saves model selection and group pricing separately', async () => {
   vi.mocked(apiClient.put).mockResolvedValue({ data: { models: [] } })
   await donebot.models('llm', [{ model: 'gpt-test', enabled: false }])

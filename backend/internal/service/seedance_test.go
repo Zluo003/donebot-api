@@ -27,6 +27,8 @@ func TestSeedanceNativeForwarding(t *testing.T) {
 	c, w := grokMediaContentTestContext(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
 	result, err := svc.ForwardSeedance(context.Background(), c, seedanceTestAccount(), SeedanceEndpointCreate, "", body)
 	require.NoError(t, err)
+	require.Empty(t, w.Body.String(), "create remains uncommitted until its settlement job is durable")
+	svc.WriteSeedanceCreateResponse(c, result)
 	require.JSONEq(t, `{"id":"task-1"}`, w.Body.String())
 	require.Equal(t, "seedance:task-1", result.ResponseID)
 	require.Zero(t, result.Usage.OutputTokens)
@@ -45,7 +47,7 @@ func TestSeedanceNativeForwarding(t *testing.T) {
 func TestSeedanceStatusAndDelete(t *testing.T) {
 	for _, status := range []string{"queued", "processing", "running", "failed", "cancelled", "expired", "succeeded"} {
 		t.Run(status, func(t *testing.T) {
-			body := `{"id":"task-1","status":"` + status + `","model":"ep-seedance","content":{"video_url":"https://cdn.example/video.mp4"},"usage":{"completion_tokens":12345,"total_tokens":23456}}`
+			body := `{"id":"task-1","status":"` + status + `","model":"ep-seedance","duration":30,"resolution":"1080p","content":{"video_url":"https://cdn.example/video.mp4"},"usage":{"completion_tokens":12345,"total_tokens":23456}}`
 			upstream := &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(body)}
 			svc := &OpenAIGatewayService{httpUpstream: upstream}
 			c, w := grokMediaContentTestContext(http.MethodGet, "/api/v3/contents/generations/tasks/task-1", nil)
@@ -58,7 +60,13 @@ func TestSeedanceStatusAndDelete(t *testing.T) {
 			} else {
 				require.Zero(t, result.Usage.OutputTokens)
 			}
-			require.Zero(t, result.VideoCount, "must use token billing, not Grok seconds")
+			if status == "succeeded" {
+				require.Equal(t, 1, result.VideoCount)
+				require.Equal(t, 30.0, result.VideoActualDurationSeconds)
+				require.Equal(t, "1080p", result.VideoResolution)
+			} else {
+				require.Zero(t, result.VideoCount)
+			}
 		})
 	}
 	upstream := &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse("")}

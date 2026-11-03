@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -180,7 +181,38 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	}
 
 	// 余额模式在途预留（与计费同口径估算；计费任务扣减余额缓存后才释放）。
-	inflightDone, inflightErr := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, grokMediaInflightEstimate(endpoint, routingModel, requestInfo, body))
+	var inflightDone func()
+	var inflightErr error
+	seedanceReservationTransferred := false
+	if endpoint == service.SeedanceEndpointCreate {
+		if !h.gatewayService.APIMartSettlementAvailable() {
+			h.errorResponse(c, 503, "api_error", "Seedance background settlement is unavailable")
+			return
+		}
+		amount, priced := h.gatewayService.SeedanceInflightCost(c.Request.Context(), apiKey, routingModel, requestInfo)
+		if !priced {
+			h.errorResponse(c, 503, "api_error", "Seedance model has no configured price for this resolution and reference-video tier")
+			return
+		}
+		inflightDone = func() {}
+		if h.cfg == nil || h.cfg.RunMode != config.RunModeSimple {
+			var reservation *service.InflightReservation
+			reservation, inflightErr = h.billingCacheService.ReserveFixedCharge(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, amount)
+			subscriptionMode := apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && subscription != nil
+			if inflightErr == nil && amount > 0 && reservation == nil && !subscriptionMode {
+				h.errorResponse(c, 503, "api_error", "Seedance balance reservation is unavailable")
+				return
+			}
+			if reservation != nil {
+				reservation.KeepAlive()
+				c.Request = c.Request.WithContext(service.WithInflightReservation(c.Request.Context(), reservation))
+				inflightDone = func() { reservation.HandlerDone() }
+			}
+		}
+	} else {
+		inflightDone, inflightErr = reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, grokMediaInflightEstimate(endpoint, routingModel, requestInfo, body))
+	}
+
 	if inflightErr != nil {
 		status, code, message, retryAfter := billingErrorDetails(inflightErr)
 		if retryAfter > 0 {
@@ -189,7 +221,11 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		h.errorResponse(c, status, code, message)
 		return
 	}
-	defer inflightDone()
+	defer func() {
+		if !seedanceReservationTransferred {
+			inflightDone()
+		}
+	}()
 
 	sessionSeed := body
 	if len(sessionSeed) == 0 && strings.TrimSpace(requestID) != "" {
@@ -211,7 +247,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	// Grok 媒体（图片/视频生成与视频查询）按媒体倍率计费，不在 token 利润门
 	// 范围内：显式豁免，防止 service 层防御性装门按文本 D 误过滤媒体请求，
 	// 也防止已计费的在途视频任务因绑定账号被门排除而查询返回伪 404。
-	requestCtx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
+	requestCtx := service.WithAssetOwnerKeyID(service.WithOpenAIProfitControlSuppressed(c.Request.Context()), apiKey.ID)
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
@@ -489,17 +525,13 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			return
 		}
 
+		if endpoint == service.SeedanceEndpointCreate {
+			result.BillingModel = h.gatewayService.SeedanceBillingModel(requestCtx, apiKey, result.BillingModel)
+		}
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account, grokMediaScheduleModel(account, routingModel, result), true, nil)
 		if isGrokVideoCreateEndpoint(endpoint) && strings.TrimSpace(result.ResponseID) != "" {
-			if err := h.gatewayService.BindGrokMediaVideoRequestAccount(
-				requestCtx, apiKey.GroupID, result.ResponseID, subject.UserID, apiKey.ID, account.ID,
-			); err != nil {
-				reqLog.Warn("grok_media.bind_video_request_account_failed",
-					zap.Int64("account_id", account.ID),
-					zap.String("request_id", result.ResponseID),
-					zap.Error(err),
-				)
-			}
+			persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(requestCtx), 15*time.Second)
+			defer persistCancel()
 			// Defer billing until status polling observes video.url. Persist create-time
 			// model/duration/resolution so status can still price if upstream omits them.
 			// Retry once: missing pending causes silent underpricing (status omits resolution).
@@ -508,20 +540,51 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				BillingModel:         firstNonEmptyString(result.BillingModel, requestModel),
 				UpstreamModel:        result.UpstreamModel,
 				VideoResolution:      result.VideoResolution,
+				VideoReference:       result.VideoReference,
 				VideoDurationSeconds: result.VideoDurationSeconds,
 				OriginalModel:        clientRequestedModel(c, requestModel),
 				// Wall-clock start for usage duration_ms: create accepted → first done discovery.
 				CreatedAt: videoCreateStartedAt,
 			}
-			if err := h.gatewayService.StoreGrokVideoPendingBilling(requestCtx, result.ResponseID, subject.UserID, apiKey.ID, pending); err != nil {
+			if endpoint == service.SeedanceEndpointCreate && h.gatewayService.APIMartSettlementAvailable() {
+				job := service.APIMartSettlementJob{Provider: "seedance", TaskID: strings.TrimPrefix(result.ResponseID, "seedance:"), UserID: subject.UserID, APIKeyID: apiKey.ID, GroupID: apiKey.Group.ID, AccountID: account.ID, VideoPending: &pending, UserAgent: c.GetHeader("User-Agent"), IPAddress: ip.GetClientIP(c), QuotaPlatform: service.QuotaPlatform(requestCtx, apiKey)}
+				if subscription != nil {
+					job.SubscriptionID = subscription.ID
+				}
+				if err := h.gatewayService.EnqueueAPIMartSettlement(persistCtx, job, service.InflightReservationFromContext(requestCtx)); err != nil {
+					reqLog.Error("seedance.queue_settlement_failed", zap.String("task_id", result.ResponseID), zap.Error(err))
+					h.errorResponse(c, 503, "api_error", "Accepted task "+strings.TrimPrefix(result.ResponseID, "seedance:")+" could not be queued; do not resubmit")
+					return
+				} else {
+					seedanceReservationTransferred = true
+				}
+			}
+			if err := h.gatewayService.BindGrokMediaVideoRequestAccount(
+				persistCtx, apiKey.GroupID, result.ResponseID, subject.UserID, apiKey.ID, account.ID,
+			); err != nil {
+				if endpoint == service.SeedanceEndpointCreate {
+					h.errorResponse(c, 503, "api_error", "Accepted task "+strings.TrimPrefix(result.ResponseID, "seedance:")+" could not be bound; do not resubmit")
+					return
+				}
+				reqLog.Warn("grok_media.bind_video_request_account_failed",
+					zap.Int64("account_id", account.ID),
+					zap.String("request_id", result.ResponseID),
+					zap.Error(err),
+				)
+			}
+			if err := h.gatewayService.StoreGrokVideoPendingBilling(persistCtx, result.ResponseID, subject.UserID, apiKey.ID, pending); err != nil {
 				reqLog.Warn("grok_media.store_video_pending_billing_failed_retrying",
 					zap.Int64("account_id", account.ID),
 					zap.String("request_id", result.ResponseID),
 					zap.Error(err),
 				)
-				if err2 := h.gatewayService.StoreGrokVideoPendingBilling(requestCtx, result.ResponseID, subject.UserID, apiKey.ID, pending); err2 != nil {
+				if err2 := h.gatewayService.StoreGrokVideoPendingBilling(persistCtx, result.ResponseID, subject.UserID, apiKey.ID, pending); err2 != nil {
 					// Response body may already be committed; completion path will fail-closed
 					// when pending is still missing and status cannot price duration.
+					if endpoint == service.SeedanceEndpointCreate {
+						h.errorResponse(c, 503, "api_error", "Accepted task "+strings.TrimPrefix(result.ResponseID, "seedance:")+" could not be persisted; do not resubmit")
+						return
+					}
 					reqLog.Error("grok_media.store_video_pending_billing_failed",
 						zap.Int64("account_id", account.ID),
 						zap.String("request_id", result.ResponseID),
@@ -529,6 +592,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					)
 				}
 			}
+		}
+		if endpoint == service.SeedanceEndpointCreate {
+			h.gatewayService.WriteSeedanceCreateResponse(c, result)
 		}
 		// Status poll OR content download can observe official done+video.url.
 		// Both paths share the same claim key so the customer is charged once.
@@ -772,6 +838,14 @@ func recordGrokMediaUsage(
 		}
 	}
 	h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
+		if videoTaskID != "" {
+			if recorded, lookupErr := h.gatewayService.UsageAlreadyRecorded(ctx, result.RequestID, apiKey.ID); lookupErr != nil {
+				reqLog.Warn("grok_media.billing_lookup_failed", zap.Error(lookupErr))
+				return
+			} else if recorded {
+				return
+			}
+		}
 		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 			Result:             result,
 			APIKey:             apiKey,

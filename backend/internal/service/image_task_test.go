@@ -106,7 +106,7 @@ func TestProvideImageTaskServiceLocalRequiresPublicAssetBaseURL(t *testing.T) {
 	cfg := &config.Config{DoneBot: config.DoneBotConfig{Enabled: true}, ImageStorage: config.ImageStorageConfig{Enabled: true, Driver: "local"}}
 	cfg.AssetStorage.Driver = "local"
 	store := &imageTaskMemoryStore{}
-	assets := &AssetService{}
+	assets := &AssetService{cfg: cfg}
 	require.False(t, ProvideImageTaskService(store, nil, assets, cfg).Enabled())
 	cfg.AssetStorage.PublicBaseURL = "https://assets.example.test"
 	require.True(t, ProvideImageTaskService(store, nil, assets, cfg).Enabled())

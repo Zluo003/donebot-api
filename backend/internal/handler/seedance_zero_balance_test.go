@@ -26,6 +26,8 @@ func TestSeedanceOwnedTaskLookupSurvivesZeroBalance(t *testing.T) {
 	c, w := grokMediaSlotContext(context.Background(), true)
 	key, _ := middleware.GetAPIKeyFromContext(c)
 	key.Group.Platform = service.PlatformOpenAI
+	p := 0.1
+	key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"ep-seedance"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "720p|standard", PerRequestPrice: &p}}}}
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"ep-seedance","content":[{"type":"text","text":"waves"}]}`))
 	h.SeedanceTasks(c)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
@@ -35,6 +37,8 @@ func TestSeedanceOwnedTaskLookupSurvivesZeroBalance(t *testing.T) {
 	c, w = grokMediaSlotContext(context.Background(), false)
 	key, _ = middleware.GetAPIKeyFromContext(c)
 	key.Group.Platform = service.PlatformOpenAI
+	p = 0.1
+	key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"ep-seedance"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "720p|standard", PerRequestPrice: &p}}}}
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v3/contents/generations/tasks/native-task", nil)
 	c.Params = gin.Params{{Key: "task_id", Value: "native-task"}}
 	h.SeedanceTasks(c)
@@ -54,6 +58,8 @@ func TestSeedanceCreationUsesVideoPermissionsAndConcurrency(t *testing.T) {
 			c, w := grokMediaSlotContext(context.Background(), true)
 			key, _ := middleware.GetAPIKeyFromContext(c)
 			key.Group.Platform = service.PlatformOpenAI
+			p := 0.1
+			key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"ep-seedance"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "720p|standard", PerRequestPrice: &p}}}}
 			if scenario == "images disabled" {
 				key.Group.AllowImageGeneration = false
 			} else {

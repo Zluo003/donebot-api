@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -27,6 +29,9 @@ func (s *doneBotCatalogAdminStub) UpdateGroup(_ context.Context, _ int64, u *Upd
 	s.update = u
 	if u.ModelAllowlist != nil {
 		s.group.ModelAllowlist = *u.ModelAllowlist
+	}
+	if u.ModelPricing != nil {
+		s.group.ModelPricing = *u.ModelPricing
 	}
 	if u.RateMultiplier != nil {
 		s.group.RateMultiplier = *u.RateMultiplier
@@ -73,7 +78,7 @@ func TestDoneBotCatalogIntersectsAvailableAndPricedModels(t *testing.T) {
 	s, a := doneBotCatalogFixture()
 	rows, err := s.catalog(context.Background(), a.group)
 	require.NoError(t, err)
-	require.Len(t, rows, 2)
+	require.Len(t, rows, 3)
 	require.Equal(t, "gpt-image-test", rows[0].Model)
 	require.Equal(t, "images", rows[0].Kind)
 	require.Equal(t, "gpt-test", rows[1].Model)
@@ -124,7 +129,11 @@ func TestDoneBotCatalogRequiresActiveBoundChannelAndAccount(t *testing.T) {
 	s.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusDisabled, GroupIDs: []int64{7}}}}
 	rows, err = s.catalog(context.Background(), a.group)
 	require.NoError(t, err)
-	require.Empty(t, rows)
+	require.Len(t, rows, 3)
+	for _, row := range rows {
+		require.False(t, row.PricingConfigured)
+		require.False(t, row.Enabled)
+	}
 }
 func TestDoneBotUnavailableModelsRemainVisibleAndCanBeDisabled(t *testing.T) {
 	s, a := doneBotCatalogFixture()
@@ -133,7 +142,7 @@ func TestDoneBotUnavailableModelsRemainVisibleAndCanBeDisabled(t *testing.T) {
 	s.accounts = doneBotCatalogAccountsStub{}
 	rows, err := s.catalog(ctx, a.group)
 	require.NoError(t, err)
-	require.Len(t, rows, 1)
+	require.Len(t, rows, 2)
 	require.False(t, rows[0].Available)
 	require.NoError(t, s.updateModels(ctx, a.group, "llm", []DoneBotModelToggle{{Model: "gpt-test", Enabled: false}}))
 	require.Error(t, s.updateModels(ctx, a.group, "llm", []DoneBotModelToggle{{Model: "gpt-test", Enabled: true}}))
@@ -153,13 +162,16 @@ func TestDoneBotImageEffectivePricesFollowExistingGroupFields(t *testing.T) {
 	require.InDelta(t, 0.08, *rows[0].EffectiveImagePrices["2K"], 1e-12)
 	require.InDelta(t, 0.000004, *rows[0].EffectiveImagePrices["1K"], 1e-12)
 }
-func TestDoneBotCatalogDoesNotOfferUnpricedOrPerRequestTextModels(t *testing.T) {
+func TestDoneBotCatalogOffersUnpricedModelsForConfiguration(t *testing.T) {
 	s, a := doneBotCatalogFixture()
 	price := 0.1
 	s.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{7}, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"unpriced"}, BillingMode: BillingModeToken}, {Platform: PlatformOpenAI, Models: []string{"gpt-test"}, BillingMode: BillingModePerRequest, PerRequestPrice: &price}}}}}
 	rows, err := s.catalog(context.Background(), a.group)
 	require.NoError(t, err)
-	require.Empty(t, rows)
+	require.Len(t, rows, 3)
+	for _, row := range rows {
+		require.False(t, row.Enabled)
+	}
 }
 
 func TestDoneBotToggleMaterializesWildcardSelection(t *testing.T) {
@@ -168,4 +180,95 @@ func TestDoneBotToggleMaterializesWildcardSelection(t *testing.T) {
 	require.NoError(t, s.updateModels(context.Background(), a.group, "llm", []DoneBotModelToggle{{Model: "gpt-test", Enabled: false}}))
 	require.False(t, a.group.ModelAllowlist.Allows("gpt-test"))
 	require.True(t, a.group.ModelAllowlist.Allows("gpt-image-test"))
+}
+
+func TestDoneBotCatalogAPIMartAudioAndImagePricing(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	base, suno, tts := 0.1, 0.2, 12.0
+	a.candidates[PlatformOpenAI] = []string{"suno", "gpt-4o-mini-tts", "seedream-5-0-flash", "voice"}
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
+		"api_key": "secret", "base_url": "https://api.apimart.ai",
+		"openai_capabilities": []string{"apimart_suno", "apimart_tts", "apimart_images"},
+		"model_mapping":       map[string]any{"suno": "suno", "gpt-4o-mini-tts": "gpt-4o-mini-tts", "seedream-5-0-flash": "seedream-5-0-flash", "voice": "gpt-4o-mini-tts"},
+	}}}}
+	s.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{7}, ModelPricing: []ChannelModelPricing{
+		{Platform: PlatformOpenAI, Models: []string{"suno"}, BillingMode: BillingModePerRequest, PerRequestPrice: &base, Intervals: []PricingInterval{{TierLabel: "v6", PerRequestPrice: &suno}}},
+		{Platform: PlatformOpenAI, Models: []string{"gpt-4o-mini-tts", "voice"}, BillingMode: BillingModePerRequest, Intervals: []PricingInterval{{TierLabel: "tts", PerRequestPrice: &tts}}},
+		{Platform: PlatformOpenAI, Models: []string{"seedream-5-0-flash"}, BillingMode: BillingModeImage, PerRequestPrice: &base},
+	}}}}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Len(t, rows, 4)
+	for _, row := range rows {
+		if row.Model == "seedream-5-0-flash" {
+			require.Equal(t, "images", row.Kind)
+			continue
+		}
+		require.Equal(t, "audio", row.Kind, row.Model)
+		encoded, e := json.Marshal(row)
+		require.NoError(t, e)
+		var got map[string]any
+		require.NoError(t, json.Unmarshal(encoded, &got))
+		prices, ok := got["effective_tier_prices"].(map[string]any)
+		require.True(t, ok)
+		if row.Model == "suno" {
+			require.InDelta(t, 0.15, got["effective_per_request_price"], 1e-12)
+			require.InDelta(t, 0.3, prices["v6"], 1e-12)
+		} else {
+			require.InDelta(t, 18.0, prices["tts"], 1e-12)
+		}
+	}
+	require.NoError(t, s.syncModels(context.Background(), a.group, "audio"))
+	require.Contains(t, a.group.ModelAllowlist.Models, "suno")
+	require.Contains(t, a.group.ModelAllowlist.Models, "voice")
+	require.NotContains(t, a.group.ModelAllowlist.Models, "seedream-5-0-flash")
+}
+
+func TestDoneBotAudioPricingSharesGroupMultiplier(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	rate, image := 2.0, 99.0
+	require.NoError(t, s.updatePricing(context.Background(), a.group, "audio", DoneBotPricingInput{RateMultiplier: &rate, ImagePrice1K: &image}))
+	require.Equal(t, 2.0, a.group.RateMultiplier)
+	require.Nil(t, a.update.ImagePrice1K)
+	require.Nil(t, a.update.AllowImageGeneration)
+}
+
+func TestDoneBotAudioRequiresCapableAccountAndCanBeDisabled(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	a.candidates[PlatformOpenAI] = []string{"suno", "gpt-4o-mini-tts"}
+	p := 0.1
+	s.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{7}, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"*"}, BillingMode: BillingModePerRequest, PerRequestPrice: &p}}}}}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Empty(t, rows, "ordinary OpenAI accounts cannot provide APIMart audio")
+	s.installs = &DoneBotService{cfg: &config.Config{}}
+	_, err = s.Models(context.Background(), "audio")
+	require.ErrorContains(t, err, "Audio is not enabled")
+	_, err = s.UpdateModels(context.Background(), "audio", []DoneBotModelToggle{{Model: "suno", Enabled: true}})
+	require.ErrorContains(t, err, "Audio is not enabled")
+	_, err = s.SyncModels(context.Background(), "audio")
+	require.ErrorContains(t, err, "Audio is not enabled")
+	_, err = s.UpdatePricing(context.Background(), "audio", DoneBotPricingInput{RateMultiplier: &p})
+	require.ErrorContains(t, err, "Audio is not enabled")
+}
+
+func TestDoneBotAPIMartImageAliasesRequireOptIn(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	a.candidates[PlatformOpenAI] = []string{"seedream-5-0-flash", "poster"}
+	price := 0.1
+	s.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{7}, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"*"}, BillingMode: BillingModePerRequest, PerRequestPrice: &price}}}}}
+	account := Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "secret", "base_url": "https://api.apimart.ai", "model_mapping": map[string]any{"seedream-5-0-flash": "seedream-5-0-flash", "poster": "seedream-5-0-flash"}}}
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Empty(t, rows)
+	account.Credentials["openai_capabilities"] = []string{"apimart_images"}
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+	rows, err = s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	for _, row := range rows {
+		require.Equal(t, "images", row.Kind)
+		require.True(t, row.Available)
+	}
 }

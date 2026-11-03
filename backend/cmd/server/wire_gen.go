@@ -41,18 +41,25 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	assetRepository := repository.NewAssetRepository(client)
-	assetStorage, err := repository.ProvideAssetStorage(configConfig)
-	if err != nil {
-		return nil, err
-	}
-	assetService := service.ProvideAssetService(assetRepository, assetStorage, configConfig)
-	assetHandler := handler.NewAssetHandler(assetService, configConfig)
-	doneBotInstallRepository := repository.NewDoneBotInstallRepository(client)
 	db, err := repository.ProvideSQLDB(client)
 	if err != nil {
 		return nil, err
 	}
+	assetRepository := repository.ProvideAssetRepository(client, db)
+	assetStorage, err := repository.ProvideAssetStorage(configConfig)
+	if err != nil {
+		return nil, err
+	}
+	settingRepository := repository.NewSettingRepository(client)
+	secretEncryptor, err := repository.NewAESEncryptor(configConfig)
+	if err != nil {
+		return nil, err
+	}
+	doneBotStorageFactory := repository.ProvideDoneBotStorageFactory()
+	doneBotStorageService := service.NewDoneBotStorageService(settingRepository, secretEncryptor, doneBotStorageFactory, configConfig, assetRepository)
+	assetService := service.ProvideAssetService(assetRepository, assetStorage, configConfig, doneBotStorageService)
+	assetHandler := handler.NewAssetHandler(assetService, configConfig)
+	doneBotInstallRepository := repository.NewDoneBotInstallRepository(client)
 	apiKeyRepository := repository.NewAPIKeyRepository(client, db)
 	userRepository := repository.NewUserRepository(client, db)
 	groupRepository := repository.NewGroupRepository(client, db)
@@ -70,7 +77,6 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	accountRepository := repository.NewAccountRepository(client, db, schedulerCache)
 	concurrencyService := service.ProvideConcurrencyService(concurrencyCache, accountRepository, configConfig)
 	apiKeyService := service.ProvideAPIKeyService(apiKeyRepository, userRepository, groupRepository, userSubscriptionRepository, userGroupRateRepository, apiKeyCache, configConfig, billingCacheService, concurrencyService)
-	settingRepository := repository.NewSettingRepository(client)
 	doneBotService := service.NewDoneBotService(doneBotInstallRepository, apiKeyService, settingRepository, groupRepository, configConfig)
 	doneBotHandler := handler.NewDoneBotHandler(doneBotService, settingRepository, configConfig)
 	redeemCodeRepository := repository.NewRedeemCodeRepository(client)
@@ -99,10 +105,6 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	userService := service.NewUserService(userRepository, settingRepository, apiKeyAuthCacheInvalidator, billingCache)
 	redeemCache := repository.NewRedeemCache(redisClient)
 	redeemService := service.NewRedeemService(redeemCodeRepository, userRepository, subscriptionService, redeemCache, billingCacheService, client, apiKeyAuthCacheInvalidator, affiliateService)
-	secretEncryptor, err := repository.NewAESEncryptor(configConfig)
-	if err != nil {
-		return nil, err
-	}
 	totpCache := repository.NewTotpCache(redisClient)
 	totpService := service.NewTotpService(userRepository, secretEncryptor, totpCache, settingService, emailService, emailQueueService)
 	userAttributeDefinitionRepository := repository.NewUserAttributeDefinitionRepository(client)
@@ -203,7 +205,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	adminService := service.NewAdminService(configConfig, userRepository, adminGroupRepository, adminAccountRepository, proxyRepository, apiKeyRepository, redeemCodeRepository, userGroupRateRepository, userRPMCache, billingCacheService, proxyExitInfoProber, proxyLatencyCache, apiKeyAuthCacheInvalidator, client, settingService, subscriptionService, userSubscriptionRepository, privacyClientFactory, openAIGatewayService, affiliateService, compositeModelRouteRepository, compositeRouteResolver, channelService)
 	imageTaskStore := repository.NewImageTaskStore(redisClient)
 	doneBotAdminService := service.NewDoneBotAdminService(doneBotService, adminService, channelService, accountRepository, settingRepository, usageService, imageTaskStore)
-	adminDoneBotHandler := admin.NewDoneBotHandler(doneBotService, doneBotAdminService)
+	adminDoneBotHandler := admin.ProvideDoneBotHandler(doneBotService, doneBotAdminService, doneBotStorageService)
 	dashboardAggregationRepository := repository.NewDashboardAggregationRepository(db)
 	dashboardStatsCache := repository.NewDashboardCache(redisClient, configConfig)
 	dashboardService := service.NewDashboardService(usageLogRepository, dashboardAggregationRepository, dashboardStatsCache, configConfig)
@@ -316,7 +318,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	geminiCachedContentRepository := repository.NewGeminiCachedContentRepository(db)
 	geminiCachedContentService := service.ProvideGeminiCachedContentService(geminiCachedContentRepository, geminiMessagesCompatService, configConfig)
 	gatewayHandler := handler.ProvideGatewayHandler(gatewayService, openAIGatewayService, geminiMessagesCompatService, antigravityGatewayService, userService, concurrencyService, billingCacheService, usageService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, userMessageQueueService, configConfig, settingService, coordinator, geminiCachedContentService)
-	openAIGatewayHandler := handler.ProvideOpenAIGatewayHandler(openAIGatewayService, pluginManager, concurrencyService, billingCacheService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, configConfig, coordinator, compositeRouteResolver)
+	openAIGatewayHandler := handler.ProvideOpenAIGatewayHandler(openAIGatewayService, pluginManager, concurrencyService, billingCacheService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, configConfig, coordinator, compositeRouteResolver, assetService)
 	handlerSettingHandler := handler.ProvideSettingHandler(settingService, buildInfo, notificationEmailService)
 	totpHandler := handler.NewTotpHandler(totpService)
 	passkeyRepository := repository.NewPasskeyRepository(db)

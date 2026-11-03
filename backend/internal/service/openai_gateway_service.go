@@ -233,8 +233,10 @@ type OpenAIUsage struct {
 
 // OpenAIForwardResult represents the result of forwarding
 type OpenAIForwardResult struct {
-	RequestID  string
-	ResponseID string
+	SeedanceResponseBody   []byte
+	SeedanceResponseStatus int
+	RequestID              string
+	ResponseID             string
 	// UpstreamHeaders 是直接上游的响应头，用于按账户配置解析上游请求标识。
 	UpstreamHeaders http.Header
 	Usage           OpenAIUsage
@@ -290,7 +292,9 @@ type OpenAIForwardResult struct {
 	VideoCount         int
 	VideoResolution    string
 	// VideoDurationSeconds 是提交时请求的生成时长（xAI 按输出秒数计费），已归一化到 1-15 秒。
-	VideoDurationSeconds int
+	VideoActualDurationSeconds float64
+	VideoReference             bool
+	VideoDurationSeconds       int
 	// WebSearchCalls 是 Codex alpha/search 网页搜索调用次数（每次成功请求为 1）。
 	// 上游不返回 usage 字段，>0 时走按次计费（分组单价 × 次数 × 倍率）。
 	WebSearchCalls int
@@ -470,6 +474,8 @@ type OpenAIGatewayService struct {
 	channelService        *ChannelService
 	balanceNotifyService  *BalanceNotifyService
 	settingService        *SettingService
+	apimartSettlements    *apimartSettlementWorker
+	generatedMedia        *generatedMediaUploader
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	liveAttestation       liveattestation.Provider
 	liveAttestationCipher SecretEncryptor
@@ -707,6 +713,7 @@ func (s *OpenAIGatewayService) billingDeps() *billingDeps {
 // CloseOpenAIWSPool 关闭 OpenAI WebSocket 连接池的后台 worker 和空闲连接。
 // 应在应用优雅关闭时调用。
 func (s *OpenAIGatewayService) CloseOpenAIWSPool() {
+	s.StopAPIMartSettlements()
 	if s != nil && s.openaiWSPool != nil {
 		s.openaiWSPool.Close()
 	}

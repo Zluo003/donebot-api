@@ -4,12 +4,14 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -32,6 +34,8 @@ func TestSeedanceHandlerLifecycleAndOwnership(t *testing.T) {
 		c, w := grokMediaSlotContext(context.Background(), method == http.MethodPost)
 		key, _ := middleware.GetAPIKeyFromContext(c)
 		key.Group.Platform = service.PlatformOpenAI
+		p := 0.1
+		key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"doubao-seedance"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "720p|standard", PerRequestPrice: &p}}}}
 		body := ""
 		if method == http.MethodPost {
 			body = `{"model":"doubao-seedance","content":[{"type":"text","text":"waves"}]}`
@@ -45,6 +49,11 @@ func TestSeedanceHandlerLifecycleAndOwnership(t *testing.T) {
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.Positive(t, owner)
 	require.Len(t, bindings.pending, 1)
+	require.Len(t, bindings.jobs, 1)
+	for _, job := range bindings.jobs {
+		require.Equal(t, "seedance", job.Provider)
+		require.NotNil(t, job.VideoPending)
+	}
 	slots.assertReleased(t)
 	for _, method := range []string{http.MethodGet, http.MethodDelete} {
 		c, w = newContext(method)
@@ -81,17 +90,66 @@ func TestSeedanceHandlerLifecycleAndOwnership(t *testing.T) {
 	c, _ = newContext(http.MethodGet)
 	key, _ := middleware.GetAPIKeyFromContext(c)
 	subject, _ := middleware.GetAuthSubjectFromContext(c)
-	result := &service.OpenAIForwardResult{Usage: service.OpenAIUsage{OutputTokens: 12345}, ResponseID: "seedance:task-ark"}
+	result := &service.OpenAIForwardResult{Usage: service.OpenAIUsage{OutputTokens: 12345}, ResponseID: "seedance:task-ark", VideoActualDurationSeconds: 6}
 	for i := range 20 {
 		billed := prepareSeedanceCompletionBilling(context.Background(), h, key, subject, result.ResponseID, result)
 		if i == 0 {
 			require.NotNil(t, billed)
 			require.Equal(t, "doubao-seedance", billed.BillingModel)
 			require.Equal(t, 12345, billed.Usage.OutputTokens)
-			require.Zero(t, billed.VideoCount)
+			require.Equal(t, 1, billed.VideoCount)
+			require.Equal(t, 6.0, billed.VideoActualDurationSeconds)
 		} else {
 			require.Nil(t, billed)
 		}
 	}
 	require.Len(t, bindings.billed, 1)
+}
+
+func TestSeedanceQueueFailureReturnsAcceptedTaskAndNoSuccess(t *testing.T) {
+	h, slots, bindings, upstream := newGrokMediaSlotHandler(t, false, false, service.PlatformOpenAI)
+	bindings.queueErr = errors.New("redis down")
+	upstream.call = func(*http.Request, int64) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"accepted-task","status":"queued"}`))}, nil
+	}
+	c, w := grokMediaSlotContext(context.Background(), true)
+	key, _ := middleware.GetAPIKeyFromContext(c)
+	key.Group.Platform = service.PlatformOpenAI
+	p := 0.1
+	key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"video"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "720p|standard", PerRequestPrice: &p}}}}
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"video","content":[{"type":"text","text":"waves"}]}`))
+	h.SeedanceTasks(c)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "do not resubmit")
+	require.Contains(t, w.Body.String(), "task")
+	slots.assertReleased(t)
+}
+
+type seedanceBalanceWithoutReservation struct{ service.BillingCache }
+
+func (seedanceBalanceWithoutReservation) GetUserBalance(context.Context, int64) (float64, error) {
+	return 100, nil
+}
+func (seedanceBalanceWithoutReservation) GetUserPlatformQuotaCache(context.Context, int64, string) (*service.UserPlatformQuotaCacheEntry, bool, error) {
+	return nil, false, nil
+}
+func TestSeedancePaidCreateRequiresReservationSupport(t *testing.T) {
+	h, slots, _, upstream := newGrokMediaSlotHandler(t, false, false, service.PlatformOpenAI)
+	cfg := &config.Config{}
+	cfg.Billing.InflightReservation.Enabled = true
+	h.cfg = cfg
+	billing := service.NewBillingCacheService(seedanceBalanceWithoutReservation{}, nil, nil, nil, nil, nil, cfg, nil)
+	defer billing.Stop()
+	h.billingCacheService = billing
+	c, w := grokMediaSlotContext(context.Background(), true)
+	key, _ := middleware.GetAPIKeyFromContext(c)
+	key.Group.Platform = service.PlatformOpenAI
+	key.Group.RateMultiplier = 1
+	p := 0.1
+	key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"video"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "720p|standard", PerRequestPrice: &p}}}}
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"video","content":[{"type":"text","text":"waves"}]}`))
+	h.SeedanceTasks(c)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code, w.Body.String())
+	require.Zero(t, upstream.calls)
+	slots.assertReleased(t)
 }

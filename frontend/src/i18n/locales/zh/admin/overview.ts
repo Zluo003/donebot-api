@@ -104,6 +104,9 @@ export default {
         saved: 'S3 配置已保存'
       },
       imageStorage: {
+        donebotTitle: '生成产物存储',
+        donebotDescription: '视频、音乐和异步图片使用 DoneBot 的共享生成产物存储；上传素材使用独立策略。请前往 DoneBot 存储页统一配置。',
+        donebotAction: '管理 DoneBot 存储',
         title: '异步生图对象存储',
         description: '开启后，异步生图接口可用，生成结果转存到对象存储，只把短链接写入 Redis。与备份共用同一套 S3 客户端，保存后立即生效，无需重启。',
         enabled: '启用异步生图',

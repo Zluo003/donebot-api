@@ -731,13 +731,16 @@ func ProvideImageTaskService(store ImageTaskStore, settings *ImageStorageSetting
 		taskConfig = cfg.ImageTask
 		if cfg.DoneBot.Enabled || cfg.ImageStorage.Driver == "local" {
 			resolver = func() (*ImageResultUploader, bool) {
-				if !cfg.DoneBot.Enabled || !cfg.ImageStorage.Enabled || assets == nil || cfg.AssetStorage.Driver != cfg.ImageStorage.Driver {
+				if !cfg.DoneBot.Enabled || assets == nil {
 					return nil, false
 				}
-				if cfg.AssetStorage.Driver == "local" && strings.TrimSpace(cfg.AssetStorage.PublicBaseURL) == "" {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				policy, err := assets.GeneratedStoragePolicy(ctx)
+				if err != nil || !policy.Enabled || policy.Driver == "local" && strings.TrimSpace(policy.PublicBaseURL) == "" {
 					return nil, false
 				}
-				return NewImageResultUploader(assets, cfg.ImageStorage.Prefix, cfg.ImageStorage.MaxDownloadByte, nil), true
+				return NewImageResultUploader(assets, "generated/", policy.MaxFileBytes, nil), true
 			}
 		}
 	}
@@ -882,8 +885,9 @@ func ProvideAPIKeyService(
 	return svc
 }
 
-func ProvideAssetService(repo AssetRepository, storage AssetStorage, cfg *config.Config) *AssetService {
+func ProvideAssetService(repo AssetRepository, storage AssetStorage, cfg *config.Config, settings *DoneBotStorageService) *AssetService {
 	svc := NewAssetService(repo, storage, cfg)
+	svc.storageSettings = settings
 	if cfg != nil && cfg.DoneBot.Enabled {
 		svc.Start()
 	}
@@ -893,6 +897,7 @@ func ProvideAssetService(repo AssetRepository, storage AssetStorage, cfg *config
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	ProvideAssetService,
+	NewDoneBotStorageService,
 	NewDoneBotService,
 	NewDoneBotAdminService,
 	// Core services

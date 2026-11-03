@@ -90,6 +90,7 @@ func ParseSeedanceRequest(body []byte) (GrokMediaRequestInfo, error) {
 			}
 			if kind == "video_url" {
 				videos++
+				info.HasReferenceVideo = true
 				if item.Get("role").String() != "reference_video" {
 					return info, fmt.Errorf("video role must be reference_video")
 				}
@@ -237,6 +238,14 @@ func (s *OpenAIGatewayService) ForwardSeedance(ctx context.Context, c *gin.Conte
 	if !account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilitySeedance) || !endpoint.IsSeedance() {
 		return nil, fmt.Errorf("seedance requires an OpenAI API key account with a custom base URL")
 	}
+	if account.SeedanceOutputStorage() == "system" && endpoint == SeedanceEndpointCreate {
+		enabled, storageErr := s.GeneratedMediaStorageEnabled(ctx)
+		if storageErr != nil || !enabled || AssetOwnerKeyIDFromContext(ctx) <= 0 {
+			MarkResponseCommitted(c)
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "api_error", "message": "Seedance system output storage is unavailable"}})
+			return nil, fmt.Errorf("seedance system output storage is unavailable")
+		}
+	}
 	base, err := s.validateUpstreamBaseURL(account.GetCredential("base_url"))
 	if err != nil {
 		return nil, err
@@ -274,7 +283,9 @@ func (s *OpenAIGatewayService) ForwardSeedance(ctx context.Context, c *gin.Conte
 		return nil, fmt.Errorf("seedance account missing api_key")
 	}
 	started := time.Now()
-	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
+	requestCtx, release := mediaUpstreamContext(ctx)
+	defer release()
+	req, err := http.NewRequestWithContext(requestCtx, method, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -309,14 +320,57 @@ func (s *OpenAIGatewayService) ForwardSeedance(ctx context.Context, c *gin.Conte
 			return nil, fmt.Errorf("seedance create response missing task ID")
 		}
 		result.ResponseID = SeedanceTaskKey(id)
+		info, _ := ParseSeedanceRequest(body)
+		result.VideoResolution = info.Resolution
+		if result.VideoResolution == "" {
+			result.VideoResolution = "720p"
+		}
+		result.VideoReference = info.HasReferenceVideo
+		result.VideoDurationSeconds = info.DurationSeconds
 	}
 	if endpoint == SeedanceEndpointStatus {
 		result.ResponseID = taskID
 		result.UpstreamModel = gjson.GetBytes(responseBody, "model").String()
 		if gjson.GetBytes(responseBody, "status").String() == "succeeded" {
 			result.Usage.OutputTokens = seedanceCompletionTokens(responseBody)
+			result.VideoActualDurationSeconds = seedanceActualOutputSeconds(responseBody)
+			if result.VideoActualDurationSeconds > 0 {
+				result.VideoCount = 1
+				result.VideoDurationSeconds = int(math.Ceil(result.VideoActualDurationSeconds))
+			}
+			result.VideoResolution = gjson.GetBytes(responseBody, "resolution").String()
 		}
+	}
+	if endpoint == SeedanceEndpointStatus && gjson.GetBytes(responseBody, "status").String() == "succeeded" && account.SeedanceOutputStorage() == "system" {
+		enabled, storageErr := s.GeneratedMediaStorageEnabled(ctx)
+		if storageErr != nil || !enabled || AssetOwnerKeyIDFromContext(ctx) <= 0 {
+			MarkResponseCommitted(c)
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "api_error", "message": "Seedance system output storage is unavailable"}})
+			return nil, fmt.Errorf("seedance system output storage is unavailable")
+		}
+		rewritten, rewriteErr := s.RewriteGeneratedMedia(ctx, AssetOwnerKeyIDFromContext(ctx), taskID, "seedance", responseBody)
+		if rewriteErr != nil {
+			MarkResponseCommitted(c)
+			c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{"type": "api_error", "message": "Seedance output could not be stored"}})
+			return nil, rewriteErr
+		}
+		responseBody = rewritten
+	}
+	if endpoint == SeedanceEndpointCreate {
+		result.SeedanceResponseBody = responseBody
+		result.SeedanceResponseStatus = resp.StatusCode
+		return result, nil
 	}
 	writeGrokMediaResponse(c, resp, responseBody, s.responseHeaderFilter)
 	return result, nil
+}
+
+// WriteSeedanceCreateResponse publishes the native accepted response only after
+// the handler persisted ownership, metadata and background settlement work.
+func (s *OpenAIGatewayService) WriteSeedanceCreateResponse(c *gin.Context, result *OpenAIForwardResult) {
+	if result == nil {
+		return
+	}
+	resp := &http.Response{StatusCode: result.SeedanceResponseStatus, Header: result.ResponseHeaders}
+	writeGrokMediaResponse(c, resp, result.SeedanceResponseBody, s.responseHeaderFilter)
 }

@@ -6,11 +6,12 @@ DoneBot's model gateway, maintained at **[Zluo003/donebot-api](https://github.co
 
 ## What is included
 
-- A DoneBot composite group with model allowlists, channel prices and group multipliers.
+- A DoneBot composite group with model allowlists and editable final sale prices for each model, using the existing group pricing cards ahead of channel defaults.
 - Installation credentials bound to the signed-in user and device; ordinary API key management is hidden in DoneBot mode.
 - Native LLM APIs, synchronous/asynchronous images, and assets backed by local or S3-compatible storage (R2, OSS, MinIO).
 - Seedance 2.0 / Fast / Mini / 2.5 native video tasks through NewToken, including first/last frames, references, and 2.5 editing/extension. Video accounts have a dedicated panel and resolution selection.
-- Existing user balances, rate limits and usage logs. LLM and Seedance use actual tokens; images use image/size pricing.
+- APIMart Seedream 5.0 Flash, Suno song/instrumental generation and TTS, with a dedicated account panel and audio model management.
+- Existing user balances, rate limits and usage logs. LLMs use tokens, images use actual image count and size, Seedance uses actual output seconds, Suno uses generations, and TTS uses Unicode characters.
 
 ## Linux installation
 
@@ -59,9 +60,11 @@ donebot:
 
 For Docker, edit the generated `.env`; for binary installation, edit `/etc/sub2api/environment`. Set `ASSET_STORAGE_PUBLIC_BASE_URL=https://your-gateway-domain` before using local assets and async images, and proxy `/assets/*` to the gateway. Restart the service after changes. You can also mount a full Docker configuration at `/app/data/config.yaml`. See [the configuration example](deploy/config.example.yaml) and [deployment/acceptance notes](docs/donebot/验收记录.md) for storage and async image settings.
 
-After startup, configure upstream accounts and channel pricing, then synchronize and enable models in the DoneBot administration page. A signed-in user claims an installation through `POST /api/v1/donebot/installations/claim`; the returned credential belongs to that user and installation. It is returned only on first claim. Model requests use this installation credential, and administrators can revoke installations without exposing their credentials.
+Manage upload and shared generated output storage in DoneBot → Storage; see [storage settings](docs/donebot/存储管理说明.md) for capacity, retention and local/S3 policies.
 
-For Seedance, enable `donebot.features.video` / `DONEBOT_FEATURES_VIDEO=true`, add a video account with upstream URL `https://api.newtoken.club`, and configure the permitted models and resolutions. Follow [the Seedance integration guide](docs/donebot/Seedance-接入说明.md) for native endpoints, `asset://`/public URL materials, official resolution limits and token pricing. Audio has no new standalone DoneBot generation flow.
+After startup, configure upstream accounts, then set final sale prices per model in the DoneBot administration page, synchronize and enable models. Group model prices take precedence over channel defaults; see [model pricing](docs/donebot/模型定价说明.md). A signed-in user claims an installation through `POST /api/v1/donebot/installations/claim`; the returned credential belongs to that user and installation. It is returned only on first claim. Model requests use this installation credential, and administrators can revoke installations without exposing their credentials.
+
+For Seedance, enable `donebot.features.video` / `DONEBOT_FEATURES_VIDEO=true`, add a video account with upstream URL `https://api.newtoken.club`, and configure the permitted models and resolutions. Follow [the Seedance integration guide](docs/donebot/Seedance-接入说明.md) for native endpoints, `asset://`/public URL materials, official resolution limits and per-second sale prices. For APIMart, use the dedicated account panel with `https://api.apimart.ai`; enable `DONEBOT_FEATURES_AUDIO=true` for Suno/TTS. Native endpoints and local pricing are documented in [the APIMart guide](docs/donebot/APIMart-接入说明.md). Administrators can use the sidebar version badge to update official binary releases online.
 
 ## Build from source
 
@@ -92,8 +95,11 @@ pnpm test:run
 ## Documentation and support
 
 - [Deployment guide](deploy/README.md)
+- [Storage management](docs/donebot/存储管理说明.md)
 - [DoneBot gateway documentation](docs/donebot/README.md)
+- [Model pricing](docs/donebot/模型定价说明.md)
 - [Seedance integration](docs/donebot/Seedance-接入说明.md)
+- [APIMart images and audio](docs/donebot/APIMart-接入说明.md)
 - [Issues](https://github.com/Zluo003/donebot-api/issues) · [Releases](https://github.com/Zluo003/donebot-api/releases)
 
 This is a dedicated fork of **[Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api)**. Thanks to the upstream authors and contributors. Original attribution is retained, and this repository is distributed under the [GNU LGPL v3 license](LICENSE).

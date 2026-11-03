@@ -28,6 +28,9 @@ test -s backend/resources/model-pricing/model_prices_and_context_window.json || 
 
 assert_line Dockerfile.goreleaser 'COPY --chown=sub2api:sub2api backend/resources /app/resources'
 assert_line deploy/Dockerfile 'COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources'
+# The online updater stages and atomically renames files beside /app/sub2api.
+# Owning only /app/data is insufficient after the entrypoint drops privileges.
+assert_line Dockerfile 'RUN mkdir -p /app/data && chown sub2api:sub2api /app /app/data'
 assert_count .goreleaser.yaml '      - backend/resources' 4
 assert_count .goreleaser.simple.yaml '      - backend/resources' 1
 

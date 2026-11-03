@@ -120,11 +120,38 @@ func (s *grokMediaSlotsCache) assertReleased(t *testing.T) {
 
 type grokMediaSlotBindings struct {
 	testutil.StubGatewayCache
-	owner   int64
-	writes  int
-	key     string
-	billed  map[string]bool
-	pending map[string][]byte
+	owner    int64
+	writes   int
+	key      string
+	billed   map[string]bool
+	pending  map[string][]byte
+	jobs     map[string]service.APIMartSettlementJob
+	queueErr error
+}
+
+type grokMediaBindingsWithoutAPIMartQueue struct {
+	testutil.StubGatewayCache
+}
+
+func (s *grokMediaSlotBindings) SaveAPIMartSettlement(ctx context.Context, j service.APIMartSettlementJob, _ time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.queueErr != nil {
+		return s.queueErr
+	}
+	if s.jobs == nil {
+		s.jobs = map[string]service.APIMartSettlementJob{}
+	}
+	s.jobs[j.ID()] = j
+	return nil
+}
+func (s *grokMediaSlotBindings) TakeDueAPIMartSettlements(context.Context, time.Time, int, time.Duration) ([]service.APIMartSettlementJob, error) {
+	return nil, nil
+}
+func (s *grokMediaSlotBindings) FinishAPIMartSettlement(_ context.Context, id string) error {
+	delete(s.jobs, id)
+	return nil
 }
 
 func (s *grokMediaSlotBindings) SetGrokVideoPendingBilling(_ context.Context, key string, body []byte, _ time.Duration) error {
@@ -210,6 +237,10 @@ func newGrokMediaSlotHandler(t *testing.T, oauth, mismatch bool, platforms ...st
 			accounts[i].Platform = platforms[0]
 			accounts[i].Credentials["base_url"] = "https://ark.cn-beijing.volces.com/api/v3"
 			accounts[i].Credentials["openai_capabilities"] = []string{"seedance"}
+			if len(platforms) > 1 && platforms[1] == "apimart" {
+				accounts[i].Credentials["base_url"] = "https://api.apimart.ai"
+				accounts[i].Credentials["openai_capabilities"] = []string{"apimart_images", "apimart_suno", "apimart_tts"}
+			}
 		}
 		if oauth {
 			accounts[i].Type = service.AccountTypeOAuth
@@ -234,9 +265,21 @@ func newGrokMediaSlotHandler(t *testing.T, oauth, mismatch bool, platforms ...st
 		_, err := provider.GetAccessToken(context.Background(), &accounts[1])
 		require.NoError(t, err)
 	}
-	gateway := service.NewOpenAIGatewayService(repo, nil, nil, nil, nil, nil, bindings, cfg, nil, concurrency, nil, nil, nil, upstream, nil, nil, provider, nil, nil, nil, nil, nil)
+	var mediaBilling *service.BillingService
+	var mediaResolver *service.ModelPricingResolver
+	if len(platforms) > 0 {
+		mediaBilling = service.NewBillingService(cfg, nil)
+		mediaResolver = service.NewModelPricingResolver(nil, mediaBilling)
+	}
+	var gatewayCache service.GatewayCache = bindings
+	if len(platforms) > 1 && platforms[1] == "apimart-no-queue" {
+		gatewayCache = &grokMediaBindingsWithoutAPIMartQueue{}
+	}
+	gateway := service.NewOpenAIGatewayService(repo, nil, nil, nil, nil, nil, gatewayCache, cfg, nil, concurrency, mediaBilling, nil, nil, upstream, nil, nil, provider, mediaResolver, nil, nil, nil, nil)
 	groupID := int64(24)
-	require.NoError(t, gateway.BindGrokMediaVideoRequestAccount(context.Background(), &groupID, "task", 10, 20, 1))
+	if len(platforms) < 2 || platforms[1] != "apimart-no-queue" {
+		require.NoError(t, gateway.BindGrokMediaVideoRequestAccount(context.Background(), &groupID, "task", 10, 20, 1))
+	}
 	bindings.writes = 0
 	billing := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(billing.Stop)

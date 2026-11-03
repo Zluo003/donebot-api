@@ -54,13 +54,16 @@ func TestSeedanceResolutionAccountAdmission(t *testing.T) {
 				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"task-resolution"}`))}, nil
 			}}
 			cfg := &config.Config{RunMode: config.RunModeSimple}
-			gateway := service.NewOpenAIGatewayService(repo, nil, nil, nil, nil, nil, bindings, cfg, nil, concurrency, nil, nil, nil, upstream, nil, nil, nil, nil, nil, nil, nil, nil)
+			modelBilling := service.NewBillingService(cfg, nil)
+			gateway := service.NewOpenAIGatewayService(repo, nil, nil, nil, nil, nil, bindings, cfg, nil, concurrency, modelBilling, nil, nil, upstream, nil, nil, nil, service.NewModelPricingResolver(nil, modelBilling), nil, nil, nil, nil)
 			billing := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 			t.Cleanup(billing.Stop)
 			h := NewOpenAIGatewayHandler(gateway, concurrency, billing, service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg), nil, nil, nil, nil, cfg)
 			c, w := grokMediaSlotContext(context.Background(), true)
 			key, _ := middleware.GetAPIKeyFromContext(c)
 			key.Group.Platform = service.PlatformOpenAI
+			p := 0.1
+			key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"doubao-seedance-2-0-260128"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "1080p|standard", PerRequestPrice: &p}}}}
 			c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"doubao-seedance-2-0-260128","resolution":"1080p","content":[{"type":"text","text":"waves"}]}`))
 			c.Request.Header.Set("Content-Type", "application/json")
 			h.SeedanceTasks(c)

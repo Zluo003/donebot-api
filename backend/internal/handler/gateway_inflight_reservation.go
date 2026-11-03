@@ -106,10 +106,6 @@ func grokMediaInflightEstimate(endpoint service.GrokMediaEndpoint, model string,
 		return service.InflightEstimateRequest{}
 	}
 	switch endpoint {
-	case service.SeedanceEndpointCreate:
-		// Seedance settles actual tokens. Reuse the configured token estimate
-		// instead of Grok's per-second video tariff during balance admission.
-		return service.InflightEstimateRequest{Model: model, BodyBytes: len(body), Kind: service.InflightEstimateToken}
 	case service.GrokMediaEndpointImagesGenerations, service.GrokMediaEndpointImagesEdits:
 		return service.InflightEstimateRequest{Model: model, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: info.N}
 	default:

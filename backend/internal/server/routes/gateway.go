@@ -76,6 +76,16 @@ func RegisterGatewayRoutes(
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
 	imagesHandler := func(c *gin.Context) {
+		if strings.HasSuffix(c.Request.URL.Path, "/images/generations") {
+			body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+			if err == nil {
+				requestmodel.ResetRequestBody(c.Request, body)
+				if h.OpenAIGateway.IsAPIMartImageRequest(c, gjson.GetBytes(body, "model").String()) {
+					h.OpenAIGateway.APIMartImages(c)
+					return
+				}
+			}
+		}
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI:
 			h.OpenAIGateway.Images(c)
@@ -254,6 +264,10 @@ func RegisterGatewayRoutes(
 			h.OpenAIGateway.Embeddings(c)
 		})
 		gateway.POST("/images/generations", imagesHandler)
+		gateway.GET("/tasks/:task_id", h.OpenAIGateway.APIMartImageTask)
+		gateway.POST("/music/generations", h.OpenAIGateway.APIMartSuno)
+		gateway.GET("/music/tasks/:task_id", h.OpenAIGateway.APIMartMusicTask)
+		gateway.POST("/audio/speech", h.OpenAIGateway.APIMartTTS)
 		gateway.POST("/images/edits", imagesHandler)
 		gateway.POST("/images/generations/async", h.AsyncImage.Submit)
 		gateway.POST("/images/edits/async", h.AsyncImage.Submit)

@@ -411,6 +411,9 @@ func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *Updat
 // Grok media eligibility helpers live in account_grok_media_eligibility.go.
 
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
+	if err := ValidateSeedanceOutputStorageExtra(input.Platform, input.Type, accountExtra); err != nil {
+		return nil, err
+	}
 	if err := normalizeSeedanceAccountCredentials(input.Platform, input.Type, input.Credentials); err != nil {
 		return nil, err
 	}
@@ -665,6 +668,13 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		}
 		// Strip SSO/password residue that must never sit next to OAuth tokens.
 		account.Credentials = SanitizeStoredCredentials(account.Platform, account.Credentials)
+	}
+	effectiveExtra := account.Extra
+	if normalizedExtra != nil {
+		effectiveExtra = normalizedExtra
+	}
+	if err := ValidateSeedanceOutputStorageExtra(account.Platform, account.Type, effectiveExtra); err != nil {
+		return nil, err
 	}
 	if err := normalizeSeedanceAccountCredentials(account.Platform, account.Type, account.Credentials); err != nil {
 		return nil, err
@@ -949,9 +959,13 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
 	delete(updates, OpenCodeGoUsageAutoRefreshExtraKey)
 	delete(updates, OpenCodeGoUsageSnapshotExtraKey)
-	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
+	_, storageUpdated := updates[SeedanceOutputStorageExtraKey]
+	if _, exists := updates[openAILongContextBillingEnabledKey]; exists || storageUpdated {
 		account, err := s.accountRepo.GetByID(ctx, id)
 		if err != nil {
+			return err
+		}
+		if err := ValidateSeedanceOutputStorageExtra(account.Platform, account.Type, updates); err != nil {
 			return err
 		}
 		if err := ValidateOpenAILongContextBillingExtra(account.Platform, updates); err != nil {
@@ -1013,7 +1027,8 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	_, storageUpdated := input.Extra[SeedanceOutputStorageExtraKey]
+	if storageUpdated || len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -1051,6 +1066,17 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			if acc != nil && acc.IsCredentialShadow() {
 				return nil, infraerrors.Newf(http.StatusBadRequest, "SPARK_SHADOW_NO_CREDENTIALS",
 					"spark shadow account %d cannot hold credentials; manage credentials on the parent account", acc.ID)
+			}
+		}
+	}
+	if storageUpdated {
+		for _, id := range input.AccountIDs {
+			account := targetsByID[id]
+			if account == nil {
+				return nil, ErrAccountNotFound
+			}
+			if err := ValidateSeedanceOutputStorageExtra(account.Platform, account.Type, input.Extra); err != nil {
+				return nil, err
 			}
 		}
 	}

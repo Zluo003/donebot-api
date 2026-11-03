@@ -29,6 +29,12 @@ After editing this file, run `sudo systemctl restart sub2api`. Existing installa
 | **Apple container** | Native local stack on macOS 26 | Not needed (auto-setup) |
 | **Binary Install** | Production servers, systemd | Web-based wizard |
 
+## Admin Online Updates
+
+Administrators can click the version badge at the top of the sidebar, check for a new release, select **Update Now**, then **Restart Now**. Release builds fetch Linux amd64/arm64 archives and `checksums.txt` from [this repository's releases](https://github.com/Zluo003/donebot-api/releases), verify SHA256, and replace the executable. The previous binary is kept as `sub2api.backup`; the same menu also offers the three most recent older release versions for rollback. Back up the database before upgrading; rolling back a binary does not undo database migrations.
+
+The supplied systemd service grants its user write access to `/opt/sub2api` and uses `Restart=always`, so this flow requires no sudo access from the application. The supplied container builds also allow replacing the binary and their supervisors restart it. In-place container updates live in the current container's writable layer; when recreating containers, pull or pin the desired `ghcr.io/zluo003/donebot-api` image version. Source builds show manual build instructions instead of an online replacement button.
+
 ## Files
 
 | File | Description |

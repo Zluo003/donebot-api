@@ -11,4 +11,10 @@ describe('account creation actions', () => {
     expect(wrapper.emitted('create')).toBeUndefined()
     expect(wrapper.text()).toContain('admin.accounts.createAccount')
   })
+  it('opens a dedicated APIMart panel', async () => {
+    const wrapper = mount(AccountTableActions, { props: { loading: false } })
+    await wrapper.get('[data-testid="create-apimart-account"]').trigger('click')
+    expect(wrapper.emitted('create-apimart')).toHaveLength(1)
+    expect(wrapper.emitted('create')).toBeUndefined()
+  })
 })

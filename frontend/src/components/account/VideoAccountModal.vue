@@ -42,6 +42,14 @@
         </div>
         <p class="input-hint">{{ t('admin.accounts.videoAccount.resolutionHint') }}</p>
       </fieldset>
+      <div>
+        <label for="video-output-storage" class="input-label">{{ t('admin.accounts.videoAccount.outputStorage') }}</label>
+        <select id="video-output-storage" v-model="form.outputStorage" class="input" data-testid="video-output-storage">
+          <option value="upstream">{{ t('admin.accounts.videoAccount.outputStorageUpstream') }}</option>
+          <option value="system">{{ t('admin.accounts.videoAccount.outputStorageSystem') }}</option>
+        </select>
+        <p class="input-hint">{{ t('admin.accounts.videoAccount.outputStorageHint') }}</p>
+      </div>
       <GroupSelector v-model="form.groups" :groups="groups" platform="openai" />
       <div class="grid gap-4 sm:grid-cols-2">
         <div>
@@ -85,7 +93,7 @@ const app = useAppStore()
 const stepUp = useStepUp()
 const saving = ref(false)
 const originalMapping = ref<Record<string, string>>({})
-const form = reactive({ name: '', notes: '', apiKey: '', baseURL: 'https://api.newtoken.club', models: [] as string[], resolutions: ['720p'] as string[], groups: [] as number[], proxyID: null as number | null, concurrency: 5 })
+const form = reactive({ name: '', notes: '', apiKey: '', baseURL: 'https://api.newtoken.club', models: [] as string[], resolutions: ['720p'] as string[], groups: [] as number[], proxyID: null as number | null, concurrency: 5, outputStorage: 'upstream' as 'upstream' | 'system' })
 const modelOptions = computed(() => {
   const standard = new Set<string>(SEEDANCE_MODELS.map(model => model.id))
   return [...SEEDANCE_MODELS, ...Object.keys(originalMapping.value).filter(id => !standard.has(id)).map(id => ({ id, label: id, resolutions: '' }))]
@@ -103,6 +111,7 @@ watch(() => [props.show, props.account] as const, () => {
     name: account?.name ?? '', notes: account?.notes ?? '', baseURL: credentials.base_url || 'https://api.newtoken.club',
     models: account && Object.keys(originalMapping.value).length ? Object.keys(originalMapping.value) : SEEDANCE_MODELS.map(model => model.id),
     resolutions: Array.isArray(credentials.seedance_allowed_resolutions) ? [...credentials.seedance_allowed_resolutions] : ['720p'],
+    outputStorage: account?.extra?.seedance_output_storage === 'system' ? 'system' : 'upstream',
     groups: [...(account?.group_ids ?? [])], proxyID: account?.proxy_id ?? null, concurrency: account?.concurrency ?? 5
   })
 }, { immediate: true })
@@ -133,7 +142,7 @@ async function save() {
     }
     delete credentials.api_key
     if (form.apiKey.trim()) credentials.api_key = form.apiKey.trim()
-    const payload = { name: form.name.trim(), notes: form.notes.trim() || null, credentials, group_ids: [...form.groups], proxy_id: form.proxyID, concurrency: form.concurrency }
+    const payload = { name: form.name.trim(), notes: form.notes.trim() || null, credentials, extra: { ...props.account?.extra, seedance_output_storage: form.outputStorage }, group_ids: [...form.groups], proxy_id: form.proxyID, concurrency: form.concurrency }
     if (props.account) {
       const updated = await stepUp.run(() => adminAPI.accounts.update(props.account!.id, payload))
       emit('updated', updated)

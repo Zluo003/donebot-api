@@ -9,7 +9,7 @@ describe('LLM model panel', () => {
  it('saves a disabled model and displays backend effective prices', async () => {
   setActivePinia(createPinia());vi.mocked(donebot.getModels).mockResolvedValue(structuredClone(fixture));vi.mocked(donebot.models).mockResolvedValue(structuredClone(fixture))
   const wrapper=mount(LlmModelsPanel);await flushPromises()
-  expect(wrapper.text()).toContain('3.0000')
+  expect(wrapper.get<HTMLInputElement>('[data-testid=price-gpt-test-input_price]').element.value).toBe('3')
   await wrapper.get('input[type=checkbox]').setValue(false)
   await wrapper.get('[data-test=save-models]').trigger('click');await flushPromises()
   expect(donebot.models).toHaveBeenCalledWith('llm', [{ model: 'gpt-test', enabled: false }])

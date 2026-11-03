@@ -53,6 +53,16 @@ func (h *AssetHandler) Upload(c *gin.Context) {
 		return
 	}
 	limit := h.cfg.AssetStorage.MaxBytes
+	if dynamic, ok := h.assets.(interface {
+		UploadLimit(context.Context) (int64, error)
+	}); ok {
+		var err error
+		limit, err = dynamic.UploadLimit(c.Request.Context())
+		if err != nil {
+			assetError(c, err)
+			return
+		}
+	}
 	if limit <= 0 {
 		limit = 32 << 20
 	}

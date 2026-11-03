@@ -18,6 +18,7 @@ type doneBotInstallAdmin interface {
 type DoneBotHandler struct {
 	installs doneBotInstallAdmin
 	catalog  *service.DoneBotAdminService
+	storage  *service.DoneBotStorageService
 }
 
 func NewDoneBotHandler(installs *service.DoneBotService, catalog *service.DoneBotAdminService) *DoneBotHandler {
@@ -95,10 +96,25 @@ func (h *DoneBotHandler) LlmPricing(c *gin.Context)        { h.pricing(c, "llm")
 func (h *DoneBotHandler) ImagePricing(c *gin.Context)      { h.pricing(c, "images") }
 func (h *DoneBotHandler) SyncLlmModels(c *gin.Context)     { h.sync(c, "llm") }
 func (h *DoneBotHandler) SyncImageModels(c *gin.Context)   { h.sync(c, "images") }
+func (h *DoneBotHandler) AudioModels(c *gin.Context)       { h.models(c, "audio") }
+func (h *DoneBotHandler) UpdateAudioModels(c *gin.Context) { h.updateModels(c, "audio") }
+func (h *DoneBotHandler) AudioPricing(c *gin.Context)      { h.pricing(c, "audio") }
+func (h *DoneBotHandler) SyncAudioModels(c *gin.Context)   { h.sync(c, "audio") }
 
 func (h *DoneBotHandler) ImageTask(c *gin.Context) {
 	out, err := h.catalog.ImageTask(c.Request.Context(), c.Param("task_id"))
 	if !response.ErrorFrom(c, err) {
 		response.Success(c, out)
 	}
+}
+
+func (h *DoneBotHandler) VideoModels(c *gin.Context)       { h.models(c, "video") }
+func (h *DoneBotHandler) UpdateVideoModels(c *gin.Context) { h.updateModels(c, "video") }
+func (h *DoneBotHandler) VideoPricing(c *gin.Context)      { h.pricing(c, "video") }
+func (h *DoneBotHandler) SyncVideoModels(c *gin.Context)   { h.sync(c, "video") }
+
+func ProvideDoneBotHandler(installs *service.DoneBotService, catalog *service.DoneBotAdminService, storage *service.DoneBotStorageService) *DoneBotHandler {
+	h := NewDoneBotHandler(installs, catalog)
+	h.storage = storage
+	return h
 }

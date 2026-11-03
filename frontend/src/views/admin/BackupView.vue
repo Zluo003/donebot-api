@@ -55,7 +55,12 @@
       </div>
 
       <!-- Async image object storage -->
-      <div class="card p-6">
+      <div v-if="donebotMode" class="card p-6">
+        <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.backup.imageStorage.donebotTitle') }}</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.backup.imageStorage.donebotDescription') }}</p>
+        <a href="/admin/donebot?tab=storage" class="btn btn-secondary mt-4" data-testid="donebot-storage-link">{{ t('admin.backup.imageStorage.donebotAction') }}</a>
+      </div>
+      <div v-else class="card p-6" data-testid="legacy-image-storage">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 class="text-base font-semibold text-gray-900 dark:text-white">
@@ -432,6 +437,7 @@ import BackupArchiveSettings from '@/components/admin/BackupArchiveSettings.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const donebotMode = computed(() => appStore.cachedPublicSettings?.donebot_enabled === true)
 const backupStepUp = useStepUp()
 
 // 敏感操作被 2FA 门控拦截时的统一提示。
@@ -917,7 +923,7 @@ function formatDate(value?: string): string {
 
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
-  await Promise.all([loadS3Config(), loadImageStorageConfig(), loadSchedule(), loadBackups()])
+  await Promise.all([loadS3Config(), ...(donebotMode.value ? [] : [loadImageStorageConfig()]), loadSchedule(), loadBackups()])
 
   // 如果有正在 running 的备份，恢复轮询
   const runningBackup = backups.value.find(r => r.status === 'running')

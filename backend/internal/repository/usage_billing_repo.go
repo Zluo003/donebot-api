@@ -638,3 +638,17 @@ func execAccountQuotaIncrement(ctx context.Context, tx *sql.Tx, query string, ac
 	}
 	return state, nil
 }
+
+// HasUsageCharge reads only keys committed by the existing accounting transaction.
+func (r *usageBillingRepository) HasUsageCharge(ctx context.Context, requestID string, keyID int64) (bool, error) {
+	if r == nil || r.db == nil {
+		return false, errors.New("usage billing repository db is nil")
+	}
+	var found bool
+	err := r.db.QueryRowContext(ctx, `SELECT EXISTS (
+ SELECT 1 FROM usage_billing_dedup WHERE request_id=$1 AND api_key_id=$2
+ UNION ALL
+ SELECT 1 FROM usage_billing_dedup_archive WHERE request_id=$1 AND api_key_id=$2
+ )`, requestID, keyID).Scan(&found)
+	return found, err
+}

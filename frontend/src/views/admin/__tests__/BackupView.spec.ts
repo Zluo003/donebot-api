@@ -5,6 +5,7 @@ import BackupView from '../BackupView.vue'
 
 const {
   getS3Config,
+  publicSettings,
   getImageStorageConfig,
   getSchedule,
   updateSchedule,
@@ -12,6 +13,7 @@ const {
   listBackups,
   getDownloadURL,
 } = vi.hoisted(() => ({
+  publicSettings: { donebot_enabled: false },
   getS3Config: vi.fn(),
   getImageStorageConfig: vi.fn(),
   getSchedule: vi.fn(),
@@ -44,6 +46,7 @@ vi.mock('@/api', () => ({
 
 vi.mock('@/stores', () => ({
   useAppStore: () => ({
+    cachedPublicSettings: publicSettings,
     showError: vi.fn(),
     showSuccess: vi.fn(),
     showWarning: vi.fn(),
@@ -92,6 +95,8 @@ function mountBackupView() {
 
 describe('admin BackupView', () => {
   beforeEach(() => {
+    publicSettings.donebot_enabled = false
+    getImageStorageConfig.mockClear()
     getS3Config.mockResolvedValue({})
     getImageStorageConfig.mockResolvedValue({ config: {}, secret_configured: false })
     getSchedule.mockResolvedValue({ enabled: false, cron_expr: '', retain_days: 14, retain_count: 10 })
@@ -106,6 +111,22 @@ describe('admin BackupView', () => {
     wrappers.splice(0).forEach(wrapper => wrapper.unmount())
     vi.restoreAllMocks()
     document.body.innerHTML = ''
+  })
+
+  it('replaces the legacy image storage editor with a shared storage link in DoneBot mode', async () => {
+    publicSettings.donebot_enabled = true
+    const wrapper = mountBackupView(); await flushPromises()
+    expect(wrapper.find('[data-testid=legacy-image-storage]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.backup.imageStorage.title')
+    expect(wrapper.get('[data-testid=donebot-storage-link]').attributes('href')).toBe('/admin/donebot?tab=storage')
+    expect(getImageStorageConfig).not.toHaveBeenCalled()
+  })
+
+  it('preserves the legacy image storage editor outside DoneBot mode', async () => {
+    const wrapper = mountBackupView(); await flushPromises()
+    expect(wrapper.find('[data-testid=legacy-image-storage]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=donebot-storage-link]').exists()).toBe(false)
+    expect(getImageStorageConfig).toHaveBeenCalledOnce()
   })
 
   it.each(['backup', 'restore'])('does not resume %s polling after navigation during initial loading', async (operation) => {
