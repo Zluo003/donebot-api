@@ -8,15 +8,15 @@
 # Quick Start:
 #   1. Copy .env.example to .env and configure
 #   2. mkdir -p data postgres_data redis_data
-#   3. docker-compose -f docker-compose.local.yml up -d
-#   4. Check logs: docker-compose -f docker-compose.local.yml logs -f sub2api
+#   3. docker compose -f docker-compose.local.yml up -d
+#   4. Check logs: docker compose -f docker-compose.local.yml logs -f sub2api
 #   5. Access: http://localhost:8080
 #
 # Migration to New Server:
-#   1. docker-compose -f docker-compose.local.yml down
+#   1. docker compose -f docker-compose.local.yml down
 #   2. tar czf sub2api-deploy.tar.gz deploy/
 #   3. Transfer to new server and extract
-#   4. docker-compose -f docker-compose.local.yml up -d
+#   4. docker compose -f docker-compose.local.yml up -d
 # =============================================================================
 
 services:
@@ -36,11 +36,15 @@ services:
     ports:
       - "${BIND_HOST:-0.0.0.0}:${SERVER_PORT:-8080}:8080"
     volumes:
-      # Local directory mapping for easy migration
+      # Data persistence (config.yaml will be auto-generated here)
       - ./data:/app/data:Z
       # Optional: Mount custom config.yaml (uncomment and create the file first)
       # Copy config.example.yaml to config.yaml, modify it, then uncomment:
       # - ./config.yaml:/app/data/config.yaml
+      # Optional: Mount a custom Codex instructions template file, then point
+      # gateway.forced_codex_instructions_template_file at /app/data/codex-instructions.md.tmpl
+      # in config.yaml.
+      # - ./codex-instructions.md.tmpl:/app/data/codex-instructions.md.tmpl:ro
     environment:
       # =======================================================================
       # Auto Setup (REQUIRED for Docker deployment)
@@ -58,7 +62,6 @@ services:
       - RUN_MODE=${RUN_MODE:-standard}
       - SIMPLE_MODE_AUTO_CREATE_DEFAULT_GROUPS=${SIMPLE_MODE_AUTO_CREATE_DEFAULT_GROUPS:-}
       - SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED=${SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED:-false}
-      - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
 
       # DoneBot gateway defaults (override in .env).
       - DONEBOT_ENABLED=${DONEBOT_ENABLED:-true}
@@ -76,6 +79,8 @@ services:
       - IMAGE_TASK_TTL_HOURS=${IMAGE_TASK_TTL_HOURS:-24}
       - IMAGE_TASK_EXECUTION_TIMEOUT_MINUTES=${IMAGE_TASK_EXECUTION_TIMEOUT_MINUTES:-30}
 
+      - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
+      - ALIPAY_MOBILE_PRECREATE_DEEP_LINK=${ALIPAY_MOBILE_PRECREATE_DEEP_LINK:-}
 
       # =======================================================================
       # Database Configuration (PostgreSQL)
@@ -231,11 +236,23 @@ services:
     networks:
       - sub2api-network
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-T",
+          "5",
+          "-O",
+          "/dev/null",
+          "http://localhost:8080/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      # The application also retries transient database startup errors. This
+      # grace period keeps Compose from declaring it unhealthy during bootstrap.
+      start_period: 120s
 
   # ===========================================================================
   # PostgreSQL Database
@@ -248,23 +265,38 @@ services:
       nofile:
         soft: 100000
         hard: 100000
+    # Pass the tuning values documented in .env.example to postgres. The
+    # fallbacks are the postgres:18 stock defaults, so nothing changes when
+    # the variables are not set.
+    command: >
+      postgres
+      -c max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+      -c shared_buffers=${POSTGRES_SHARED_BUFFERS:-128MB}
+      -c effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}
+      -c maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-64MB}
     volumes:
-      # Local directory mapping for easy migration
       - ./postgres_data:/var/lib/postgresql/data:Z
     environment:
+      # postgres:18-alpine 默认 PGDATA=/var/lib/postgresql/18/docker（位于镜像声明的匿名卷 /var/lib/postgresql 内）。
+      # 若不显式设置 PGDATA，则即使挂载了 postgres_data 到 /var/lib/postgresql/data，数据也不会落盘到该命名卷，
+      # docker compose down/up 后会触发 initdb 重新初始化，导致用户/密码等数据丢失。
+      - PGDATA=/var/lib/postgresql/data
       - POSTGRES_USER=${POSTGRES_USER:-sub2api}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       - POSTGRES_DB=${POSTGRES_DB:-sub2api}
-      - PGDATA=/var/lib/postgresql/data
       - TZ=${TZ:-Asia/Shanghai}
     networks:
       - sub2api-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sub2api} -d ${POSTGRES_DB:-sub2api}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-sub2api} -d ${POSTGRES_DB:-sub2api} && psql -U ${POSTGRES_USER:-sub2api} -d ${POSTGRES_DB:-sub2api} -Atqc 'SELECT 1' >/dev/null",
+        ]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 18
+      start_period: 60s
     # 注意：不暴露端口到宿主机，应用通过内部网络连接
     # 如需调试，可临时添加：ports: ["127.0.0.1:5433:5432"]
 
@@ -280,7 +312,6 @@ services:
         soft: 100000
         hard: 100000
     volumes:
-      # Local directory mapping for easy migration
       - ./redis_data:/data:Z
     command:
       - redis-server
@@ -305,7 +336,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
-
+    # 注意：不暴露端口到宿主机，应用通过内部网络连接
+    # 如需调试，可临时添加：ports: ["127.0.0.1:6379:6379"]
 # =============================================================================
 # Networks
 # =============================================================================

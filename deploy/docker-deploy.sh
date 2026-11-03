@@ -9,7 +9,12 @@
 #   - Creates necessary data directories
 #
 # After running this script, you can start services with:
-#   docker-compose up -d
+#   docker compose up -d
+#
+# The generated .env sets COMPOSE_FILE=docker-compose.local.yml so plain
+# `docker compose` commands always use the local-directory compose file. This
+# avoids accidentally switching to the named-volume docker-compose.yml after
+# pulling a repository that tracks both files.
 # =============================================================================
 
 set -e
@@ -74,7 +79,7 @@ main() {
     fi
 
     # Check if deployment already exists
-    if [ -f "docker-compose.yml" ] && [ -f ".env" ]; then
+    if { [ -f "docker-compose.local.yml" ] || [ -f "docker-compose.yml" ]; } && [ -f ".env" ]; then
         print_warning "Deployment files already exist in current directory."
         read -p "Overwrite existing files? (y/N): " -r
         echo
@@ -84,17 +89,19 @@ main() {
         fi
     fi
 
-    # Download docker-compose.local.yml and save as docker-compose.yml
-    print_info "Downloading docker-compose.yml..."
+    # Download the local-directory compose file under its own name. Do not save
+    # it as docker-compose.yml: repository checkouts also track a named-volume
+    # docker-compose.yml, and silently replacing it switches the data location.
+    print_info "Downloading docker-compose.local.yml..."
     if command_exists curl; then
-        curl -sSL "${GITHUB_RAW_URL}/docker-compose.local.yml" -o docker-compose.yml
+        curl -sSL "${GITHUB_RAW_URL}/docker-compose.local.yml" -o docker-compose.local.yml
     elif command_exists wget; then
-        wget -q "${GITHUB_RAW_URL}/docker-compose.local.yml" -O docker-compose.yml
+        wget -q "${GITHUB_RAW_URL}/docker-compose.local.yml" -O docker-compose.local.yml
     else
         print_error "Neither curl nor wget is installed. Please install one of them."
         exit 1
     fi
-    print_success "Downloaded docker-compose.yml"
+    print_success "Downloaded docker-compose.local.yml"
 
     # Download .env.example
     print_info "Downloading .env.example..."
@@ -133,6 +140,19 @@ main() {
         sed -i '' "s/^ADMIN_EMAIL=.*/ADMIN_EMAIL=${ADMIN_EMAIL}/" .env
     fi
 
+    # Pin plain `docker compose up -d` to the bind-mounted compose file. This
+    # keeps PostgreSQL, Redis and application data in ./postgres_data, ./data
+    # and ./redis_data instead of silently creating empty named volumes.
+    if grep -q '^COMPOSE_FILE=' .env; then
+        if sed --version >/dev/null 2>&1; then
+            sed -i "s|^COMPOSE_FILE=.*|COMPOSE_FILE=docker-compose.local.yml|" .env
+        else
+            sed -i '' "s|^COMPOSE_FILE=.*|COMPOSE_FILE=docker-compose.local.yml|" .env
+        fi
+    else
+        printf '\n# Use the local-directory Compose file for plain docker compose commands.\nCOMPOSE_FILE=docker-compose.local.yml\n' >> .env
+    fi
+
     # Create data directories
     print_info "Creating data directories..."
     mkdir -p data postgres_data redis_data
@@ -157,7 +177,7 @@ main() {
     print_warning "Please keep them secure and do not share publicly!"
     echo ""
     echo "Directory structure:"
-    echo "  docker-compose.yml        - Docker Compose configuration"
+    echo "  docker-compose.local.yml  - Docker Compose configuration (local directories)"
     echo "  .env                      - Environment variables (generated secrets)"
     echo "  .env.example              - Example template (for reference)"
     echo "  data/                     - Application data (will be created on first run)"
@@ -167,10 +187,10 @@ main() {
     echo "Next steps:"
     echo "  1. (Optional) Edit .env to customize configuration"
     echo "  2. Start services:"
-    echo "     docker-compose up -d"
+    echo "     docker compose up -d"
     echo ""
     echo "  3. View logs:"
-    echo "     docker-compose logs -f sub2api"
+    echo "     docker compose logs -f sub2api"
     echo ""
     echo "  4. Access Web UI:"
     echo "     http://localhost:8080"
