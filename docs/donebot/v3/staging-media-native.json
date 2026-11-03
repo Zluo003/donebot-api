@@ -1,0 +1,243 @@
+[
+  {
+    "name": "responses",
+    "at": "2026-11-03T20:34:58.031Z",
+    "path": "/v1/responses",
+    "status": 200,
+    "request_id": "6fb1e39c-4b63-4d44-b384-89843a4da294",
+    "receipt_id": "8f6a7651-141d-4e89-a872-555617a2aecd",
+    "client_request_id": "99dd67c4-5045-459f-bd06-d188a7930167",
+    "body_bytes": 71837,
+    "sse_frames": 10,
+    "receipt_status": 200,
+    "receipt_request_id": "9bf42662-651f-4451-a6d5-49ebfa714be5",
+    "receipt": {
+      "receipt_id": "8f6a7651-141d-4e89-a872-555617a2aecd",
+      "request_id": "client:8f6a7651-141d-4e89-a872-555617a2aecd",
+      "installation_id": "47d5abf8-c08d-49e5-8c2e-8ad350bdd66c",
+      "status": "completed",
+      "model": "gpt-6.1-terra",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.014077,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    }
+  },
+  {
+    "name": "gemini",
+    "at": "2026-11-03T20:35:50.407Z",
+    "path": "/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse",
+    "status": 200,
+    "request_id": "2aab83ff-078a-45f7-af16-ae379329c1ac",
+    "receipt_id": "df8a465f-ae68-49f0-babe-1c399f2d8a1f",
+    "client_request_id": "099d3da7-a33e-48fd-973b-bea576a19e0f",
+    "body_bytes": 833,
+    "sse_frames": 2,
+    "receipt_status": 200,
+    "receipt_request_id": "1c7d2e90-d1fa-455b-a675-7f51cd89920b",
+    "receipt": {
+      "receipt_id": "df8a465f-ae68-49f0-babe-1c399f2d8a1f",
+      "request_id": "client:df8a465f-ae68-49f0-babe-1c399f2d8a1f",
+      "installation_id": "47d5abf8-c08d-49e5-8c2e-8ad350bdd66c",
+      "status": "completed",
+      "model": "gemini-3.8-flash",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.01566,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    }
+  },
+  {
+    "name": "image",
+    "at": "2026-11-03T20:35:54.539Z",
+    "path": "/v1/images/generations",
+    "status": 200,
+    "request_id": "55202f46-b365-43f7-ba9b-bf769a3e55d8",
+    "receipt_id": "d9f62422-d526-4a42-878b-460aec576f92",
+    "client_request_id": "ba488f28-40a4-4174-b520-c4ad58d8450e",
+    "body_bytes": 677815,
+    "sse_frames": 0,
+    "response_keys": [
+      "created",
+      "data"
+    ],
+    "task_id": null,
+    "has_image": true,
+    "receipt_status": 200,
+    "receipt_request_id": "27612ab9-a047-44c0-9e56-72ca3ed8432f",
+    "receipt": {
+      "receipt_id": "d9f62422-d526-4a42-878b-460aec576f92",
+      "request_id": "client:d9f62422-d526-4a42-878b-460aec576f92",
+      "installation_id": "47d5abf8-c08d-49e5-8c2e-8ad350bdd66c",
+      "status": "completed",
+      "media_type": "image",
+      "model": "gpt-image-2.5-flare",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 25,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    }
+  },
+  {
+    "name": "chat-tool-call",
+    "at": "2026-11-03T20:37:59.797Z",
+    "path": "/v1/chat/completions",
+    "status": 400,
+    "request_id": "ef6ebb5d-100b-47ce-8fd6-efc3bf9ab128",
+    "receipt_id": "25a743cb-7784-4509-bd7d-b7466623dd87",
+    "client_request_id": "89c4e6ba-d99f-412c-afc4-628cc71e4332",
+    "body_bytes": 153,
+    "sse_frames": 0,
+    "error": "Thinking mode does not support this tool_choice (request_id: 9c91fda6-ef73-4af4-ada3-d3161f29adef)",
+    "tool_call_count": 0,
+    "receipt_status": 404,
+    "receipt_request_id": "442942f0-8c6a-4ca0-aaf9-e15f408df3ab"
+  },
+  {
+    "name": "chat-tool-auto",
+    "at": "2026-11-03T20:41:14.476Z",
+    "path": "/v1/chat/completions",
+    "status": 200,
+    "request_id": "304de3fa-7535-499c-8d18-4c87c81c9cd0",
+    "receipt_id": "60be6073-dab5-4f5d-9f5f-53b372cbfd5a",
+    "client_request_id": "797ba0fd-c85e-475d-8d26-29d5b9034cd7",
+    "body_bytes": 809,
+    "sse_frames": 0,
+    "tool_call_count": 1,
+    "receipt": {
+      "receipt_id": "60be6073-dab5-4f5d-9f5f-53b372cbfd5a",
+      "request_id": "client:60be6073-dab5-4f5d-9f5f-53b372cbfd5a",
+      "installation_id": "47d5abf8-c08d-49e5-8c2e-8ad350bdd66c",
+      "status": "completed",
+      "model": "deepseek-flash",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.116,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    },
+    "receipt_status": 200,
+    "receipt_request_id": "07a861ac-215d-494f-9e59-e838d88d47f3"
+  },
+  {
+    "name": "verified-tool-capability",
+    "at": "2026-11-03T20:44:07.518Z",
+    "status": 200,
+    "request_id": "db2ff067-165e-4c35-a928-d494e8b4ccba",
+    "catalog_scope_id": "dbs_b91f6e1f93c58131a874f606ee1b2d57",
+    "catalog_version": "dbv_ad064b46ffbe66bde410613038792864fad71bf4b5722758025d8d5436ca2e19",
+    "deepseek_tool_calling": true
+  },
+  {
+    "name": "responses-low-reasoning",
+    "at": "2026-11-03T20:46:58.414Z",
+    "path": "/v1/responses",
+    "status": 200,
+    "request_id": "39e65531-0d4c-479e-acf4-837f8d4573fc",
+    "receipt_id": "6e9cb604-ce5b-4ac9-95f5-5f9faec1581d",
+    "client_request_id": "5b9b377c-e80c-4f99-9024-d3c81ce18fab",
+    "body_bytes": 71828,
+    "sse_frames": 10,
+    "receipt": {
+      "receipt_id": "6e9cb604-ce5b-4ac9-95f5-5f9faec1581d",
+      "request_id": "client:6e9cb604-ce5b-4ac9-95f5-5f9faec1581d",
+      "installation_id": "47d5abf8-c08d-49e5-8c2e-8ad350bdd66c",
+      "status": "completed",
+      "model": "gpt-6.1-terra",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.014077,
+      "requested_reasoning": "low",
+      "effective_reasoning": "low"
+    },
+    "receipt_status": 200,
+    "receipt_request_id": "e3184ab3-03f6-4936-8637-ce37f7b1c710"
+  },
+  {
+    "name": "responses-downgrade-high-to-low",
+    "at": "2026-11-03T20:57:39.202Z",
+    "path": "/v1/responses",
+    "status": 200,
+    "request_id": "557b4a6e-6767-418a-b699-527ede567c25",
+    "receipt_id": "98254976-1b8e-4af3-b43a-16038f041f80",
+    "client_request_id": "19ebaa20-a3dd-40f9-9865-4b8d20b66e06",
+    "body_bytes": 71828,
+    "sse_frames": 10,
+    "receipt_status": 200,
+    "receipt_request_id": "3cfb2449-2e33-4ed5-a740-827121dc803f",
+    "receipt": {
+      "receipt_id": "98254976-1b8e-4af3-b43a-16038f041f80",
+      "request_id": "client:98254976-1b8e-4af3-b43a-16038f041f80",
+      "installation_id": "47d5abf8-c08d-49e5-8c2e-8ad350bdd66c",
+      "status": "completed",
+      "model": "gpt-6.1-terra",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.014077,
+      "requested_reasoning": "high",
+      "effective_reasoning": "low"
+    }
+  },
+  {
+    "name": "native-client-keychain-bridge",
+    "error": "isolated staging acceptance failed"
+  },
+  {
+    "cleanup": "staging installation revoked, keychain entries deleted, temporary profile removed"
+  },
+  {
+    "name": "native-client-keychain-bridge",
+    "error": "isolated staging acceptance failed",
+    "error_name": "DoneBotSessionError",
+    "error_code": "invalid_response",
+    "error_message": "DoneBot 网关返回的数据无效。"
+  },
+  {
+    "cleanup": "staging installation revoked, keychain entries deleted, temporary profile removed"
+  },
+  {
+    "name": "native-client-keychain-bridge",
+    "at": "2026-11-03T21:09:02.863Z",
+    "status": 200,
+    "request_id": "eecadeeb-dfb6-4ea0-85b0-088464076d1d",
+    "receipt_id": "ecfd6a7a-a5d6-4e67-9116-fa172267c421",
+    "sse_frames": 4,
+    "keychain": "native OS credential service",
+    "installation_id": "ae26e09b-ba62-4c05-a376-e32ef432a367",
+    "receipt": {
+      "receipt_id": "ecfd6a7a-a5d6-4e67-9116-fa172267c421",
+      "request_id": "client:ecfd6a7a-a5d6-4e67-9116-fa172267c421",
+      "installation_id": "ae26e09b-ba62-4c05-a376-e32ef432a367",
+      "status": "completed",
+      "model": "deepseek-flash",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.0084,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    },
+    "metadata_has_installation_key": false
+  },
+  {
+    "cleanup": "staging installation revoked, keychain entries deleted, temporary profile removed"
+  },
+  {
+    "kind": "image-replay-after-gateway-restart",
+    "at": "2026-11-03T21:14:49.508Z",
+    "status": 200,
+    "request_id": "a82085c0-62ac-428d-9607-c3b0f5ae8b0d",
+    "receipt_id": "d9f62422-d526-4a42-878b-460aec576f92",
+    "idempotency_replayed": "true",
+    "body_bytes": 677791,
+    "expected_original_receipt_id": "d9f62422-d526-4a42-878b-460aec576f92"
+  },
+  {
+    "kind": "staging-installation-cleanup",
+    "status": 204,
+    "request_id": "af687d53-792a-4a60-bf72-7d68d5ad15d3",
+    "installation_id": "47d5abf8-c08d-49e5-8c2e-8ad350bdd66c"
+  }
+]
