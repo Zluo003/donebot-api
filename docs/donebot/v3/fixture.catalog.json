@@ -1,0 +1,289 @@
+{
+  "gateway_contract_version": 3,
+  "catalog_scope_id": "fixture-scope-a",
+  "catalog_version": "fixture-v3-1",
+  "defaults": {
+    "openai.chat_completions": "fixture-chat"
+  },
+  "models": [
+    {
+      "id": "fixture-chat",
+      "display_name": "Fixture Chat",
+      "media_types": [
+        "text"
+      ],
+      "platforms": [
+        "openai"
+      ],
+      "interfaces": [
+        "openai.chat_completions"
+      ],
+      "capabilities": {
+        "context_window_tokens": 200000,
+        "max_output_tokens": 8192,
+        "tool_calling": true,
+        "reasoning": {
+          "supported": true,
+          "control": "effort",
+          "levels": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": null,
+          "native_field": "reasoning_effort"
+        }
+      },
+      "pricing": {
+        "currency": "CNY",
+        "input_per_million": 1,
+        "output_per_million": 2
+      }
+    },
+    {
+      "id": "fixture-responses",
+      "display_name": "Fixture Responses",
+      "media_types": [
+        "text"
+      ],
+      "platforms": [
+        "openai"
+      ],
+      "interfaces": [
+        "openai.responses"
+      ],
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": {
+          "supported": true,
+          "control": "effort",
+          "levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "default": null,
+          "native_field": "reasoning.effort"
+        }
+      },
+      "pricing": {
+        "currency": "CNY",
+        "input_per_million": 1,
+        "output_per_million": 2
+      }
+    },
+    {
+      "id": "fixture-messages",
+      "display_name": "Fixture Messages",
+      "media_types": [
+        "text"
+      ],
+      "platforms": [
+        "anthropic"
+      ],
+      "interfaces": [
+        "anthropic.messages"
+      ],
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": {
+          "supported": true,
+          "control": "effort",
+          "levels": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": null,
+          "native_field": "output_config.effort"
+        }
+      },
+      "pricing": {
+        "currency": "CNY",
+        "input_per_million": 1,
+        "output_per_million": 2
+      }
+    },
+    {
+      "id": "fixture-gemini",
+      "display_name": "Fixture Gemini",
+      "media_types": [
+        "text"
+      ],
+      "platforms": [
+        "gemini"
+      ],
+      "interfaces": [
+        "gemini.generate_content"
+      ],
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": {
+          "supported": true,
+          "control": "budget",
+          "levels": [
+            "low",
+            "high"
+          ],
+          "default": null,
+          "native_field": "generationConfig.thinkingConfig.thinkingBudget",
+          "mapping": {
+            "low": 1024,
+            "high": 4096
+          }
+        }
+      },
+      "pricing": {
+        "currency": "CNY",
+        "input_per_million": 1,
+        "output_per_million": 2
+      }
+    },
+    {
+      "id": "fixture-no-reasoning",
+      "display_name": "Fixture without reasoning",
+      "media_types": [
+        "text"
+      ],
+      "platforms": [
+        "openai"
+      ],
+      "interfaces": [
+        "openai.chat_completions"
+      ],
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": {
+          "supported": false,
+          "control": "none",
+          "levels": [],
+          "default": null,
+          "native_field": null
+        }
+      },
+      "pricing": {
+        "currency": "CNY",
+        "input_per_million": 1,
+        "output_per_million": 2
+      }
+    },
+    {
+      "id": "fixture-image",
+      "display_name": "Fixture image",
+      "media_types": [
+        "image"
+      ],
+      "platforms": [
+        "fixture"
+      ],
+      "interfaces": [
+        "openai.images"
+      ],
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": {
+          "supported": false,
+          "control": "none",
+          "levels": [],
+          "default": null,
+          "native_field": null
+        }
+      },
+      "pricing": {
+        "currency": "CNY",
+        "per_request": 0.2,
+        "unit": "fixture_request"
+      }
+    },
+    {
+      "id": "fixture-video",
+      "display_name": "Fixture video",
+      "media_types": [
+        "video"
+      ],
+      "platforms": [
+        "fixture"
+      ],
+      "interfaces": [
+        "openai.videos"
+      ],
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": {
+          "supported": false,
+          "control": "none",
+          "levels": [],
+          "default": null,
+          "native_field": null
+        }
+      },
+      "pricing": {
+        "currency": "CNY",
+        "per_request": 0.2,
+        "unit": "fixture_request"
+      },
+      "media_parameters": {
+        "resolutions": [
+          "720p"
+        ]
+      }
+    },
+    {
+      "id": "fixture-music",
+      "display_name": "Fixture music",
+      "media_types": [
+        "music"
+      ],
+      "platforms": [
+        "fixture"
+      ],
+      "interfaces": [
+        "openai.music"
+      ],
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": {
+          "supported": false,
+          "control": "none",
+          "levels": [],
+          "default": null,
+          "native_field": null
+        }
+      },
+      "pricing": {
+        "currency": "CNY",
+        "per_request": 0.2,
+        "unit": "fixture_request"
+      }
+    },
+    {
+      "id": "fixture-speech",
+      "display_name": "Fixture speech",
+      "media_types": [
+        "audio"
+      ],
+      "platforms": [
+        "fixture"
+      ],
+      "interfaces": [
+        "openai.audio.speech"
+      ],
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": {
+          "supported": false,
+          "control": "none",
+          "levels": [],
+          "default": null,
+          "native_field": null
+        }
+      },
+      "pricing": {
+        "currency": "CNY",
+        "per_request": 0.2,
+        "unit": "fixture_request"
+      }
+    }
+  ]
+}

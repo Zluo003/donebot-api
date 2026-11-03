@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:donebot:catalog:v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "gateway_contract_version",
+    "catalog_scope_id",
+    "catalog_version",
+    "defaults",
+    "models"
+  ],
+  "properties": {
+    "gateway_contract_version": {
+      "const": 3
+    },
+    "catalog_scope_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "catalog_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/model"
+      }
+    }
+  },
+  "$defs": {
+    "reasoning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "supported",
+        "control",
+        "levels",
+        "default",
+        "native_field"
+      ],
+      "properties": {
+        "supported": {
+          "type": "boolean"
+        },
+        "control": {
+          "enum": [
+            "none",
+            "effort",
+            "budget",
+            "variant"
+          ]
+        },
+        "levels": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "default": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "native_field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mapping": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "supported": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "control": {
+                "const": "none"
+              },
+              "levels": {
+                "maxItems": 0
+              },
+              "default": {
+                "const": null
+              },
+              "native_field": {
+                "const": null
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "control": {
+                "enum": [
+                  "effort",
+                  "budget",
+                  "variant"
+                ]
+              },
+              "levels": {
+                "minItems": 1
+              },
+              "native_field": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "control": {
+                "const": "budget"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "mapping"
+            ],
+            "properties": {
+              "mapping": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "control": {
+                "const": "variant"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "mapping"
+            ],
+            "properties": {
+              "mapping": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "price": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currency"
+      ],
+      "properties": {
+        "currency": {
+          "const": "CNY"
+        },
+        "input_per_million": {
+          "type": "number",
+          "minimum": 0
+        },
+        "output_per_million": {
+          "type": "number",
+          "minimum": 0
+        },
+        "per_request": {
+          "type": "number",
+          "minimum": 0
+        },
+        "image_sizes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "tiers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "media_types",
+        "platforms",
+        "interfaces",
+        "capabilities",
+        "pricing"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "media_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "text",
+              "image",
+              "video",
+              "music",
+              "audio"
+            ]
+          }
+        },
+        "platforms": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "interfaces": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tool_calling",
+            "reasoning"
+          ],
+          "properties": {
+            "tool_calling": {
+              "type": "boolean"
+            },
+            "context_window_tokens": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "max_output_tokens": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "reasoning": {
+              "$ref": "#/$defs/reasoning"
+            },
+            "by_interface": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/reasoning"
+              }
+            }
+          }
+        },
+        "pricing": {
+          "$ref": "#/$defs/price"
+        },
+        "media_parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "resolutions": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
