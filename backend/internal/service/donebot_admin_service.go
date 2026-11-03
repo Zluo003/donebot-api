@@ -20,7 +20,6 @@ const doneBotCatalogSetting = "donebot.model_catalog"
 type doneBotGroupUpdateContext struct{}
 type doneBotCatalogAdmin interface {
 	GetGroup(context.Context, int64) (*Group, error)
-	GetGroupModelsListCandidates(context.Context, int64, string) ([]string, error)
 	ListCompositeRoutes(context.Context, int64) ([]CompositeModelRoute, error)
 	UpdateGroup(context.Context, int64, *UpdateGroupInput) (*Group, error)
 }
@@ -28,7 +27,7 @@ type doneBotCatalogChannels interface {
 	List(context.Context, pagination.PaginationParams, string, string) ([]Channel, *pagination.PaginationResult, error)
 }
 type doneBotCatalogAccounts interface {
-	ListSchedulableByGroupID(context.Context, int64) ([]Account, error)
+	ListByGroup(context.Context, int64) ([]Account, error)
 }
 type doneBotCatalogPricing interface {
 	GetChannelModelPricing(context.Context, int64, string) *ChannelModelPricing
@@ -49,6 +48,7 @@ func NewDoneBotAdminService(installs *DoneBotService, admin AdminService, channe
 }
 
 type DoneBotModel struct {
+	ModelMultiplier          float64                 `json:"model_multiplier"`
 	PricingConfigured        bool                    `json:"pricing_configured"`
 	EditablePricing          *DoneBotEditablePricing `json:"editable_pricing,omitempty"`
 	VideoResolutions         []string                `json:"video_resolutions,omitempty"`
@@ -131,18 +131,27 @@ func (s *DoneBotAdminService) saveCatalog(ctx context.Context, rows []DoneBotMod
 	return s.settings.Set(ctx, doneBotCatalogSetting, string(b))
 }
 func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotModel, error) {
-	accounts, err := s.accounts.ListSchedulableByGroupID(ctx, g.ID)
+	accounts, err := s.accounts.ListByGroup(ctx, g.ID)
 	if err != nil {
 		return nil, err
 	}
+	// This page lists operator-configured models. Generic model candidates and
+	// GetModelMapping contain platform defaults and runtime aliases, so neither
+	// is evidence that an account explicitly enabled a model.
+	accounts = slices.DeleteFunc(accounts, func(a Account) bool {
+		return a.Status != StatusActive || !a.Schedulable || !slices.Contains(a.GroupIDs, g.ID)
+	})
 	candidates := map[string][]string{}
-	for _, a := range accounts {
-		if _, ok := candidates[a.Platform]; !ok {
-			models, e := s.admin.GetGroupModelsListCandidates(ctx, g.ID, a.Platform)
-			if e != nil {
-				return nil, e
+	for i := range accounts {
+		account := &accounts[i]
+		for model, target := range stringMappingFromRaw(account.Credentials["model_mapping"]) {
+			model = strings.TrimSpace(model)
+			if model == "" || strings.Contains(model, "*") || strings.TrimSpace(target) == "" || !doneBotCatalogAccountSupports(account, model, "") {
+				continue
 			}
-			candidates[a.Platform] = models
+			if !slices.Contains(candidates[account.Platform], model) {
+				candidates[account.Platform] = append(candidates[account.Platform], model)
+			}
 		}
 	}
 	routes, err := s.admin.ListCompositeRoutes(ctx, g.ID)
@@ -159,14 +168,11 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 			if ch.Status != StatusActive || !slices.Contains(ch.GroupIDs, g.ID) {
 				continue
 			}
-			for _, price := range append(slices.Clone(ch.ModelPricing), g.ModelPricing...) {
+			for _, price := range ch.ModelPricing {
 				if !doneBotHasPrice(price) {
 					continue
 				}
-				source, ok := candidates[price.Platform]
-				if !ok {
-					continue
-				}
+				source := candidates[price.Platform]
 				for _, model := range source {
 					matched := false
 					for _, pattern := range price.Models {
@@ -196,14 +202,14 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 					rows[strings.ToLower(model)] = row
 				}
 				for _, route := range routes {
-					if !route.Enabled || route.MatchType != "exact" || route.TargetPlatform != price.Platform {
+					if !route.Enabled || route.MatchType != "exact" || route.TargetPlatform != price.Platform || route.GroupID != 0 && route.GroupID != g.ID {
 						continue
 					}
 					upstream := route.UpstreamModel
 					if upstream == "" {
 						upstream = route.PublicModel
 					}
-					if !allowlistSourcePatternAllowsModel(source, upstream) {
+					if !doneBotCatalogAccountsSupport(accounts, route.TargetPlatform, upstream, route.Endpoint) {
 						continue
 					}
 					pricedModel := route.PublicModel
@@ -244,21 +250,15 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 			if _, exists := rows[key]; exists || strings.Contains(model, "*") {
 				continue
 			}
-			kind, unit := doneBotNativeMediaKind(model, accounts)
-			if kind == "" {
-				kind = "llm"
-				if IsGPTImageGenerationModel(model) || isImageGenerationModel(model) || isGrokImageGenerationModel(model) {
-					kind = "images"
-				}
-			}
+			kind, unit := doneBotModelKind(model, "", accounts)
 			native, _ := doneBotNativeMediaKind(model, accounts)
 			if native == "" || doneBotHasNativeMediaAccount(model, platform, kind, accounts) {
-				rows[key] = DoneBotModel{Model: model, Platform: platform, Kind: kind, AudioPriceUnit: unit, Available: true, ChannelPricing: matchGroupModelPricing(g, model)}
+				rows[key] = DoneBotModel{Model: model, Platform: platform, Kind: kind, AudioPriceUnit: unit, Available: true, ChannelPricing: nil}
 			}
 		}
 	}
 	for _, route := range routes {
-		if !route.Enabled || route.MatchType != "exact" {
+		if !route.Enabled || route.MatchType != "exact" || route.GroupID != 0 && route.GroupID != g.ID {
 			continue
 		}
 		key := strings.ToLower(route.PublicModel)
@@ -269,32 +269,25 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 		if upstream == "" {
 			upstream = route.PublicModel
 		}
-		if !allowlistSourcePatternAllowsModel(candidates[route.TargetPlatform], upstream) {
+		if !doneBotCatalogAccountsSupport(accounts, route.TargetPlatform, upstream, route.Endpoint) {
 			continue
 		}
-		kind, unit := doneBotNativeMediaKind(upstream, accounts)
-		if kind == "" {
-			kind = "llm"
+		kind, unit := doneBotModelKind(upstream, "", accounts)
+		if route.Endpoint == CompositeRouteEndpointImages {
+			kind = "images"
 		}
-		if kind != "llm" && !doneBotHasNativeMediaAccount(upstream, route.TargetPlatform, kind, accounts) {
+		if native, _ := doneBotNativeMediaKind(upstream, accounts); native != "" && !doneBotHasNativeMediaAccount(upstream, route.TargetPlatform, native, accounts) {
 			continue
 		}
-		rows[key] = DoneBotModel{Model: route.PublicModel, Platform: route.TargetPlatform, Kind: kind, AudioPriceUnit: unit, Available: true, ChannelPricing: matchGroupModelPricing(g, route.PublicModel), VideoResolutions: doneBotVideoResolutions(upstream, accounts)}
-	}
-	saved, err := s.savedCatalog(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, row := range saved {
-		key := strings.ToLower(row.Model)
-		if _, ok := rows[key]; !ok {
-			row.Available = false
-			rows[key] = row
-		}
+		rows[key] = DoneBotModel{Model: route.PublicModel, Platform: route.TargetPlatform, Kind: kind, AudioPriceUnit: unit, Available: true, ChannelPricing: nil, VideoResolutions: doneBotVideoResolutions(upstream, accounts)}
 	}
 	result := make([]DoneBotModel, 0, len(rows))
 	for _, row := range rows {
 		row.Enabled = g.ModelAllowlist.Allows(row.Model)
+		row.ModelMultiplier = 1
+		if row.Kind == "llm" {
+			row.ModelMultiplier = doneBotLlmModelMultiplier(g, row.Model)
+		}
 		price := row.ChannelPricing
 		if row.Available && s.pricing != nil {
 			if resolved := s.pricing.GetChannelModelPricing(WithResolvedTargetPlatform(ctx, row.Platform), g.ID, row.Model); resolved != nil {
@@ -302,7 +295,7 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 				row.ChannelPricing = resolved
 			}
 		}
-		if configured := matchGroupModelPricing(g, row.Model); configured != nil {
+		if configured := matchGroupModelPricing(g, row.Model); configured != nil && row.Kind != "llm" {
 			price = configured
 			row.ChannelPricing = configured
 		}
@@ -310,8 +303,12 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 			row.VideoResolutions = doneBotVideoResolutions(row.Model, accounts)
 		}
 		if price != nil {
-			row.EffectiveInputPrice = multiplied(price.InputPrice, g.RateMultiplier)
-			row.EffectiveOutputPrice = multiplied(price.OutputPrice, g.RateMultiplier)
+			rate := g.RateMultiplier
+			if row.Kind == "llm" {
+				rate = row.ModelMultiplier
+			}
+			row.EffectiveInputPrice = multiplied(price.InputPrice, rate)
+			row.EffectiveOutputPrice = multiplied(price.OutputPrice, rate)
 			if row.Kind == "audio" {
 				row.EffectivePerRequestPrice = multiplied(price.PerRequestPrice, g.RateMultiplier)
 				row.EffectiveTierPrices = map[string]*float64{}
@@ -583,13 +580,12 @@ func (s *DoneBotAdminService) Overview(ctx context.Context) (map[string]any, err
 }
 
 func (s *DoneBotAdminService) requireModality(kind string) error {
-	if kind == "video" && (s.installs == nil || s.installs.cfg == nil || !s.installs.cfg.DoneBot.Features.Video) {
-		return infraerrors.NotFound("DONEBOT_VIDEO_DISABLED", "Video is not enabled")
+	switch kind {
+	case "llm", "images", "audio", "video":
+		return nil
+	default:
+		return infraerrors.BadRequest("DONEBOT_MODEL_KIND_INVALID", "unknown model kind")
 	}
-	if kind == "audio" && (s.installs == nil || s.installs.cfg == nil || !s.installs.cfg.DoneBot.Features.Audio) {
-		return infraerrors.NotFound("DONEBOT_AUDIO_DISABLED", "Audio is not enabled")
-	}
-	return nil
 }
 
 func doneBotNativeAudioUnit(model string) string {
@@ -604,6 +600,16 @@ func doneBotNativeAudioUnit(model string) string {
 
 // Account model mappings can expose a native audio model under a public alias.
 func doneBotModelKind(model string, mode BillingMode, accounts []Account) (string, string) {
+
+	if mode == BillingModeImage || doneBotCatalogImageModel(model) {
+		return "images", ""
+	}
+	for i := range accounts {
+		a := &accounts[i]
+		if doneBotCatalogRawMappingSupports(a, model) && doneBotCatalogImageModel(a.GetMappedModel(model)) {
+			return "images", ""
+		}
+	}
 	if kind, unit := doneBotNativeMediaKind(model, accounts); kind != "" {
 		return kind, unit
 	}
@@ -701,4 +707,46 @@ func (s *DoneBotAdminService) ImageTask(ctx context.Context, id string) (*DoneBo
 	out.Install.ID = install.ID
 	out.Install.Name = install.Name
 	return out, nil
+}
+
+func doneBotCatalogImageModel(model string) bool {
+	return IsGPTImageGenerationModel(model) || isImageGenerationModel(model) || isGrokImageGenerationModel(model)
+}
+func doneBotCatalogRawMappingSupports(a *Account, model string) bool {
+	for pattern, target := range stringMappingFromRaw(a.Credentials["model_mapping"]) {
+		if strings.TrimSpace(target) != "" && (pattern == model || matchWildcard(pattern, model)) {
+			return true
+		}
+	}
+	return false
+}
+func doneBotCatalogAccountSupports(a *Account, model, endpoint string) bool {
+	if !doneBotCatalogRawMappingSupports(a, model) {
+		return false
+	}
+	native, _ := doneBotNativeMediaKind(model, []Account{*a})
+	if native != "" {
+		return doneBotHasNativeMediaAccount(model, a.Platform, native, []Account{*a})
+	}
+	if doneBotCatalogImageModel(model) || doneBotCatalogImageModel(a.GetMappedModel(model)) || endpoint == CompositeRouteEndpointImages {
+		return true
+	}
+	if a.IsOpenAICompatible() {
+		switch endpoint {
+		case CompositeRouteEndpointResponses:
+			return a.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponses)
+		case CompositeRouteEndpointEmbeddings:
+			return a.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityEmbeddings)
+		}
+		return a.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityChatCompletions)
+	}
+	return true
+}
+func doneBotCatalogAccountsSupport(accounts []Account, platform, model, endpoint string) bool {
+	for i := range accounts {
+		if accounts[i].Platform == platform && doneBotCatalogAccountSupports(&accounts[i], model, endpoint) {
+			return true
+		}
+	}
+	return false
 }

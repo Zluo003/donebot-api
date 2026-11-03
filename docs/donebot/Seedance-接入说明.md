@@ -24,15 +24,29 @@ NewToken 要求请求显式提供 `resolution`，且 `content` 至少包含一�
 
 ## 账号与开关
 
-1. 在账号管理点击“添加视频账号”，使用视频专用面板填写名称、上游 API Key、分组及允许的分辨率。
+1. 在账号管理点击“添加视频账号”，使用视频专用面板填写名称、上游 API Key、分组、模型映射及允许的分辨率。
 2. 上游 Base URL 默认为 `https://api.newtoken.club`；使用供应商原生 Bearer API Key。视频账号复用现有 OpenAI API Key 账号类型，并启用 `seedance` 端点能力。
 3. 分辨率多选存放在 `credentials.seedance_allowed_resolutions`，例如 `["720p", "1080p"]`。新建面板默认勾选 `720p`。旧账号未保存该字段时不增加账号级限制，仍需满足模型与供应商 Key 的限制。
 4. 可调度能力取模型支持、账号勾选及上游 Key 权限的交集。请求不满足时应拒绝，不能把请求的分辨率静默降到其他值。
-5. DoneBot 模式需要设置 `DONEBOT_FEATURES_VIDEO=true`。视频页按模型、官方分辨率、是否含参考视频设置最终售价（USD/输出秒）；缺少请求对应档位的价格时在调用上游前拒绝。分组模型开关、模型映射、用户余额、安装凭据、限流和账号调度继续使用现有链路。
+5. DoneBot 模式的视频实际调用需要设置 `DONEBOT_FEATURES_VIDEO=true`；管理页的视频标签始终显示，开关关闭时仍可提前配置。视频页按模型、官方分辨率、是否含参考视频设置售价（USD/输出秒），模型开关与售价一次保存；缺少请求对应档位的价格时在调用上游前拒绝。分组模型开关、模型映射、用户余额、安装凭据、限流和账号调度继续使用现有链路。
 
 视频专用账号面板另有“上游产物存储方式”：默认“转发 URL”直接返回供应商地址；选择“系统存储策略”时将产物保存至 DoneBot 共享生成产物存储。该选择保存为账号 `extra.seedance_output_storage`（`upstream` / `system`），旧账号未设置时按 `upstream`。存储配置见[存储管理说明](存储管理说明.md)。
 
-模型别名映射到其他 Seedance 模型时，也必须满足映射后的模型能力。账号允许 `1080p` 不代表 Fast 或 Mini 支持 `1080p`。
+模型映射的每行包含“启用此映射”、下游模型名称、上游模型名称和官方模型规格，可新增或删除。下游名供客户端请求与 DoneBot 模型目录使用，上游名原样用于供应商请求，两者均可自定义；官方规格从上表四个型号中选择，用于分辨率、时长、参考素材及 2.5 编辑/延长能力校验，不替换上下游名称。账号允许 `1080p` 不代表 Fast 或 Mini 支持 `1080p`。
+
+配置复用凭据 JSON：`model_mapping` 保存下游名到上游名，`seedance_model_specs` 以相同下游名关联官方规格。例如：
+
+```json
+{
+  "model_mapping": {"donebot-video": "vendor-video-endpoint"},
+  "seedance_model_specs": {"donebot-video": "doubao-seedance-2-5-260628"},
+  "seedance_allowed_resolutions": ["720p", "1080p"]
+}
+```
+
+客户端仍使用原生请求体的 `model: "donebot-video"`；网关按 Seedance 2.5 规格检查请求，发给上游时只将 `model` 换为 `vendor-video-endpoint`。关闭或删除的映射不写入两张映射表。上下游名称不能为空，不支持通配符，下游名称必须唯一；每个启用映射必须关联有效官方规格。
+
+编辑旧账号时，优先从上游官方型号推断规格，其次从下游官方型号推断；两端都是自定义名称而未保存规格时，须手动选择后才能保存，网关不会猜测其能力。新账号默认带四个官方型号的同名映射。上游 API Key 留空保留，其他账号配置继续保留。
 
 管理端创建、单条更新和批量更新均在写库前校验分辨率设置：仅 OpenAI API Key 类型可以保存该字段，字段必须是字符串数组，值仅允许官方枚举。合法值会去除首尾空白、转为小写并去重；显式空数组表示暂停该账号的所有分辨率创建能力。批量更新会逐个按目标账号的平台、类型以及合并后的凭据校验，任一目标不合法即拒绝整次批量写入；校验不把某个账号的密钥复制进其他账号。此行为由 `backend/internal/service/admin_seedance_account_test.go` 覆盖。
 
@@ -212,7 +226,7 @@ NewToken 页面按人民币/百万 token 报供应商成本，网关面向用户
 | `backend/internal/service/admin_account.go`、`admin_seedance_account.go` | 创建、更新和批量更新时验证分辨率配置 |
 | `backend/internal/handler/grok_media.go`、`gateway_inflight_reservation.go`、`openai_gateway_handler.go` | 分辨率路由、并发槽释放、视频独立权限、秒数余额估算及不可丢弃的异步计费 |
 | `backend/internal/server/middleware/api_key_auth.go` | 余额耗尽后仍允许鉴权通过的创建者查询原有任务 |
-| `frontend/src/components/account/VideoAccountModal.vue`、`videoAccount.ts`、`index.ts` | 专用创建和编辑面板、模型与官方分辨率选项 |
+| `frontend/src/components/account/VideoAccountModal.vue`、`videoAccount.ts`、`index.ts` | 专用创建和编辑面板、可自定义上下游模型映射、官方规格与分辨率选项 |
 | `frontend/src/views/admin/AccountsView.vue`、`components/admin/account/AccountTableActions.vue`、`i18n/locales/{zh,en}/admin/accounts.ts` | 添加视频账号入口、编辑分流与中英文文案 |
 | 相邻 `seedance*_test.go`、`admin_seedance_account_test.go`、`*.spec.ts`、`screenshots/seedance-*` | 协议、能力筛选、鉴权、余额、计费及页面回归证据 |
 
@@ -237,7 +251,7 @@ pnpm test:run
 pnpm build
 ```
 
-当前前端全量 393 个文件、3116 项测试通过，包含 APIMart、逐模型定价、统一存储、视频产物策略及备份页兼容；最后移除过时静态存储警告后相关 3 项测试通过。lint、类型检查和构建通过。构建保留既有的大 chunk、Browserslist 和导入方式提示，未因此升级依赖。页面使用本地 API fixture 验证桌面 1280×960 和手机 390×844，页面与面板均无横向溢出；编辑时密钥输入为空，原有分辨率勾选正确。
+v0.4.0 前端全量 393 个文件、3116 项测试通过，包含 APIMart、逐模型定价、统一存储、视频产物策略及备份页兼容；最新模型映射与 LLM 倍率回归结果见[验收记录](验收记录.md)。lint、类型检查和构建通过。构建保留既有的大 chunk、Browserslist 和导入方式提示，未因此升级依赖。页面使用本地 API fixture 验证桌面 1280×960 和手机 390×844，页面与面板均无横向溢出；编辑时密钥输入为空，原有分辨率勾选正确。
 
 | 桌面编辑 | 手机分辨率选项 |
 | --- | --- |

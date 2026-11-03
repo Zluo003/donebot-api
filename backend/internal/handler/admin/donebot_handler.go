@@ -82,6 +82,21 @@ func (h *DoneBotHandler) pricing(c *gin.Context, kind string) {
 		response.Success(c, out)
 	}
 }
+func (h *DoneBotHandler) configuration(c *gin.Context, kind string) {
+	var in service.DoneBotModelConfigurationInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.BadRequest(c, "Invalid model configuration")
+		return
+	}
+	out, err := h.catalog.UpdateConfiguration(c.Request.Context(), kind, in)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+func (h *DoneBotHandler) UpdateLlmConfiguration(c *gin.Context)   { h.configuration(c, "llm") }
+func (h *DoneBotHandler) UpdateImageConfiguration(c *gin.Context) { h.configuration(c, "images") }
+func (h *DoneBotHandler) UpdateVideoConfiguration(c *gin.Context) { h.configuration(c, "video") }
+func (h *DoneBotHandler) UpdateAudioConfiguration(c *gin.Context) { h.configuration(c, "audio") }
 func (h *DoneBotHandler) sync(c *gin.Context, kind string) {
 	out, err := h.catalog.SyncModels(c.Request.Context(), kind)
 	if !response.ErrorFrom(c, err) {

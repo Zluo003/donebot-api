@@ -23,6 +23,8 @@
             @click="active = tab.id"
           >{{ tab.label }}</button>
         </div>
+        <p v-if="active === 'audio' && overview?.features?.audio === false" class="text-sm text-amber-600">音频调用未启用，可先配置模型与价格。</p>
+        <p v-if="active === 'video' && overview?.features?.video === false" class="text-sm text-amber-600">视频调用未启用，可先配置模型与价格。</p>
         <LlmModelsPanel v-if="active === 'llm'" />
         <ImageModelsPanel v-else-if="active === 'images'" />
         <AudioModelsPanel v-else-if="active === 'audio'" />
@@ -51,7 +53,7 @@ const app = useAppStore()
 const route = useRoute()
 const active = ref<Modality | 'storage'>(route.query.tab === 'storage' ? 'storage' : 'llm')
 const overview = ref<Overview | null>(null)
-const tabs = computed(() => [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }, ...(overview.value?.features?.audio ? [{ id: 'audio' as const, label: '音频' }] : []), ...(overview.value?.features?.video ? [{ id: 'video' as const, label: '视频' }] : []), { id: 'storage' as const, label: '存储' }])
+const tabs = [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }, { id: 'audio' as const, label: '音频' }, { id: 'video' as const, label: '视频' }, { id: 'storage' as const, label: '存储' }]
 const metrics = computed(() => [
   { label: '已绑定用户', value: overview.value?.user_count },
   { label: '启用模型', value: overview.value?.model_count },

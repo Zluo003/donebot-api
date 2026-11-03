@@ -151,3 +151,44 @@ func TestSeedanceNewTokenAllModesPreserveMaterialReferences(t *testing.T) {
 		})
 	}
 }
+
+func TestSeedanceCustomUpstreamNamesValidateSelectedSpecification(t *testing.T) {
+	for _, tc := range []struct {
+		name, public, spec, options string
+		wantError                   bool
+	}{
+		{"custom_25_edit", "studio-video", "doubao-seedance-2-5-260628", `"resolution":"1080p","duration":-1,"ratio":"adaptive","omni_reference_task_type":"edit"`, false},
+		{"canonical_name_used_as_alias", "doubao-seedance-2-0-260128", "doubao-seedance-2-5-260628", `"resolution":"1080p","duration":-1,"ratio":"adaptive","omni_reference_task_type":"edit"`, false},
+		{"20_cannot_edit", "studio-video", "doubao-seedance-2-0-260128", `"resolution":"720p","duration":-1,"ratio":"adaptive","omni_reference_task_type":"edit"`, true},
+		{"fast_cannot_1080p", "studio-video", "doubao-seedance-2-0-fast-260128", `"resolution":"1080p"`, true},
+		{"20_duration_limit", "studio-video", "doubao-seedance-2-0-260128", `"resolution":"720p","duration":30`, true},
+		{"25_cannot_4k", "studio-video", "doubao-seedance-2-5-260628", `"resolution":"4k"`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			account := seedanceTestAccount()
+			account.Credentials["base_url"] = SeedanceNewTokenBaseURL
+			account.Credentials["model_mapping"] = map[string]any{tc.public: "newtoken-custom-upstream"}
+			account.Credentials["seedance_model_specs"] = map[string]any{tc.public: tc.spec}
+			body := []byte(`{"model":"` + tc.public + `",` + tc.options + `,"content":[{"type":"text","text":"recolor"},{"type":"video_url","video_url":{"url":"asset://source"},"role":"reference_video"}],"future_field":{"keep":true}}`)
+			upstream := &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(`{"id":"custom-task"}`)}
+			svc := &OpenAIGatewayService{httpUpstream: upstream}
+			c, _ := grokMediaContentTestContext(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
+			result, err := svc.ForwardSeedance(context.Background(), c, account, SeedanceEndpointCreate, "", body)
+			if tc.wantError {
+				require.Error(t, err)
+				require.Empty(t, upstream.requests, "invalid requests must not create a billable upstream task")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.public, result.Model)
+			require.Equal(t, tc.public, result.BillingModel)
+			require.Equal(t, "newtoken-custom-upstream", result.UpstreamModel)
+			forwarded, err := io.ReadAll(upstream.request.Body)
+			require.NoError(t, err)
+			require.Equal(t, "newtoken-custom-upstream", gjson.GetBytes(forwarded, "model").String())
+			for _, field := range []string{"content", "resolution", "duration", "ratio", "omni_reference_task_type", "future_field"} {
+				require.Equal(t, gjson.GetBytes(body, field).Raw, gjson.GetBytes(forwarded, field).Raw, field)
+			}
+		})
+	}
+}

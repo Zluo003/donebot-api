@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"maps"
+	"math"
 	"strings"
 )
 
@@ -42,6 +43,7 @@ type ResolvedPricing struct {
 	channelPricing *ChannelModelPricing
 
 	longContextPricingEnabled bool
+	modelRateMultiplier       *float64
 }
 
 // ModelPricingResolver 统一模型定价解析器。
@@ -71,17 +73,34 @@ type PricingInput struct {
 // 2. 如果指定了 GroupID，查找渠道定价并覆盖
 func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) *ResolvedPricing {
 	longContextPricingEnabled := input.Group == nil || input.Group.LongContextPricingEnabled
+	rateModel := input.Model
+	if requested, ok := tokenPricingRequestedModel(ctx); ok {
+		rateModel = requested
+	}
+	var modelRateMultiplier *float64
+	if ratePricing := matchGroupModelPricing(input.Group, rateModel); ratePricing != nil &&
+		(ratePricing.BillingMode == "" || ratePricing.BillingMode == BillingModeToken) {
+		modelRateMultiplier = ratePricing.RateMultiplier
+	}
 	if groupPricing := matchGroupModelPricing(input.Group, input.Model); groupPricing != nil {
-		// Group token cards only override the first-tier / flat rates.
-		// Long-context ladders come from official presets, gated by the checkbox.
-		if groupPricing.BillingMode == "" || groupPricing.BillingMode == BillingModeToken {
-			stripped := groupPricing.Clone()
-			stripped.Intervals = nil
-			groupPricing = &stripped
+		tokenMode := groupPricing.BillingMode == "" || groupPricing.BillingMode == BillingModeToken
+		// A relative request card follows the live channel/catalog price, even
+		// when the upstream billing model has a legacy absolute group token card.
+		if !tokenMode || modelRateMultiplier == nil && groupPricing.RateMultiplier == nil {
+			// Group token cards only override the first-tier / flat rates.
+			// Long-context ladders come from official presets, gated by the checkbox.
+			if groupPricing.BillingMode == "" || groupPricing.BillingMode == BillingModeToken {
+				stripped := groupPricing.Clone()
+				stripped.Intervals = nil
+				groupPricing = &stripped
+			}
+			resolved := r.resolveConfiguredPricing(groupPricing, input.Model, PricingSourceGroup)
+			resolved.longContextPricingEnabled = longContextPricingEnabled
+			if resolved.Mode == BillingModeToken {
+				resolved.modelRateMultiplier = modelRateMultiplier
+			}
+			return resolved
 		}
-		resolved := r.resolveConfiguredPricing(groupPricing, input.Model, PricingSourceGroup)
-		resolved.longContextPricingEnabled = longContextPricingEnabled
-		return resolved
 	}
 
 	var chPricing *ChannelModelPricing
@@ -113,6 +132,7 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 		BasePricing:            basePricing,
 		Source:                 source,
 		SupportsCacheBreakdown: basePricing != nil && basePricing.SupportsCacheBreakdown,
+		modelRateMultiplier:    modelRateMultiplier,
 	}
 	resolved.longContextPricingEnabled = longContextPricingEnabled
 
@@ -126,6 +146,45 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 	}
 
 	return resolved
+}
+
+type tokenPricingRequestedModelKey struct{}
+
+// Request identity chooses only the relative sell multiplier. The billing model
+// still chooses the channel/catalog price, including response-model pricing.
+func tokenPricingRequestedModel(ctx context.Context) (string, bool) {
+	if model, ok := RequestedPublicModelFromContext(ctx); ok {
+		return model, true
+	}
+	if ctx == nil {
+		return "", false
+	}
+	model, _ := ctx.Value(tokenPricingRequestedModelKey{}).(string)
+	return model, model != ""
+}
+
+func withTokenPricingRequestedModel(ctx context.Context, model string) context.Context {
+	if _, ok := tokenPricingRequestedModel(ctx); ok {
+		return ctx
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, tokenPricingRequestedModelKey{}, model)
+}
+
+// resolvedTokenRateMultiplier is separate from the existing group/user billing
+// multiplier so the latter continues to be applied by the existing billing chain.
+func resolvedTokenRateMultiplier(resolved *ResolvedPricing) float64 {
+	if resolved == nil || resolved.modelRateMultiplier == nil {
+		return 1
+	}
+	multiplier := *resolved.modelRateMultiplier
+	if math.IsNaN(multiplier) || math.IsInf(multiplier, 0) || multiplier < 0 {
+		return 0
+	}
+	return multiplier
 }
 
 func (r *ModelPricingResolver) resolveConfiguredPricing(config *ChannelModelPricing, model, source string) *ResolvedPricing {

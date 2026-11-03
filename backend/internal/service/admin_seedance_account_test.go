@@ -178,3 +178,55 @@ func TestBulkUpdateSeedanceAccountNormalizesOnlyIncomingSettings(t *testing.T) {
 		require.Equal(t, []string{"720p"}, account.Credentials["seedance_allowed_resolutions"], "preflight must not mutate fetched accounts")
 	}
 }
+
+func TestSeedanceAccountValidatesCustomModelSpecificationsBeforeWrite(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		mapping, specs any
+	}{
+		{"spec_not_object", map[string]any{"video": "custom"}, "bad"},
+		{"unknown_spec", map[string]any{"video": "custom"}, map[string]any{"video": "seedance-future"}},
+		{"missing_spec", map[string]any{"video": "custom"}, map[string]any{}},
+		{"orphan_spec", map[string]any{"video": "custom"}, map[string]any{"other": "doubao-seedance-2-5-260628"}},
+		{"empty_upstream", map[string]any{"video": ""}, map[string]any{"video": "doubao-seedance-2-5-260628"}},
+		{"wildcard_downstream", map[string]any{"video-*": "custom"}, map[string]any{"video-*": "doubao-seedance-2-5-260628"}},
+		{"wildcard_upstream", map[string]any{"video": "custom?"}, map[string]any{"video": "doubao-seedance-2-5-260628"}},
+		{"case_duplicate_downstream", map[string]any{"Video": "custom-a", "video": "custom-b"}, map[string]any{"Video": "doubao-seedance-2-5-260628", "video": "doubao-seedance-2-0-260128"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &seedanceAdminAccountRepoStub{accounts: map[int64]*Account{1: seedanceAdminTestAccount(1)}}
+			svc := &adminServiceImpl{accountRepo: repo}
+			_, err := svc.UpdateAccount(context.Background(), 1, &UpdateAccountInput{Credentials: map[string]any{
+				"model_mapping": tc.mapping, "seedance_model_specs": tc.specs,
+			}})
+			require.Error(t, err)
+			require.Zero(t, repo.updateCalls)
+		})
+	}
+}
+
+func TestSeedanceAccountStoresCustomModelSpecifications(t *testing.T) {
+	account, err := buildAccountForCreate(&CreateAccountInput{Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"openai_capabilities":  []string{"seedance"},
+			"model_mapping":        map[string]any{"my-video": "provider-alias"},
+			"seedance_model_specs": map[string]any{"my-video": "doubao-seedance-2-5-260628"},
+		}}, map[string]any{})
+	require.NoError(t, err)
+	require.Equal(t, "doubao-seedance-2-5-260628", SeedanceSpecModelForAccount(account, "my-video"))
+	require.Equal(t, "provider-alias", account.GetMappedModel("my-video"))
+}
+
+func TestBulkSeedanceSpecValidationUsesEveryTargetsMergedMapping(t *testing.T) {
+	a, b := seedanceAdminTestAccount(1), seedanceAdminTestAccount(2)
+	a.Credentials["model_mapping"] = map[string]any{"video": "custom-a"}
+	b.Credentials["model_mapping"] = map[string]any{"other-video": "custom-b"}
+	repo := &seedanceAdminAccountRepoStub{accounts: map[int64]*Account{1: a, 2: b}}
+	svc := &adminServiceImpl{accountRepo: repo}
+	_, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1, 2}, Credentials: map[string]any{"seedance_model_specs": map[string]any{"video": "doubao-seedance-2-5-260628"}},
+	})
+	require.Error(t, err)
+	require.Zero(t, repo.bulkCalls)
+	require.NotContains(t, a.Credentials, "seedance_model_specs", "preflight must not modify existing credentials")
+}

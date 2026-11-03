@@ -6,7 +6,7 @@ import ImageModelsPanel from '../ImageModelsPanel.vue'
 import AudioModelsPanel from '../AudioModelsPanel.vue'
 import VideoModelsPanel from '../VideoModelsPanel.vue'
 import donebot, { type DoneBotModel, type ModelsResult } from '@/api/admin/donebot'
-vi.mock('@/api/admin/donebot', () => ({ default: { getModels: vi.fn(), models: vi.fn(), pricing: vi.fn(), sync: vi.fn() } }))
+vi.mock('@/api/admin/donebot', () => ({ default: { getModels: vi.fn(), models: vi.fn(), pricing: vi.fn(), saveConfiguration: vi.fn(), sync: vi.fn() } }))
 function fixture(models: DoneBotModel[]): ModelsResult {
   return { models, rate_multiplier: 1.5, image_price_1k: null, image_price_2k: null, image_price_4k: null, image_rate_multiplier: 1, image_rate_independent: false, image_count_billing: true }
 }
@@ -14,19 +14,33 @@ function row(model: string, kind: DoneBotModel['kind'], pricing: DoneBotModel['e
   return { model, kind, platform: 'openai', enabled: true, available: true, effective_input_price: null, effective_output_price: null, editable_pricing: pricing }
 }
 function mockResult(result: ModelsResult) {
-  for (const fn of [donebot.getModels, donebot.models, donebot.pricing, donebot.sync]) vi.mocked(fn).mockResolvedValue(structuredClone(result))
+  for (const fn of [donebot.getModels, donebot.models, donebot.pricing, donebot.saveConfiguration, donebot.sync]) vi.mocked(fn).mockResolvedValue(structuredClone(result))
 }
 beforeEach(() => { vi.clearAllMocks(); setActivePinia(createPinia()) })
 describe('DoneBot individual model sale prices', () => {
-  it('edits input, output and cache token prices per model in USD per million tokens', async () => {
-    mockResult(fixture([row('gpt-test', 'llm', { input_price: .000003, output_price: .000004, cache_write_price: .000002, cache_read_price: .000001 })]))
+  it('edits only a multiplier for each LLM and never submits token prices', async () => {
+    mockResult(fixture([
+      row('gpt-test', 'llm', { rate_multiplier: 1.2 }),
+      row('claude-test', 'llm', { rate_multiplier: 0 })
+    ]))
     const wrapper = mount(LlmModelsPanel); await flushPromises()
-    expect(wrapper.get<HTMLInputElement>('[data-testid="price-gpt-test-input_price"]').element.value).toBe('3')
-    expect(wrapper.text()).not.toContain('保存倍率')
-    await wrapper.get('[data-testid="price-gpt-test-input_price"]').setValue('6')
-    await wrapper.get('[data-testid="price-gpt-test-cache_read_price"]').setValue('0.5')
-    await wrapper.get('[data-test="save-pricing"]').trigger('click'); await flushPromises()
-    expect(donebot.pricing).toHaveBeenCalledWith('llm', { models: [{ model: 'gpt-test', pricing: { input_price: .000006, output_price: .000004, cache_write_price: .000002, cache_read_price: .0000005 } }] })
+    expect(wrapper.findAll('input[type=number]')).toHaveLength(2)
+    expect(wrapper.find('[data-testid=price-gpt-test-input_price]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('渠道价格 × 每模型倍率')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=price-gpt-test-rate_multiplier]').element.value).toBe('1.2')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=price-claude-test-rate_multiplier]').element.value).toBe('0')
+    await wrapper.get('[data-testid=price-gpt-test-rate_multiplier]').setValue('1.5')
+    await wrapper.get('[data-test=save-configuration]').trigger('click'); await flushPromises()
+    expect(donebot.saveConfiguration).toHaveBeenCalledWith('llm', { models: [
+      { model: 'gpt-test', enabled: true, pricing: { rate_multiplier: 1.5 } },
+      { model: 'claude-test', enabled: true, pricing: { rate_multiplier: 0 } }
+    ] })
+  })
+  it('defaults missing LLM multipliers to one and never creates extra catalog rows', async () => {
+    mockResult(fixture([row('account-enabled-model', 'llm', {})]))
+    const wrapper = mount(LlmModelsPanel); await flushPromises()
+    expect(wrapper.findAll('article')).toHaveLength(1)
+    expect(wrapper.get<HTMLInputElement>('[data-testid=price-account-enabled-model-rate_multiplier]').element.value).toBe('1')
   })
   it('edits separate image model prices without submitting shared group image overrides', async () => {
     mockResult(fixture([
@@ -35,10 +49,10 @@ describe('DoneBot individual model sale prices', () => {
     ]))
     const wrapper = mount(ImageModelsPanel, { global: { stubs: { ImageTaskLookup: true } } }); await flushPromises()
     await wrapper.get('[data-testid="price-seedream-5-0-flash-image-1K"]').setValue('0.055')
-    await wrapper.get('[data-test="save-pricing"]').trigger('click'); await flushPromises()
-    expect(donebot.pricing).toHaveBeenCalledWith('images', { models: [
-      { model: 'seedream-5-0-flash', pricing: { image_prices: { '1K': .055, '2K': .09, '4K': null } } },
-      { model: 'gpt-image-1', pricing: { image_prices: { '1K': .1, '2K': .2, '4K': .3 } } }
+    await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
+    expect(donebot.saveConfiguration).toHaveBeenCalledWith('images', { models: [
+      { model: 'seedream-5-0-flash', enabled: true, pricing: { image_prices: { '1K': .055, '2K': .09, '4K': null } } },
+      { model: 'gpt-image-1', enabled: true, pricing: { image_prices: { '1K': .1, '2K': .2, '4K': .3 } } }
     ] })
   })
   it('edits Suno version and TTS character prices per model with backend pricing units', async () => {
@@ -49,10 +63,10 @@ describe('DoneBot individual model sale prices', () => {
     expect(wrapper.text()).toContain('百万字符')
     await wrapper.get('[data-testid="price-my-music-tier-v6-mini"]').setValue('0.08')
     await wrapper.get('[data-testid="price-my-speech-tier-tts"]').setValue('12')
-    await wrapper.get('[data-test="save-pricing"]').trigger('click'); await flushPromises()
-    expect(donebot.pricing).toHaveBeenCalledWith('audio', { models: [
-      { model: 'my-music', pricing: { tier_prices: { v6: .12, 'v6-wild': null, 'v6-mini': .08, 'custom-model': null } } },
-      { model: 'my-speech', pricing: { tier_prices: { tts: 12 } } }
+    await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
+    expect(donebot.saveConfiguration).toHaveBeenCalledWith('audio', { models: [
+      { model: 'my-music', enabled: true, pricing: { tier_prices: { v6: .12, 'v6-wild': null, 'v6-mini': .08, 'custom-model': null } } },
+      { model: 'my-speech', enabled: true, pricing: { tier_prices: { tts: 12 } } }
     ] })
   })
   it('edits per-second video prices by official resolution and reference video presence', async () => {
@@ -66,40 +80,82 @@ describe('DoneBot individual model sale prices', () => {
     expect(wrapper.text()).toContain('USD / 秒')
     expect(wrapper.find('[data-testid*="1080p"]').exists()).toBe(false)
     await wrapper.get('[data-testid="price-doubao-seedance-2-0-fast-260128-video-720p-reference"]').setValue('0.12')
-    await wrapper.get('[data-test="save-pricing"]').trigger('click'); await flushPromises()
-    expect(donebot.pricing).toHaveBeenCalledWith('video', { models: [{ model: 'doubao-seedance-2-0-fast-260128', pricing: { video_prices: [
+    await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
+    expect(donebot.saveConfiguration).toHaveBeenCalledWith('video', { models: [{ model: 'doubao-seedance-2-0-fast-260128', enabled: true, pricing: { video_prices: [
       { resolution: '480p', reference_video: false, price_per_second: .1 },
       { resolution: '480p', reference_video: true, price_per_second: .05 },
       { resolution: '720p', reference_video: false, price_per_second: .2 },
       { resolution: '720p', reference_video: true, price_per_second: .12 }
     ] } }] })
   })
-  it('lets an unpriced account model receive its first price before it can be enabled', async () => {
-    mockResult(fixture([{ ...row('gpt-new', 'llm', {}), enabled: false, pricing_configured: false }]))
+  it('requires channel pricing before enabling an account LLM', async () => {
+    mockResult(fixture([{ ...row('gpt-new', 'llm', { rate_multiplier: 1 }), enabled: false, pricing_configured: false }]))
     const wrapper = mount(LlmModelsPanel); await flushPromises()
     expect(wrapper.get<HTMLInputElement>('[aria-label="启用 gpt-new"]').element.disabled).toBe(true)
-    expect(wrapper.get<HTMLInputElement>('[data-testid="price-gpt-new-input_price"]').element.disabled).toBe(false)
-    expect(wrapper.text()).toContain('请先保存模型价格')
-    await wrapper.get('[data-testid="price-gpt-new-input_price"]').setValue('2')
-    await wrapper.get('[data-test="save-pricing"]').trigger('click'); await flushPromises()
-    expect(donebot.pricing).toHaveBeenCalledWith('llm', { models: [{ model: 'gpt-new', pricing: { input_price: .000002, output_price: null, cache_write_price: null, cache_read_price: null } }] })
+    expect(wrapper.text()).toContain('请先配置渠道价格')
+    expect(wrapper.text()).not.toContain('请先保存模型价格')
+    await wrapper.get('[data-testid=price-gpt-new-rate_multiplier]').setValue('0')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="启用 gpt-new"]').element.disabled).toBe(true)
   })
-  it('keeps unsaved model prices when saving model switches', async () => {
-    mockResult(fixture([row('gpt-test', 'llm', { input_price: .000003 })]))
-    const wrapper = mount(LlmModelsPanel); await flushPromises()
-    await wrapper.get('[data-testid="price-gpt-test-input_price"]').setValue('7')
-    await wrapper.get('[aria-label="启用 gpt-test"]').setValue(false)
-    await wrapper.get('[data-test="save-models"]').trigger('click'); await flushPromises()
-    expect(wrapper.get<HTMLInputElement>('[data-testid="price-gpt-test-input_price"]').element.value).toBe('7')
+  it('can price and enable a new media model in the same save', async () => {
+    mockResult(fixture([{ ...row('seedream-5-0-flash', 'images', { image_prices: {} }), enabled: false, pricing_configured: false }]))
+    const wrapper = mount(ImageModelsPanel, { global: { stubs: { ImageTaskLookup: true } } }); await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('[aria-label="启用 seedream-5-0-flash"]').element.disabled).toBe(true)
+    await wrapper.get('[data-testid="price-seedream-5-0-flash-image-1K"]').setValue('0.05')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="启用 seedream-5-0-flash"]').element.disabled).toBe(false)
+    await wrapper.get('[aria-label="启用 seedream-5-0-flash"]').setValue(true)
+    await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
+    expect(donebot.saveConfiguration).toHaveBeenCalledTimes(1)
+    expect(donebot.saveConfiguration).toHaveBeenCalledWith('images', { models: [{ model: 'seedream-5-0-flash', enabled: true, pricing: { image_prices: { '1K': 0.05, '2K': null, '4K': null } } }] })
   })
-  it('blocks invalid prices and keeps model toggles separate from pricing writes', async () => {
-    mockResult(fixture([row('gpt-test', 'llm', { input_price: .000003 })]))
+  it('saves model switches and current multipliers in one request', async () => {
+    mockResult(fixture([row('gpt-test', 'llm', { rate_multiplier: 1.2 })]))
     const wrapper = mount(LlmModelsPanel); await flushPromises()
-    await wrapper.get('[data-testid="price-gpt-test-input_price"]').setValue('-1')
-    expect(wrapper.get<HTMLButtonElement>('[data-test="save-pricing"]').element.disabled).toBe(true)
+    expect(wrapper.find('[data-test="save-models"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="save-pricing"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="save-configuration"]').text()).toBe('保存')
+    await wrapper.get('[data-testid="price-gpt-test-rate_multiplier"]').setValue('7')
     await wrapper.get('[aria-label="启用 gpt-test"]').setValue(false)
-    await wrapper.get('[data-test="save-models"]').trigger('click'); await flushPromises()
-    expect(donebot.models).toHaveBeenCalledWith('llm', [{ model: 'gpt-test', enabled: false }])
+    await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
+    expect(donebot.saveConfiguration).toHaveBeenCalledTimes(1)
+    expect(donebot.saveConfiguration).toHaveBeenCalledWith('llm', { models: [{ model: 'gpt-test', enabled: false, pricing: { rate_multiplier: 7 } }] })
+    expect(donebot.models).not.toHaveBeenCalled()
     expect(donebot.pricing).not.toHaveBeenCalled()
+  })
+  it('keeps edited switches and multipliers together when saving fails', async () => {
+    mockResult(fixture([row('gpt-test', 'llm', { rate_multiplier: 1.2 })]))
+    vi.mocked(donebot.saveConfiguration).mockRejectedValueOnce(new Error('保存失败'))
+    const wrapper = mount(LlmModelsPanel); await flushPromises()
+    await wrapper.get('[data-testid="price-gpt-test-rate_multiplier"]').setValue('7')
+    await wrapper.get('[aria-label="启用 gpt-test"]').setValue(false)
+    await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('[data-testid="price-gpt-test-rate_multiplier"]').element.value).toBe('7')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="启用 gpt-test"]').element.checked).toBe(false)
+    expect(wrapper.text()).toContain('保存失败')
+    expect(donebot.saveConfiguration).toHaveBeenCalledTimes(1)
+    expect(donebot.models).not.toHaveBeenCalled()
+    expect(donebot.pricing).not.toHaveBeenCalled()
+  })
+  it('blocks invalid multipliers from saving switches or pricing', async () => {
+    mockResult(fixture([row('gpt-test', 'llm', { rate_multiplier: 1.2 })]))
+    const wrapper = mount(LlmModelsPanel); await flushPromises()
+    for (const value of ['-1', '', '1e309']) {
+      await wrapper.get('[data-testid="price-gpt-test-rate_multiplier"]').setValue(value)
+      expect(wrapper.get<HTMLButtonElement>('[data-test="save-configuration"]').element.disabled).toBe(true)
+    }
+    await wrapper.get('[aria-label="启用 gpt-test"]').setValue(false)
+    await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
+    expect(donebot.saveConfiguration).not.toHaveBeenCalled()
+    expect(donebot.models).not.toHaveBeenCalled()
+    expect(donebot.pricing).not.toHaveBeenCalled()
+  })
+  it.each([
+    [ImageModelsPanel, '添加并启用图片账号'],
+    [AudioModelsPanel, '添加并启用 APIMart 音频账号'],
+    [VideoModelsPanel, '添加并启用视频账号']
+  ])('guides empty media catalogs to their account type', async (component, message) => {
+    mockResult(fixture([]))
+    const wrapper = mount(component, { global: { stubs: { ImageTaskLookup: true } } }); await flushPromises()
+    expect(wrapper.text()).toContain(message)
   })
 })

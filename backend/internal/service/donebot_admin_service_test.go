@@ -3,10 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 	"testing"
+	"time"
 )
 
 type doneBotCatalogAdminStub struct {
@@ -41,11 +41,18 @@ func (s *doneBotCatalogAdminStub) UpdateGroup(_ context.Context, _ int64, u *Upd
 
 type doneBotCatalogAccountsStub struct {
 	AccountRepository
-	accounts []Account
+	accounts  []Account
+	listCalls *int
 }
 
-func (s doneBotCatalogAccountsStub) ListSchedulableByGroupID(context.Context, int64) ([]Account, error) {
+func (s doneBotCatalogAccountsStub) ListByGroup(context.Context, int64) ([]Account, error) {
+	if s.listCalls != nil {
+		*s.listCalls++
+	}
 	return s.accounts, nil
+}
+func (s doneBotCatalogAccountsStub) ListSchedulableByGroupID(context.Context, int64) ([]Account, error) {
+	panic("catalog must not hide configured models during transient account cooldowns")
 }
 
 type doneBotCatalogChannelsStub struct{ channels []Channel }
@@ -71,7 +78,7 @@ func doneBotCatalogFixture() (*DoneBotAdminService, *doneBotCatalogAdminStub) {
 	p := 0.000002
 	o := 0.000008
 	a := &doneBotCatalogAdminStub{group: &Group{ID: 7, Platform: PlatformComposite, Status: StatusActive, RateMultiplier: 1.5, ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: []string{"gpt-test"}}}, candidates: map[string][]string{PlatformOpenAI: {"gpt-test", "unpriced", "gpt-image-test"}}}
-	s := &DoneBotAdminService{admin: a, accounts: doneBotCatalogAccountsStub{accounts: []Account{{Platform: PlatformOpenAI}}}, channels: doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{7}, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"gpt-test", "no-account"}, BillingMode: BillingModeToken, InputPrice: &p, OutputPrice: &o}, {Platform: PlatformOpenAI, Models: []string{"gpt-image-test"}, BillingMode: BillingModeImage, PerRequestPrice: &p}}}}}, settings: &doneBotCatalogSettingsStub{values: map[string]string{}}}
+	s := &DoneBotAdminService{admin: a, accounts: doneBotCatalogAccountsStub{accounts: []Account{doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"gpt-test": "gpt-test", "unpriced": "unpriced", "gpt-image-test": "gpt-image-test"})}}, channels: doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{7}, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"gpt-test", "no-account"}, BillingMode: BillingModeToken, InputPrice: &p, OutputPrice: &o}, {Platform: PlatformOpenAI, Models: []string{"gpt-image-test"}, BillingMode: BillingModeImage, PerRequestPrice: &p}}}}}, settings: &doneBotCatalogSettingsStub{values: map[string]string{}}}
 	return s, a
 }
 func TestDoneBotCatalogIntersectsAvailableAndPricedModels(t *testing.T) {
@@ -84,6 +91,24 @@ func TestDoneBotCatalogIntersectsAvailableAndPricedModels(t *testing.T) {
 	require.Equal(t, "gpt-test", rows[1].Model)
 	require.True(t, rows[1].Enabled)
 	require.InDelta(t, 0.000003, *rows[1].EffectiveInputPrice, 1e-12)
+}
+
+func TestDoneBotCatalogRecognizesCustomSeedanceNamesAndOfficialSpec(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	account := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"my-video": "provider-video-alias"})
+	account.Type = AccountTypeAPIKey
+	account.Credentials["base_url"] = SeedanceNewTokenBaseURL
+	account.Credentials["openai_capabilities"] = []string{"seedance"}
+	account.Credentials["seedance_model_specs"] = map[string]any{"my-video": "doubao-seedance-2-0-fast-260128"}
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+	s.channels = doneBotCatalogChannelsStub{}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "my-video", rows[0].Model)
+	require.Equal(t, "video", rows[0].Kind)
+	require.Equal(t, []string{"480p", "720p"}, rows[0].VideoResolutions)
+	require.False(t, rows[0].PricingConfigured)
 }
 func TestDoneBotSyncOnlyAddsAndPreservesDisabledModels(t *testing.T) {
 	s, a := doneBotCatalogFixture()
@@ -135,16 +160,16 @@ func TestDoneBotCatalogRequiresActiveBoundChannelAndAccount(t *testing.T) {
 		require.False(t, row.Enabled)
 	}
 }
-func TestDoneBotUnavailableModelsRemainVisibleAndCanBeDisabled(t *testing.T) {
+func TestDoneBotUnavailableModelsDisappearAndKeepStoredSelection(t *testing.T) {
 	s, a := doneBotCatalogFixture()
 	ctx := context.Background()
 	require.NoError(t, s.syncModels(ctx, a.group, "llm"))
 	s.accounts = doneBotCatalogAccountsStub{}
 	rows, err := s.catalog(ctx, a.group)
 	require.NoError(t, err)
-	require.Len(t, rows, 2)
-	require.False(t, rows[0].Available)
-	require.NoError(t, s.updateModels(ctx, a.group, "llm", []DoneBotModelToggle{{Model: "gpt-test", Enabled: false}}))
+	require.Empty(t, rows)
+	require.Contains(t, a.group.ModelAllowlist.Models, "gpt-test")
+	require.Error(t, s.updateModels(ctx, a.group, "llm", []DoneBotModelToggle{{Model: "gpt-test", Enabled: false}}))
 	require.Error(t, s.updateModels(ctx, a.group, "llm", []DoneBotModelToggle{{Model: "gpt-test", Enabled: true}}))
 }
 
@@ -186,7 +211,7 @@ func TestDoneBotCatalogAPIMartAudioAndImagePricing(t *testing.T) {
 	s, a := doneBotCatalogFixture()
 	base, suno, tts := 0.1, 0.2, 12.0
 	a.candidates[PlatformOpenAI] = []string{"suno", "gpt-4o-mini-tts", "seedream-5-0-flash", "voice"}
-	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{{Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
 		"api_key": "secret", "base_url": "https://api.apimart.ai",
 		"openai_capabilities": []string{"apimart_suno", "apimart_tts", "apimart_images"},
 		"model_mapping":       map[string]any{"suno": "suno", "gpt-4o-mini-tts": "gpt-4o-mini-tts", "seedream-5-0-flash": "seedream-5-0-flash", "voice": "gpt-4o-mini-tts"},
@@ -236,20 +261,15 @@ func TestDoneBotAudioPricingSharesGroupMultiplier(t *testing.T) {
 func TestDoneBotAudioRequiresCapableAccountAndCanBeDisabled(t *testing.T) {
 	s, a := doneBotCatalogFixture()
 	a.candidates[PlatformOpenAI] = []string{"suno", "gpt-4o-mini-tts"}
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"suno": "suno", "gpt-4o-mini-tts": "gpt-4o-mini-tts"})}}
 	p := 0.1
 	s.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{7}, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"*"}, BillingMode: BillingModePerRequest, PerRequestPrice: &p}}}}}
 	rows, err := s.catalog(context.Background(), a.group)
 	require.NoError(t, err)
 	require.Empty(t, rows, "ordinary OpenAI accounts cannot provide APIMart audio")
-	s.installs = &DoneBotService{cfg: &config.Config{}}
-	_, err = s.Models(context.Background(), "audio")
-	require.ErrorContains(t, err, "Audio is not enabled")
-	_, err = s.UpdateModels(context.Background(), "audio", []DoneBotModelToggle{{Model: "suno", Enabled: true}})
-	require.ErrorContains(t, err, "Audio is not enabled")
-	_, err = s.SyncModels(context.Background(), "audio")
-	require.ErrorContains(t, err, "Audio is not enabled")
-	_, err = s.UpdatePricing(context.Background(), "audio", DoneBotPricingInput{RateMultiplier: &p})
-	require.ErrorContains(t, err, "Audio is not enabled")
+	require.NoError(t, s.requireModality("audio"))
+	require.NoError(t, s.requireModality("video"))
+	require.Error(t, s.requireModality("unknown"))
 }
 
 func TestDoneBotAPIMartImageAliasesRequireOptIn(t *testing.T) {
@@ -257,7 +277,7 @@ func TestDoneBotAPIMartImageAliasesRequireOptIn(t *testing.T) {
 	a.candidates[PlatformOpenAI] = []string{"seedream-5-0-flash", "poster"}
 	price := 0.1
 	s.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{7}, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"*"}, BillingMode: BillingModePerRequest, PerRequestPrice: &price}}}}}
-	account := Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "secret", "base_url": "https://api.apimart.ai", "model_mapping": map[string]any{"seedream-5-0-flash": "seedream-5-0-flash", "poster": "seedream-5-0-flash"}}}
+	account := Account{Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "secret", "base_url": "https://api.apimart.ai", "model_mapping": map[string]any{"seedream-5-0-flash": "seedream-5-0-flash", "poster": "seedream-5-0-flash"}}}
 	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
 	rows, err := s.catalog(context.Background(), a.group)
 	require.NoError(t, err)
@@ -271,4 +291,136 @@ func TestDoneBotAPIMartImageAliasesRequireOptIn(t *testing.T) {
 		require.Equal(t, "images", row.Kind)
 		require.True(t, row.Available)
 	}
+}
+
+func TestDoneBotCatalogOnlyUsesEnabledBoundExplicitAccountModels(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	p := 0.000002
+	a.candidates[PlatformOpenAI] = []string{"gpt-test", "platform-default", "channel-only", "historical", "runtime-default"}
+	s.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{7}, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"*"}, BillingMode: BillingModeToken, InputPrice: &p}}}}}
+	require.NoError(t, s.saveCatalog(context.Background(), []DoneBotModel{{Model: "historical", Kind: "llm", Platform: PlatformOpenAI, Available: true}}))
+	active := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"gpt-test": "gpt-test", "disabled": false, "empty": "", "gpt-*": "gpt-*"})
+	disabled := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"disabled-account": "disabled-account"})
+	disabled.Status = StatusDisabled
+	unbound := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"unbound-account": "unbound-account"})
+	unbound.GroupIDs = []int64{8}
+	paused := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"paused-account": "paused-account"})
+	paused.Schedulable = false
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{active, disabled, unbound, paused, doneBotEnabledCatalogAccount(PlatformOpenAI, nil)}}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "gpt-test", rows[0].Model)
+}
+func TestDoneBotCatalogCompositeRoutesNeedEnabledAccountEvidence(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	p := 0.000002
+	account := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"native": "gpt-test", "allowed-*": "gpt-test"})
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+	a.routes = []CompositeModelRoute{
+		{PublicModel: "public", UpstreamModel: "native", TargetPlatform: PlatformOpenAI, MatchType: "exact", Enabled: true},
+		{PublicModel: "wildcard-supported", UpstreamModel: "allowed-concrete", TargetPlatform: PlatformOpenAI, MatchType: "exact", Enabled: true},
+		{PublicModel: "missing", UpstreamModel: "platform-default", TargetPlatform: PlatformOpenAI, MatchType: "exact", Enabled: true},
+		{PublicModel: "disabled-route", UpstreamModel: "native", TargetPlatform: PlatformOpenAI, MatchType: "exact", Enabled: false},
+		{PublicModel: "wrong-platform", UpstreamModel: "native", TargetPlatform: PlatformAnthropic, MatchType: "exact", Enabled: true},
+	}
+	s.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{7}, BillingModelSource: BillingModelSourceUpstream, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"*"}, BillingMode: BillingModeToken, InputPrice: &p}}}}}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	models := []string{}
+	for _, r := range rows {
+		models = append(models, r.Model)
+	}
+	require.ElementsMatch(t, []string{"native", "public", "wildcard-supported"}, models)
+}
+func TestDoneBotCatalogRuntimeDefaultsAndCapabilitiesCannotExpandMappings(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	account := doneBotEnabledCatalogAccount(PlatformAntigravity, map[string]any{"configured": "gemini-3.8-flash"})
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+	a.candidates[PlatformAntigravity] = []string{"configured", "gemini-runtime-default"}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "configured", rows[0].Model)
+	account = doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"llm-without-chat": "gpt-test", "seedream-5-0-flash": "seedream-5-0-flash"})
+	account.Type = AccountTypeAPIKey
+	account.Credentials["base_url"] = "https://api.apimart.ai"
+	account.Credentials["openai_capabilities"] = []string{"apimart_images"}
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+	rows, err = s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "seedream-5-0-flash", rows[0].Model)
+}
+func doneBotEnabledCatalogAccount(platform string, mapping map[string]any) Account {
+	return Account{Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, Platform: platform, Credentials: map[string]any{"model_mapping": mapping}}
+}
+
+func TestDoneBotLlmCatalogKeepsOriginalChannelCard(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	legacy := 0.9
+	a.group.ModelPricing = []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"gpt-test"}, BillingMode: BillingModeToken, InputPrice: &legacy}}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	for _, row := range rows {
+		if row.Model == "gpt-test" {
+			require.NotNil(t, row.ChannelPricing)
+			require.InDelta(t, 0.000002, *row.ChannelPricing.InputPrice, 1e-15)
+			return
+		}
+	}
+	t.Fatal("configured account model missing")
+}
+
+func TestDoneBotLlmCatalogUsesDesiredChannelMultiplierOnce(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	stored := 2.0 / 1.5
+	a.group.ModelPricing = []ChannelModelPricing{{Models: []string{"gpt-test"}, BillingMode: BillingModeToken, RateMultiplier: &stored}}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	for _, row := range rows {
+		if row.Model == "gpt-test" {
+			require.InDelta(t, 2, row.ModelMultiplier, 1e-12)
+			require.InDelta(t, 0.000004, *row.EffectiveInputPrice, 1e-15)
+			return
+		}
+	}
+	t.Fatal("configured model missing")
+}
+
+func TestDoneBotCatalogTemporaryCooldownsDoNotHideConfiguredModels(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	calls := 0
+	until := time.Now().Add(time.Hour)
+	limited := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"limited": "gpt-test"})
+	limited.RateLimitResetAt = &until
+	overloaded := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"overloaded": "gpt-test"})
+	overloaded.OverloadUntil = &until
+	cooling := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"cooling": "gpt-test"})
+	cooling.TempUnschedulableUntil = &until
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{limited, overloaded, cooling}, listCalls: &calls}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Equal(t, 1, calls, "load configured active group accounts, without runtime scheduling filters")
+	models := make([]string, 0, len(rows))
+	for _, row := range rows {
+		models = append(models, row.Model)
+	}
+	require.ElementsMatch(t, []string{"limited", "overloaded", "cooling"}, models)
+}
+
+func TestDoneBotCatalogWildcardOnlyAccountCanPriceExactCompositeRoute(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	price := 0.000002
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"native-*": "native-*"})}}
+	a.routes = []CompositeModelRoute{{PublicModel: "public-chat", UpstreamModel: "native-chat", TargetPlatform: PlatformOpenAI, MatchType: "exact", Enabled: true}}
+	s.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{7}, BillingModelSource: BillingModelSourceUpstream, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"native-chat"}, BillingMode: BillingModeToken, InputPrice: &price}}}}}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "public-chat", rows[0].Model)
+	require.True(t, rows[0].PricingConfigured)
+	require.NotNil(t, rows[0].ChannelPricing)
+	require.NoError(t, s.updateModels(context.Background(), a.group, "llm", []DoneBotModelToggle{{Model: "public-chat", Enabled: true}}))
+	require.True(t, a.group.ModelAllowlist.Allows("public-chat"))
 }

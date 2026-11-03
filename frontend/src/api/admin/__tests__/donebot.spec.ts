@@ -12,12 +12,11 @@ describe('DoneBot admin API', () => {
   expect(await donebot.saveStorage(policies)).toEqual(policies)
   expect(apiClient.put).toHaveBeenCalledWith('/admin/donebot/storage', policies)
  })
- it('saves model selection and group pricing separately', async () => {
+ it('saves model selection and current pricing with one configuration request', async () => {
   vi.mocked(apiClient.put).mockResolvedValue({ data: { models: [] } })
-  await donebot.models('llm', [{ model: 'gpt-test', enabled: false }])
-  expect(apiClient.put).toHaveBeenCalledWith('/admin/donebot/llm/models', { models: [{ model: 'gpt-test', enabled: false }] })
-  await donebot.pricing('llm', { rate_multiplier: 1.25 })
-  expect(apiClient.put).toHaveBeenLastCalledWith('/admin/donebot/llm/pricing', { rate_multiplier: 1.25 })
+  const input = { models: [{ model: 'gpt-test', enabled: false, pricing: { rate_multiplier: 1.25 } }] }
+  await donebot.saveConfiguration('llm', input)
+  expect(apiClient.put).toHaveBeenLastCalledWith('/admin/donebot/llm/configuration', input)
  })
  it('uses explicit add-only sync and installation revocation endpoints', async () => {
   vi.mocked(apiClient.post).mockResolvedValue({ data: {} });vi.mocked(apiClient.delete).mockResolvedValue({ data: null })

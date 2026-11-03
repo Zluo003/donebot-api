@@ -100,3 +100,34 @@ func TestSeedanceOfficialResolutionMatrixAndNativeDefault(t *testing.T) {
 		require.Empty(t, info.Resolution, "do not synthesize the native default into forwarded fields")
 	}
 }
+
+func TestSeedanceAccountCustomNamesKeepOfficialSpec(t *testing.T) {
+	account := &Account{Credentials: map[string]any{
+		"base_url":                     SeedanceNewTokenBaseURL,
+		"model_mapping":                map[string]any{"my-video": "provider-custom-id"},
+		"seedance_model_specs":         map[string]any{"my-video": "doubao-seedance-2-0-fast-260128"},
+		"seedance_allowed_resolutions": []string{"720p", "1080p"},
+	}}
+	require.Equal(t, "doubao-seedance-2-0-fast-260128", SeedanceSpecModelForAccount(account, "my-video"))
+	require.True(t, account.SeedanceAllowsResolution("my-video", "720p"))
+	require.False(t, account.SeedanceAllowsResolution("my-video", "1080p"), "a custom upstream name must not bypass the official resolution matrix")
+	account.Credentials["seedance_model_specs"] = map[string]any{"my-video": "not-a-spec"}
+	require.Empty(t, SeedanceSpecModelForAccount(account, "my-video"))
+	require.False(t, account.SeedanceAllowsResolution("my-video", "720p"))
+	delete(account.Credentials, "seedance_model_specs")
+	require.Empty(t, SeedanceSpecModelForAccount(account, "my-video"))
+	require.False(t, account.SeedanceAllowsResolution("my-video", "720p"), "an unknown NewToken model needs an explicit official specification")
+	account.Credentials["model_mapping"] = map[string]any{"my-video": "doubao-seedance-2-5-260628"}
+	require.Equal(t, "doubao-seedance-2-5-260628", SeedanceSpecModelForAccount(account, "my-video"), "infer official upstream IDs on existing accounts")
+	account.Credentials["model_mapping"] = map[string]any{"doubao-seedance-2-0-260128": "provider-custom-id"}
+	require.Equal(t, "doubao-seedance-2-0-260128", SeedanceSpecModelForAccount(account, "doubao-seedance-2-0-260128"), "infer official downstream IDs on existing accounts")
+}
+
+func TestSeedanceRoutingParseDefersOfficialSpecToSelectedAccount(t *testing.T) {
+	body := []byte(`{"model":"doubao-seedance-2-0-260128","resolution":"1080p","content":[{"type":"text","text":"edit"},{"type":"video_url","video_url":{"url":"asset://source"},"role":"reference_video"}],"omni_reference_task_type":"edit","ratio":"adaptive","duration":-1}`)
+	_, err := ParseSeedanceRequest(body)
+	require.Error(t, err, "the direct official contract still validates its own model")
+	info, err := ParseSeedanceRoutingRequest(body)
+	require.NoError(t, err, "a downstream name can also be an alias for a different official specification")
+	require.Equal(t, "doubao-seedance-2-0-260128", info.Model)
+}

@@ -161,6 +161,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if result == nil {
 		return errors.New("openai usage result is nil")
 	}
+	ctx = withTokenPricingRequestedModel(ctx, firstNonEmpty(input.OriginalModel, result.Model))
 	if s.rateLimitService != nil && input.Account != nil && input.Account.Platform == PlatformOpenAI {
 		s.rateLimitService.ResetOpenAI403Counter(ctx, input.Account.ID)
 	}
@@ -595,6 +596,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	modelLongContextExempt bool,
 	pricingAt time.Time,
 ) (*CostBreakdown, error) {
+	if result != nil {
+		ctx = withTokenPricingRequestedModel(ctx, result.Model)
+	}
 	billingModel := firstUsageBillingModel(billingModels)
 	if result != nil && strings.HasPrefix(result.ResponseID, "apimart:") {
 		return s.calculateAPIMartUsageCost(ctx, apiKey, result, billingModel, imageMultiplier, webSearchMultiplier)

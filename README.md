@@ -6,7 +6,7 @@ DoneBot's model gateway, maintained at **[Zluo003/donebot-api](https://github.co
 
 ## What is included
 
-- A DoneBot composite group with model allowlists and editable final sale prices for each model, using the existing group pricing cards ahead of channel defaults.
+- A DoneBot composite group with account-enabled model catalogs. LLMs use channel prices × a per-model multiplier; images, audio and video use per-model sale prices through the existing group pricing chain.
 - Installation credentials bound to the signed-in user and device; ordinary API key management is hidden in DoneBot mode.
 - Native LLM APIs, synchronous/asynchronous images, and assets backed by local or S3-compatible storage (R2, OSS, MinIO).
 - Seedance 2.0 / Fast / Mini / 2.5 native video tasks through NewToken, including first/last frames, references, and 2.5 editing/extension. Video accounts have a dedicated panel and resolution selection.
@@ -62,7 +62,7 @@ For Docker, edit the generated `.env`; for binary installation, edit `/etc/sub2a
 
 Manage upload and shared generated output storage in DoneBot → Storage; see [storage settings](docs/donebot/存储管理说明.md) for capacity, retention and local/S3 policies.
 
-After startup, configure upstream accounts, then set final sale prices per model in the DoneBot administration page, synchronize and enable models. Group model prices take precedence over channel defaults; see [model pricing](docs/donebot/模型定价说明.md). A signed-in user claims an installation through `POST /api/v1/donebot/installations/claim`; the returned credential belongs to that user and installation. It is returned only on first claim. Model requests use this installation credential, and administrators can revoke installations without exposing their credentials.
+After startup, configure and enable upstream accounts, bind them to the DoneBot group and enable the permitted models. Synchronize the DoneBot catalog, set each LLM multiplier or media sale price, then save model switches and prices together. Audio/video configuration stays available while runtime features are disabled; see [model pricing](docs/donebot/模型定价说明.md). A signed-in user claims an installation through `POST /api/v1/donebot/installations/claim`; the returned credential belongs to that user and installation. It is returned only on first claim. Model requests use this installation credential, and administrators can revoke installations without exposing their credentials.
 
 For Seedance, enable `donebot.features.video` / `DONEBOT_FEATURES_VIDEO=true`, add a video account with upstream URL `https://api.newtoken.club`, and configure the permitted models and resolutions. Follow [the Seedance integration guide](docs/donebot/Seedance-接入说明.md) for native endpoints, `asset://`/public URL materials, official resolution limits and per-second sale prices. For APIMart, use the dedicated account panel with `https://api.apimart.ai`; enable `DONEBOT_FEATURES_AUDIO=true` for Suno/TTS. Native endpoints and local pricing are documented in [the APIMart guide](docs/donebot/APIMart-接入说明.md). Administrators can use the sidebar version badge to update official binary releases online.
 

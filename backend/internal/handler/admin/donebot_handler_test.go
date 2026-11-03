@@ -65,3 +65,21 @@ func TestDoneBotAdminRejectsMalformedModelUpdate(t *testing.T) {
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+func TestDoneBotAdminRejectsMalformedConfiguration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, handler := range []gin.HandlerFunc{
+		(&DoneBotHandler{}).UpdateLlmConfiguration, (&DoneBotHandler{}).UpdateImageConfiguration,
+		(&DoneBotHandler{}).UpdateVideoConfiguration, (&DoneBotHandler{}).UpdateAudioConfiguration,
+	} {
+		for _, body := range []string{`{`, `{}`, `{"models":[{"enabled":true}]}`} {
+			router := gin.New()
+			router.PUT("/configuration", handler)
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPut, "/configuration", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusBadRequest, w.Code, body)
+		}
+	}
+}

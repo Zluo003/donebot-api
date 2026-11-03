@@ -671,6 +671,9 @@ func RemovePreviousResponseIDFromBody(body []byte) []byte {
 // validateChannelConfig 校验渠道的定价和映射配置（冲突检测 + 区间校验 + 计费模式校验）。
 // Create 和 Update 共用此函数，避免重复。
 func validateChannelConfig(pricing []ChannelModelPricing, mapping map[string]map[string]string) error {
+	if err := rejectGroupModelRateMultipliers(pricing); err != nil {
+		return err
+	}
 	if err := validatePricingEntries(pricing); err != nil {
 		return err
 	}
@@ -680,6 +683,9 @@ func validateChannelConfig(pricing []ChannelModelPricing, mapping map[string]map
 // validatePricingEntries 校验定价条目（冲突检测 + 区间校验 + 计费模式校验），
 // 同时用于主渠道定价和 account_stats_pricing_rules 的内部定价。
 func validatePricingEntries(pricing []ChannelModelPricing) error {
+	if err := validateModelRateMultipliers(pricing); err != nil {
+		return err
+	}
 	if err := validateNoConflictingModels(pricing); err != nil {
 		return err
 	}
@@ -693,6 +699,33 @@ func validatePricingEntries(pricing []ChannelModelPricing) error {
 		return err
 	}
 	return validatePricingTimePricing(pricing)
+}
+
+func rejectGroupModelRateMultipliers(pricing []ChannelModelPricing) error {
+	for _, p := range pricing {
+		if p.RateMultiplier != nil {
+			return infraerrors.BadRequest("GROUP_MODEL_RATE_MULTIPLIER_ONLY", "model rate_multiplier is only supported in group model pricing")
+		}
+	}
+	return nil
+}
+
+func validateModelRateMultipliers(pricing []ChannelModelPricing) error {
+	for _, p := range pricing {
+		if p.RateMultiplier == nil {
+			continue
+		}
+		if math.IsNaN(*p.RateMultiplier) || math.IsInf(*p.RateMultiplier, 0) || *p.RateMultiplier < 0 {
+			return infraerrors.BadRequest("INVALID_MODEL_RATE_MULTIPLIER", "model rate_multiplier must be a finite number >= 0")
+		}
+		if (p.BillingMode != "" && p.BillingMode != BillingModeToken) || p.InputPrice != nil || p.OutputPrice != nil ||
+			p.CacheWritePrice != nil || p.CacheWrite1hPrice != nil || p.CacheReadPrice != nil || p.FastMultiplier != nil || p.FlexMultiplier != nil ||
+			len(p.ReasoningEffortMultipliers) > 0 || p.ImageInputPrice != nil || p.ImageOutputPrice != nil || p.PerRequestPrice != nil ||
+			len(p.Intervals) > 0 || (p.TimePricing != nil && len(p.TimePricing.Periods) > 0) {
+			return infraerrors.BadRequest("INVALID_MODEL_RATE_MULTIPLIER", "model rate_multiplier requires a token card without price or tier overrides")
+		}
+	}
+	return nil
 }
 
 func validateReasoningEffortMultipliers(pricing []ChannelModelPricing) error {
@@ -737,6 +770,9 @@ func validatePricingTimePricing(pricing []ChannelModelPricing) error {
 
 func validateAccountStatsPricingRules(rules []AccountStatsPricingRule) error {
 	for i := range rules {
+		if err := rejectGroupModelRateMultipliers(rules[i].Pricing); err != nil {
+			return fmt.Errorf("account stats pricing rule #%d: %w", i+1, err)
+		}
 		for _, pricing := range rules[i].Pricing {
 			if pricing.TimePricing != nil && len(pricing.TimePricing.Periods) > 0 {
 				return fmt.Errorf("account stats pricing rule #%d: %w", i+1,

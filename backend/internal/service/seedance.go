@@ -31,6 +31,20 @@ func (e GrokMediaEndpoint) IsSeedance() bool {
 func SeedanceTaskKey(id string) string { return "seedance:" + strings.TrimSpace(id) }
 
 func ParseSeedanceRequest(body []byte) (GrokMediaRequestInfo, error) {
+	return parseSeedanceRequest(body, func(model string) string { return model })
+}
+
+// ParseSeedanceRoutingRequest validates the native shape before selecting an
+// account. Its configured official specification supplies model limits later.
+func ParseSeedanceRoutingRequest(body []byte) (GrokMediaRequestInfo, error) {
+	return parseSeedanceRequest(body, func(string) string { return "" })
+}
+
+func ParseSeedanceRequestForAccount(body []byte, account *Account) (GrokMediaRequestInfo, error) {
+	return parseSeedanceRequest(body, func(model string) string { return SeedanceSpecModelForAccount(account, model) })
+}
+
+func parseSeedanceRequest(body []byte, resolveSpec func(string) string) (GrokMediaRequestInfo, error) {
 	var info GrokMediaRequestInfo
 	if !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
 		return info, fmt.Errorf("request body must be a JSON object")
@@ -135,7 +149,9 @@ func ParseSeedanceRequest(body []byte) (GrokMediaRequestInfo, error) {
 		}
 		info.DurationSeconds = int(duration.Int())
 	}
-	if err := validateSeedanceModelRequest(body, info, firsts > 0 || lasts > 0, images, videos, audios, draftReference); err != nil {
+	validationInfo := info
+	validationInfo.Model = resolveSpec(info.Model)
+	if err := validateSeedanceModelRequest(body, validationInfo, firsts > 0 || lasts > 0, images, videos, audios, draftReference); err != nil {
 		return info, err
 	}
 	return info, nil
@@ -255,23 +271,22 @@ func (s *OpenAIGatewayService) ForwardSeedance(ctx context.Context, c *gin.Conte
 		return nil, err
 	}
 	model, upstreamModel := "", ""
+	var requestInfo GrokMediaRequestInfo
 	method := http.MethodGet
 	switch endpoint {
 	case SeedanceEndpointCreate:
-		info, parseErr := ParseSeedanceRequest(body)
+		info, parseErr := ParseSeedanceRequestForAccount(body, account)
 		if parseErr != nil {
 			return nil, parseErr
 		}
 		model = info.Model
+		requestInfo = info
 		upstreamModel = account.GetMappedModel(model)
 		if !account.SeedanceAllowsResolution(model, info.Resolution) {
 			return nil, fmt.Errorf("seedance resolution is not allowed by the selected account or model")
 		}
 		body, err = sjson.SetBytes(body, "model", upstreamModel)
 		if err != nil {
-			return nil, err
-		}
-		if _, err = ParseSeedanceRequest(body); err != nil {
 			return nil, err
 		}
 		method = http.MethodPost
@@ -320,13 +335,12 @@ func (s *OpenAIGatewayService) ForwardSeedance(ctx context.Context, c *gin.Conte
 			return nil, fmt.Errorf("seedance create response missing task ID")
 		}
 		result.ResponseID = SeedanceTaskKey(id)
-		info, _ := ParseSeedanceRequest(body)
-		result.VideoResolution = info.Resolution
+		result.VideoResolution = requestInfo.Resolution
 		if result.VideoResolution == "" {
 			result.VideoResolution = "720p"
 		}
-		result.VideoReference = info.HasReferenceVideo
-		result.VideoDurationSeconds = info.DurationSeconds
+		result.VideoReference = requestInfo.HasReferenceVideo
+		result.VideoDurationSeconds = requestInfo.DurationSeconds
 	}
 	if endpoint == SeedanceEndpointStatus {
 		result.ResponseID = taskID

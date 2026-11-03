@@ -107,7 +107,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	contentType := c.GetHeader("Content-Type")
 	requestInfo := service.ParseGrokMediaRequest(contentType, body)
 	if endpoint == service.SeedanceEndpointCreate {
-		requestInfo, err = service.ParseSeedanceRequest(body)
+		requestInfo, err = service.ParseSeedanceRoutingRequest(body)
 		if err != nil {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 			return
@@ -383,6 +383,12 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			mediaEligibilityRejected = true
 			failedAccountIDs[account.ID] = struct{}{}
 			continue
+		}
+		if endpoint == service.SeedanceEndpointCreate {
+			if _, parseErr := service.ParseSeedanceRequestForAccount(body, account); parseErr != nil {
+				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", parseErr.Error())
+				return
+			}
 		}
 		if endpoint.IsGenerationRequest() && !endpoint.IsSeedance() {
 			eligible, eligibilityReason, eligibilityErr := h.ensureGrokMediaAccountEligibility(requestCtx, account)

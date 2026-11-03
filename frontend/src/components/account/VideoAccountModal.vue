@@ -21,16 +21,27 @@
       </div>
       <fieldset>
         <legend class="input-label">{{ t('admin.accounts.videoAccount.models') }}</legend>
-        <div class="grid gap-2 sm:grid-cols-2">
-          <label v-for="model in modelOptions" :key="model.id" class="flex min-w-0 items-start gap-2 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
-            <input v-model="form.models" type="checkbox" :value="model.id" class="mt-1 shrink-0" :data-testid="`video-model-${model.id}`" />
-            <span class="min-w-0 text-sm">
-              <span class="font-medium">{{ model.label }}</span>
-              <span class="mt-1 block break-all text-xs text-gray-500 dark:text-gray-400">{{ model.id }}</span>
-              <span v-if="model.resolutions" class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ model.resolutions }}</span>
-            </span>
-          </label>
+        <p class="input-hint mb-3">{{ t('admin.accounts.videoAccount.mappingHint') }}</p>
+        <div class="space-y-3">
+          <div v-for="(mapping, index) in form.modelMappings" :key="index" class="min-w-0 space-y-3 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+            <div class="flex items-center justify-between gap-3">
+              <label class="flex items-center gap-2 text-sm"><input v-model="mapping.enabled" type="checkbox" :data-testid="`video-model-enabled-${index}`" />{{ t('admin.accounts.videoAccount.enableMapping') }}</label>
+              <button type="button" class="btn btn-secondary btn-sm" :data-testid="`video-model-remove-${index}`" @click="form.modelMappings.splice(index, 1)">{{ t('common.delete') }}</button>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <label class="block min-w-0 text-sm"><span class="mb-1 block">{{ t('admin.accounts.videoAccount.downstreamModel') }}</span><input v-model="mapping.downstream" class="input" :required="mapping.enabled" :data-testid="`video-model-downstream-${index}`" /></label>
+              <label class="block min-w-0 text-sm"><span class="mb-1 block">{{ t('admin.accounts.videoAccount.upstreamModel') }}</span><input v-model="mapping.upstream" class="input" :required="mapping.enabled" :data-testid="`video-model-upstream-${index}`" /></label>
+            </div>
+            <label class="block min-w-0 text-sm">
+              <span class="mb-1 block">{{ t('admin.accounts.videoAccount.modelSpec') }}</span>
+              <select v-model="mapping.spec" class="input" :required="mapping.enabled" :data-testid="`video-model-spec-${index}`">
+                <option value="">{{ t('admin.accounts.videoAccount.selectModelSpec') }}</option>
+                <option v-for="model in SEEDANCE_MODELS" :key="model.id" :value="model.id">{{ model.label }} · {{ model.resolutions }}</option>
+              </select>
+            </label>
+          </div>
         </div>
+        <button type="button" class="btn btn-secondary mt-3" data-testid="video-model-add" @click="addModelMapping">{{ t('admin.accounts.videoAccount.addMapping') }}</button>
       </fieldset>
       <fieldset>
         <legend class="input-label">{{ t('admin.accounts.videoAccount.resolutions') }}</legend>
@@ -74,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -84,7 +95,7 @@ import { isStepUpCancelled, useStepUp } from '@/composables/useStepUp'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import type { Account, AdminGroup, Proxy } from '@/types'
-import { SEEDANCE_MODELS, SEEDANCE_RESOLUTIONS } from './videoAccount'
+import { createSeedanceModelMappings, SEEDANCE_MODELS, SEEDANCE_RESOLUTIONS, type SeedanceModelMapping } from './videoAccount'
 
 const props = defineProps<{ show: boolean; account?: Account | null; groups: AdminGroup[]; proxies: Proxy[] }>()
 const emit = defineEmits<{ close: []; created: []; updated: [account: Account] }>()
@@ -92,30 +103,24 @@ const { t } = useI18n()
 const app = useAppStore()
 const stepUp = useStepUp()
 const saving = ref(false)
-const originalMapping = ref<Record<string, string>>({})
-const form = reactive({ name: '', notes: '', apiKey: '', baseURL: 'https://api.newtoken.club', models: [] as string[], resolutions: ['720p'] as string[], groups: [] as number[], proxyID: null as number | null, concurrency: 5, outputStorage: 'upstream' as 'upstream' | 'system' })
-const modelOptions = computed(() => {
-  const standard = new Set<string>(SEEDANCE_MODELS.map(model => model.id))
-  return [...SEEDANCE_MODELS, ...Object.keys(originalMapping.value).filter(id => !standard.has(id)).map(id => ({ id, label: id, resolutions: '' }))]
-})
+const form = reactive({ name: '', notes: '', apiKey: '', baseURL: 'https://api.newtoken.club', modelMappings: [] as SeedanceModelMapping[], resolutions: ['720p'] as string[], groups: [] as number[], proxyID: null as number | null, concurrency: 5, outputStorage: 'upstream' as 'upstream' | 'system' })
 watch(() => [props.show, props.account] as const, () => {
   form.apiKey = ''
   if (!props.show) return
   const account = props.account
   const credentials = account?.credentials ?? {}
-  const mapping = credentials.model_mapping
-  originalMapping.value = mapping && typeof mapping === 'object' && !Array.isArray(mapping)
-    ? Object.fromEntries(Object.entries(mapping).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
-    : {}
   Object.assign(form, {
     name: account?.name ?? '', notes: account?.notes ?? '', baseURL: credentials.base_url || 'https://api.newtoken.club',
-    models: account && Object.keys(originalMapping.value).length ? Object.keys(originalMapping.value) : SEEDANCE_MODELS.map(model => model.id),
+    modelMappings: createSeedanceModelMappings(credentials),
     resolutions: Array.isArray(credentials.seedance_allowed_resolutions) ? [...credentials.seedance_allowed_resolutions] : ['720p'],
     outputStorage: account?.extra?.seedance_output_storage === 'system' ? 'system' : 'upstream',
     groups: [...(account?.group_ids ?? [])], proxyID: account?.proxy_id ?? null, concurrency: account?.concurrency ?? 5
   })
 }, { immediate: true })
 
+function addModelMapping() {
+  form.modelMappings.push({ enabled: true, downstream: '', upstream: '', spec: SEEDANCE_MODELS[0].id })
+}
 function close() {
   if (saving.value) return
   form.apiKey = ''
@@ -124,7 +129,11 @@ function close() {
 async function save() {
   if (saving.value) return
   if (form.resolutions.length === 0) { app.showError(t('admin.accounts.videoAccount.selectResolution')); return }
-  if (form.models.length === 0) { app.showError(t('admin.accounts.videoAccount.selectModel')); return }
+  const mappings = form.modelMappings.filter(mapping => mapping.enabled).map(mapping => ({ downstream: mapping.downstream.trim(), upstream: mapping.upstream.trim(), spec: mapping.spec }))
+  if (mappings.length === 0) { app.showError(t('admin.accounts.videoAccount.selectModel')); return }
+  if (mappings.some(mapping => !mapping.downstream || !mapping.upstream || /[*?]/.test(mapping.downstream + mapping.upstream))) { app.showError(t('admin.accounts.videoAccount.invalidModelMapping')); return }
+  if (new Set(mappings.map(mapping => mapping.downstream)).size !== mappings.length) { app.showError(t('admin.accounts.videoAccount.duplicateModelMapping')); return }
+  if (mappings.some(mapping => !SEEDANCE_MODELS.some(model => model.id === mapping.spec))) { app.showError(t('admin.accounts.videoAccount.selectModelSpec')); return }
   if (!form.name.trim() || (!props.account && !form.apiKey.trim()) || !Number.isInteger(form.concurrency) || form.concurrency < 1) {
     app.showError(t('admin.accounts.videoAccount.invalidFields')); return
   }
@@ -138,7 +147,8 @@ async function save() {
       ...props.account?.credentials,
       base_url: form.baseURL.trim().replace(/\/+$/, ''), openai_capabilities: ['seedance'],
       seedance_allowed_resolutions: [...form.resolutions],
-      model_mapping: Object.fromEntries(form.models.map(id => [id, originalMapping.value[id] ?? id]))
+      model_mapping: Object.fromEntries(mappings.map(mapping => [mapping.downstream, mapping.upstream])),
+      seedance_model_specs: Object.fromEntries(mappings.map(mapping => [mapping.downstream, mapping.spec]))
     }
     delete credentials.api_key
     if (form.apiKey.trim()) credentials.api_key = form.apiKey.trim()

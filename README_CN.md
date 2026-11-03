@@ -6,7 +6,7 @@ DoneBot 专用模型网关，实际维护仓库为 **[Zluo003/donebot-api](https
 
 ## 已有能力
 
-- 自动创建 DoneBot composite 聚合分组，复用模型白名单与现有分组价格卡，按模型配置最终售价，优先于渠道默认价。
+- 自动创建 DoneBot composite 聚合分组，目录来自账号实际开启的模型。LLM 使用渠道价格 × 每模型倍率；图片、音频、视频按模型配置售价，复用现有分组计费链路。
 - 登录用户按安装领取凭据，绑定本人、设备和 DoneBot 分组；DoneBot 模式关闭普通 API Key 管理。
 - LLM 原生接口、图片同步/异步生成，以及本地或 S3 兼容资产存储（R2、OSS、MinIO）。
 - 通过 NewToken 接入 Seedance 2.0 / Fast / Mini / 2.5，支持首帧、首尾帧、参考生视频，以及 2.5 编辑和延长；视频账号有专用面板和分辨率多选。
@@ -62,7 +62,7 @@ Docker 修改生成的 `.env`，二进制安装修改 `/etc/sub2api/environment`
 
 在 DoneBot → 存储中管理上传素材与共享生成产物策略，可配置本地/S3、总容量、保留时长及清理阈值，见[存储管理说明](docs/donebot/存储管理说明.md)。
 
-启动后配置上游账号，在 DoneBot 管理页按模型设置最终售价，再同步并开启模型。分组模型价优先于渠道默认价，详见[模型定价说明](docs/donebot/模型定价说明.md)。登录用户通过 `POST /api/v1/donebot/installations/claim` 领取当前安装的凭据；凭据绑定本人，仅首次领取返回明文。模型调用使用安装凭据，管理员可以吊销安装，不展示明文凭据。
+启动后添加并启用上游账号，绑定 DoneBot 分组并开启账号允许的模型。在 DoneBot 管理页同步目录，配置每模型 LLM 倍率或媒体售价，开关与定价一次保存。音频、视频未启用时仍可提前配置，详见[模型定价说明](docs/donebot/模型定价说明.md)。登录用户通过 `POST /api/v1/donebot/installations/claim` 领取当前安装的凭据；凭据绑定本人，仅首次领取返回明文。模型调用使用安装凭据，管理员可以吊销安装，不展示明文凭据。
 
 使用 Seedance 时开启 `donebot.features.video` / `DONEBOT_FEATURES_VIDEO=true`，在账号管理点击“添加视频账号”，上游地址使用 `https://api.newtoken.club`，配置允许模型与分辨率。原生端点、`asset://` / 公网 URL 素材、官方分辨率和按秒售价见 [Seedance 接入说明](docs/donebot/Seedance-接入说明.md)。使用 APIMart 时通过专用面板添加账号，上游地址为 `https://api.apimart.ai`；Suno / TTS 需启用 `DONEBOT_FEATURES_AUDIO=true`，原生接口与本地定价见 [APIMart 接入说明](docs/donebot/APIMart-接入说明.md)。管理员点击侧栏版本标记可在线升级正式二进制版本。
 

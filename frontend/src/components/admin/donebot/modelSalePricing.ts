@@ -10,11 +10,6 @@ export interface PriceField {
   referenceVideo?: boolean
 }
 export interface ModelPriceDraft { model: string; fields: PriceField[] }
-export const TOKEN_PRICE_FIELDS = [
-  { key: 'input_price', label: '输入' }, { key: 'output_price', label: '输出' },
-  { key: 'cache_write_price', label: '缓存写入' }, { key: 'cache_read_price', label: '缓存读取' }
-] as const
-
 function display(value: number | null | undefined, factor = 1): string {
   return value == null ? '' : String(Number((value * factor).toPrecision(12)))
 }
@@ -22,7 +17,7 @@ export function createModelPriceDraft(row: DoneBotModel, kind: Modality): ModelP
   const p = row.editable_pricing ?? {}
   let fields: PriceField[] = []
   if (kind === 'llm') {
-    fields = TOKEN_PRICE_FIELDS.map(field => ({ ...field, factor: 1e6, value: display(p[field.key] ?? (field.key === 'input_price' ? row.effective_input_price : field.key === 'output_price' ? row.effective_output_price : null), 1e6) }))
+    fields = [{ key: 'rate_multiplier', label: '倍率', factor: 1, value: display(p.rate_multiplier ?? 1) }]
   } else if (kind === 'images') {
     fields = ['1K', '2K', '4K'].map(size => ({ key: `image-${size}`, label: size, factor: 1, value: display(p.image_prices?.[size] ?? row.effective_image_prices?.[size]) }))
   } else if (kind === 'audio') {
@@ -41,11 +36,11 @@ export function createModelPriceDraft(row: DoneBotModel, kind: Modality): ModelP
   return { model: row.model, fields }
 }
 export function validPriceDraft(draft: ModelPriceDraft): boolean {
-  return draft.fields.every(field => String(field.value).trim() === '' || (Number.isFinite(Number(field.value)) && Number(field.value) >= 0))
+  return draft.fields.every(field => String(field.value).trim() === '' ? field.key !== 'rate_multiplier' : Number.isFinite(Number(field.value)) && Number(field.value) >= 0)
 }
 export function draftToSalePricing(draft: ModelPriceDraft, kind: Modality): ModelSalePricing {
   const value = (field: PriceField) => String(field.value).trim() === '' ? null : Number(field.value) / field.factor
-  if (kind === 'llm') return Object.fromEntries(draft.fields.map(field => [field.key, value(field)]))
+  if (kind === 'llm') return { rate_multiplier: Number(draft.fields[0].value) }
   if (kind === 'images') return { image_prices: Object.fromEntries(draft.fields.map(field => [field.label, value(field)])) }
   if (kind === 'audio') return { tier_prices: Object.fromEntries(draft.fields.map(field => [field.label, value(field)])) }
   return { video_prices: draft.fields.map(field => ({ resolution: field.resolution!, reference_video: field.referenceVideo!, price_per_second: value(field) })) }

@@ -9,9 +9,10 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
-// DoneBotEditablePricing exposes final sell prices. Storage and billing continue
-// to use the existing group cards and multipliers; no parallel price ledger.
+// DoneBotEditablePricing exposes LLM channel multipliers and final media prices.
+// Storage and billing use the existing group cards and multipliers.
 type DoneBotEditablePricing struct {
+	RateMultiplier  *float64            `json:"rate_multiplier,omitempty"`
 	InputPrice      *float64            `json:"input_price,omitempty"`
 	OutputPrice     *float64            `json:"output_price,omitempty"`
 	CacheWritePrice *float64            `json:"cache_write_price,omitempty"`
@@ -46,20 +47,37 @@ func doneBotPricingMultiplier(g *Group, kind string) float64 {
 	}
 	return g.RateMultiplier
 }
-func doneBotVideoResolutions(model string, accounts []Account) []string {
-	if resolutions, ok := seedanceModelResolutions[model]; ok {
-		return slices.Clone(resolutions)
+
+// doneBotLlmModelMultiplier returns the effective multiplier against channel prices.
+// The stored ratio is relative to the existing group billing multiplier.
+func doneBotLlmModelMultiplier(g *Group, model string) float64 {
+	m := g.RateMultiplier
+	if p := matchGroupModelPricing(g, model); p != nil && p.RateMultiplier != nil {
+		m *= *p.RateMultiplier
 	}
-	for _, account := range accounts {
+	return m
+}
+func doneBotVideoResolutions(model string, accounts []Account) []string {
+	for i := range accounts {
+		account := &accounts[i]
 		if account.IsModelSupported(model) {
-			if resolutions, ok := seedanceModelResolutions[account.GetMappedModel(model)]; ok {
+			if resolutions, ok := seedanceModelResolutions[SeedanceSpecModelForAccount(account, model)]; ok {
 				return slices.Clone(resolutions)
 			}
 		}
 	}
+	if resolutions, ok := seedanceModelResolutions[model]; ok {
+		return slices.Clone(resolutions)
+	}
 	return nil
 }
 func doneBotNativeMediaKind(model string, accounts []Account) (string, string) {
+	for i := range accounts {
+		account := &accounts[i]
+		if account.IsModelSupported(model) && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilitySeedance) && SeedanceSpecModelForAccount(account, model) != "" {
+			return "video", ""
+		}
+	}
 	native := []string{model}
 	for _, account := range accounts {
 		if account.IsModelSupported(model) {
@@ -87,7 +105,7 @@ func doneBotHasNativeMediaAccount(model, platform, kind string, accounts []Accou
 		native := account.GetMappedModel(model)
 		switch kind {
 		case "video":
-			if _, ok := seedanceModelResolutions[native]; ok && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilitySeedance) {
+			if SeedanceSpecModelForAccount(&account, model) != "" && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilitySeedance) {
 				return true
 			}
 		case "images":
@@ -105,7 +123,10 @@ func doneBotHasNativeMediaAccount(model, platform, kind string, accounts []Accou
 func doneBotEditablePrice(row *DoneBotModel, g *Group, price *ChannelModelPricing) {
 	m := doneBotPricingMultiplier(g, row.Kind)
 	out := &DoneBotEditablePricing{}
-	if price != nil {
+	if row.Kind == "llm" {
+		multiplier := doneBotLlmModelMultiplier(g, row.Model)
+		out.RateMultiplier = &multiplier
+	} else if price != nil {
 		out.InputPrice = multiplied(price.InputPrice, m)
 		out.OutputPrice = multiplied(price.OutputPrice, m)
 		out.CacheWritePrice = multiplied(price.CacheWritePrice, m)
@@ -146,9 +167,20 @@ func doneBotEditablePrice(row *DoneBotModel, g *Group, price *ChannelModelPricin
 }
 
 func (s *DoneBotAdminService) updateModelPricing(ctx context.Context, g *Group, kind string, models []DoneBotModelPriceInput) error {
-	rows, err := s.catalog(ctx, g)
+	update, err := s.prepareModelPricingUpdate(ctx, g, kind, models)
 	if err != nil {
 		return err
+	}
+	_, err = s.admin.UpdateGroup(context.WithValue(ctx, doneBotGroupUpdateContext{}, true), g.ID, update)
+	return err
+}
+
+// prepareModelPricingUpdate validates the entire request without persisting any
+// change, so model switches and pricing can share one group update.
+func (s *DoneBotAdminService) prepareModelPricingUpdate(ctx context.Context, g *Group, kind string, models []DoneBotModelPriceInput) (*UpdateGroupInput, error) {
+	rows, err := s.catalog(ctx, g)
+	if err != nil {
+		return nil, err
 	}
 	lookup := map[string]DoneBotModel{}
 	for _, row := range rows {
@@ -163,12 +195,12 @@ func (s *DoneBotAdminService) updateModelPricing(ctx context.Context, g *Group, 
 	for _, in := range models {
 		row, ok := lookup[in.Model]
 		if !ok || row.Kind != kind || seen[in.Model] {
-			return invalid()
+			return nil, invalid()
 		}
 		seen[in.Model] = true
 		m := doneBotPricingMultiplier(g, kind)
 		if m <= 0 || math.IsNaN(m) || math.IsInf(m, 0) {
-			return invalid()
+			return nil, invalid()
 		}
 		valid := true
 		base := func(v *float64) *float64 {
@@ -187,33 +219,26 @@ func (s *DoneBotAdminService) updateModelPricing(ctx context.Context, g *Group, 
 			return &n
 		}
 		p := ChannelModelPricing{Platform: row.Platform, Models: []string{in.Model}}
-		if kind == "llm" {
-			if existing := matchGroupModelPricing(g, in.Model); existing != nil {
-				p = existing.Clone()
-				p.Models = []string{in.Model}
-				p.Platform = row.Platform
-			}
-		}
 
 		value := in.Pricing
+		if kind != "llm" && value.RateMultiplier != nil {
+			return nil, invalid()
+		}
 		switch kind {
 		case "llm":
-			if len(value.ImagePrices) > 0 || len(value.TierPrices) > 0 || len(value.VideoPrices) > 0 {
-				return invalid()
+			if value.InputPrice != nil || value.OutputPrice != nil || value.CacheWritePrice != nil || value.CacheReadPrice != nil || len(value.ImagePrices) > 0 || len(value.TierPrices) > 0 || len(value.VideoPrices) > 0 {
+				return nil, invalid()
 			}
 			p.BillingMode = BillingModeToken
-			p.InputPrice = base(value.InputPrice)
-			p.OutputPrice = base(value.OutputPrice)
-			p.CacheWritePrice = base(value.CacheWritePrice)
-			p.CacheReadPrice = base(value.CacheReadPrice)
+			p.RateMultiplier = base(value.RateMultiplier)
 		case "images":
 			if value.InputPrice != nil || value.OutputPrice != nil || value.CacheReadPrice != nil || value.CacheWritePrice != nil || len(value.TierPrices) > 0 || len(value.VideoPrices) > 0 {
-				return invalid()
+				return nil, invalid()
 			}
 			p.BillingMode = BillingModeImage
 			for size, v := range value.ImagePrices {
 				if !slices.Contains([]string{"1K", "2K", "4K"}, size) {
-					return invalid()
+					return nil, invalid()
 				}
 				if v != nil {
 					p.Intervals = append(p.Intervals, PricingInterval{TierLabel: size, PerRequestPrice: base(v)})
@@ -222,7 +247,7 @@ func (s *DoneBotAdminService) updateModelPricing(ctx context.Context, g *Group, 
 			slices.SortFunc(p.Intervals, func(a, b PricingInterval) int { return strings.Compare(a.TierLabel, b.TierLabel) })
 		case "audio":
 			if value.InputPrice != nil || value.OutputPrice != nil || value.CacheReadPrice != nil || value.CacheWritePrice != nil || len(value.ImagePrices) > 0 || len(value.VideoPrices) > 0 {
-				return invalid()
+				return nil, invalid()
 			}
 			p.BillingMode = BillingModePerRequest
 			for tier, v := range value.TierPrices {
@@ -231,7 +256,7 @@ func (s *DoneBotAdminService) updateModelPricing(ctx context.Context, g *Group, 
 					allowed = tier == "tts"
 				}
 				if !allowed {
-					return invalid()
+					return nil, invalid()
 				}
 				if v != nil {
 					p.Intervals = append(p.Intervals, PricingInterval{TierLabel: tier, PerRequestPrice: base(v)})
@@ -240,14 +265,14 @@ func (s *DoneBotAdminService) updateModelPricing(ctx context.Context, g *Group, 
 			slices.SortFunc(p.Intervals, func(a, b PricingInterval) int { return strings.Compare(a.TierLabel, b.TierLabel) })
 		case "video":
 			if value.InputPrice != nil || value.OutputPrice != nil || value.CacheReadPrice != nil || value.CacheWritePrice != nil || len(value.ImagePrices) > 0 || len(value.TierPrices) > 0 {
-				return invalid()
+				return nil, invalid()
 			}
 			p.BillingMode = BillingModeVideo
 			tiers := map[string]bool{}
 			for _, v := range value.VideoPrices {
 				tier := SeedancePricingTier(v.Resolution, v.ReferenceVideo)
 				if !slices.Contains(row.VideoResolutions, v.Resolution) || tiers[tier] {
-					return invalid()
+					return nil, invalid()
 				}
 				tiers[tier] = true
 				if v.PricePerSecond != nil {
@@ -255,10 +280,10 @@ func (s *DoneBotAdminService) updateModelPricing(ctx context.Context, g *Group, 
 				}
 			}
 		default:
-			return invalid()
+			return nil, invalid()
 		}
 		if !valid {
-			return invalid()
+			return nil, invalid()
 		}
 		// Remove this concrete model from old cards without touching other models.
 		kept := entries[:0]
@@ -270,8 +295,8 @@ func (s *DoneBotAdminService) updateModelPricing(ctx context.Context, g *Group, 
 		}
 		entries = kept
 		// An all-null card clears the direct override and resumes configured defaults.
-		clearDirect := kind == "llm" && value.InputPrice == nil && value.OutputPrice == nil && value.CacheWritePrice == nil && value.CacheReadPrice == nil
-		if !clearDirect && doneBotHasPrice(p) {
+		clearDirect := kind == "llm" && value.RateMultiplier == nil
+		if !clearDirect && (p.RateMultiplier != nil || doneBotHasPrice(p)) {
 			entries = append(entries, p)
 		}
 	}
@@ -281,7 +306,7 @@ func (s *DoneBotAdminService) updateModelPricing(ctx context.Context, g *Group, 
 	next.ModelPricing = entries
 	nextRows, e := s.catalog(ctx, &next)
 	if e != nil {
-		return e
+		return nil, e
 	}
 	allowed := slices.Clone(g.ModelAllowlist.Models)
 	changed := false
@@ -308,8 +333,7 @@ func (s *DoneBotAdminService) updateModelPricing(ctx context.Context, g *Group, 
 		update.ModelAllowlist = &allow
 	}
 
-	_, err = s.admin.UpdateGroup(context.WithValue(ctx, doneBotGroupUpdateContext{}, true), g.ID, update)
-	return err
+	return update, nil
 }
 
 func doneBotPriceMatchesKind(price *ChannelModelPricing, kind string) bool {

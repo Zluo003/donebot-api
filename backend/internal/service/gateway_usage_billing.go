@@ -771,6 +771,7 @@ func logResponseModelBillingApplied(component string, account *Account, requestI
 // recordUsageCore 是 RecordUsage 的核心实现。
 func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsageCoreInput) error {
 	result := input.Result
+	ctx = withTokenPricingRequestedModel(ctx, firstNonEmpty(input.OriginalModel, result.Model))
 	apiKey := input.APIKey
 	user := input.User
 	account := input.Account
@@ -987,6 +988,7 @@ func (s *GatewayService) CacheStoragePriced(ctx context.Context, input *RecordUs
 
 // QuoteUsageCost 按与 RecordUsage 相同的倍率、计费模型与定价计算 input.Result 的应付金额（倍率后 USD），不记录也不扣费。
 func (s *GatewayService) QuoteUsageCost(ctx context.Context, input *RecordUsageInput) float64 {
+	ctx = withTokenPricingRequestedModel(ctx, firstNonEmpty(input.OriginalModel, input.Result.Model))
 	user := input.User
 	if user == nil {
 		user = input.APIKey.User
@@ -1259,6 +1261,7 @@ func (s *GatewayService) calculateTokenCost(
 	multiplier float64,
 	pricingAt time.Time,
 ) *CostBreakdown {
+	ctx = withTokenPricingRequestedModel(ctx, result.Model)
 	tokens := UsageTokens{
 		InputTokens:           result.Usage.InputTokens,
 		OutputTokens:          result.Usage.OutputTokens,

@@ -93,6 +93,7 @@ type ChannelModelPricing struct {
 	Platform                   string              `json:"platform"` // 所属平台（anthropic/openai/gemini/...）
 	Models                     []string            `json:"models"`
 	BillingMode                BillingMode         `json:"billing_mode"`
+	RateMultiplier             *float64            `json:"rate_multiplier,omitempty"` // Group-only multiplier over live channel/catalog token pricing, stored in group.model_pricing.
 	InputPrice                 *float64            `json:"input_price"`
 	OutputPrice                *float64            `json:"output_price"`
 	CacheWritePrice            *float64            `json:"cache_write_price"`
