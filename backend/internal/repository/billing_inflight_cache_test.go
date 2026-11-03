@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -353,4 +354,177 @@ func TestReserveFixedCharge_ConcurrentChargesAdmitOnlyWhatAPIKeyQuotaCovers(t *t
 	require.NoError(t, err)
 	require.Zero(t, remaining)
 	require.Equal(t, int64(0), inflightCount(t, cache, user.ID))
+}
+
+// DoneBot requires the entire estimate even when this is the only request.
+// The legacy cap truncates a reservation; it is not a request spending limit.
+func TestDoneBotInflightReservationRejectsUnderfundedFirstRequest(t *testing.T) {
+	for _, cap := range []float64{0, 0.005} {
+		t.Run(fmt.Sprintf("cap_%g", cap), func(t *testing.T) {
+			_, cache, _ := newInflightTestEnv(t, true, 60)
+			cfg := &config.Config{DoneBot: config.DoneBotConfig{Enabled: true}}
+			cfg.Billing.InflightReservation = config.InflightReservationConfig{Enabled: true, TTLSeconds: 60, MaxReservationUSD: cap}
+			svc := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
+			t.Cleanup(svc.Stop)
+			ctx := context.Background()
+			user := &service.User{ID: 71}
+			require.NoError(t, cache.SetUserBalance(ctx, user.ID, 0.01))
+			reservation, err := svc.ReserveInflight(ctx, user, nil, nil, 500)
+			if reservation != nil {
+				t.Cleanup(reservation.Release)
+			}
+			require.ErrorIs(t, err, service.ErrInsufficientBalance)
+			require.Nil(t, reservation)
+			require.Zero(t, inflightCount(t, cache, user.ID))
+		})
+	}
+}
+
+func TestDoneBotInflightReservationUsesFullEstimateConcurrently(t *testing.T) {
+	_, cache, _ := newInflightTestEnv(t, true, 60)
+	cfg := &config.Config{DoneBot: config.DoneBotConfig{Enabled: true}}
+	cfg.Billing.InflightReservation = config.InflightReservationConfig{Enabled: true, TTLSeconds: 60, MaxReservationUSD: 0.1}
+	svc := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(svc.Stop)
+	ctx := context.Background()
+	user := &service.User{ID: 72}
+	require.NoError(t, cache.SetUserBalance(ctx, user.ID, 0.7))
+	const n = 20
+	var admitted atomic.Int32
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			reservation, err := svc.ReserveInflight(ctx, user, nil, nil, 0.3)
+			if err != nil {
+				require.ErrorIs(t, err, service.ErrInsufficientBalance)
+				return
+			}
+			admitted.Add(1)
+			t.Cleanup(reservation.Release)
+			require.InDelta(t, 0.3, reservation.Amount(), 1e-12)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	require.Equal(t, int32(2), admitted.Load())
+	require.Equal(t, int64(2), inflightCount(t, cache, user.ID))
+}
+
+func TestDoneBotFixedChargeAlreadyRejectsSingleUnderfundedRequest(t *testing.T) {
+	_, cache, _ := newInflightTestEnv(t, true, 60)
+	cfg := &config.Config{DoneBot: config.DoneBotConfig{Enabled: true}}
+	cfg.Billing.InflightReservation = config.InflightReservationConfig{Enabled: true, TTLSeconds: 60}
+	svc := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(svc.Stop)
+	ctx := context.Background()
+	user := &service.User{ID: 73}
+	require.NoError(t, cache.SetUserBalance(ctx, user.ID, 0.01))
+	reservation, err := svc.ReserveFixedCharge(ctx, user, nil, nil, nil, 500)
+	require.ErrorIs(t, err, service.ErrInsufficientBalance)
+	require.Nil(t, reservation)
+	require.Zero(t, inflightCount(t, cache, user.ID))
+}
+
+type pausedDoneBotRedisBalanceCache struct {
+	*billingCache
+	pauseNext atomic.Bool
+	readDone  chan struct{}
+	resume    chan struct{}
+}
+
+func (c *pausedDoneBotRedisBalanceCache) GetUserBalance(ctx context.Context, userID int64) (float64, error) {
+	balance, err := c.billingCache.GetUserBalance(ctx, userID)
+	if c.pauseNext.Swap(false) {
+		close(c.readDone)
+		select {
+		case <-c.resume:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+	return balance, err
+}
+
+func TestDoneBotInflightReservationRedisRechecksBalanceAfterConcurrentSettlement(t *testing.T) {
+	_, redisCache, _ := newInflightTestEnv(t, true, 60)
+	cache := &pausedDoneBotRedisBalanceCache{billingCache: redisCache, readDone: make(chan struct{}), resume: make(chan struct{})}
+	cfg := &config.Config{DoneBot: config.DoneBotConfig{Enabled: true}}
+	cfg.Billing.InflightReservation = config.InflightReservationConfig{Enabled: true, TTLSeconds: 60}
+	svc := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(svc.Stop)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	user := &service.User{ID: 75}
+	require.NoError(t, redisCache.SetUserBalance(ctx, user.ID, 1))
+	first, err := svc.ReserveInflight(ctx, user, nil, nil, 0.6)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	t.Cleanup(first.Release)
+	cache.pauseNext.Store(true)
+	type result struct {
+		reservation *service.InflightReservation
+		err         error
+	}
+	completed := make(chan result, 1)
+	go func() {
+		reservation, err := svc.ReserveInflight(ctx, user, nil, nil, 0.6)
+		completed <- result{reservation, err}
+	}()
+	select {
+	case <-cache.readDone:
+	case <-ctx.Done():
+		t.Fatal("second request did not read the original balance")
+	}
+	// Redis now has $0.4 and no inflight requests; B must not use its earlier
+	// $1 snapshot to bypass admission as a newly lone request.
+	require.NoError(t, redisCache.DeductUserBalance(ctx, user.ID, 0.6))
+	first.Release()
+	close(cache.resume)
+	got := <-completed
+	if got.reservation != nil {
+		t.Cleanup(got.reservation.Release)
+	}
+	require.ErrorIs(t, got.err, service.ErrInsufficientBalance)
+	require.Nil(t, got.reservation)
+	require.Zero(t, inflightCount(t, redisCache, user.ID))
+	balance, err := redisCache.GetUserBalance(ctx, user.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 0.4, balance, 1e-12)
+}
+
+func TestStrictInflightReservationRejectsUnusableCurrentBalance(t *testing.T) {
+	for _, value := range []string{"", "not-a-number", "NaN", "+Inf", "-Inf"} {
+		t.Run("balance="+value, func(t *testing.T) {
+			_, cache, _ := newInflightTestEnv(t, true, 60)
+			ctx := context.Background()
+			const userID = int64(76)
+			if value != "" {
+				require.NoError(t, cache.rdb.Set(ctx, billingBalanceKey(userID), value, time.Minute).Err())
+			}
+			allowed, _, err := cache.ReserveInflightBalanceStrict(ctx, userID, "strict-invalid-balance", 0.6, time.Minute)
+			require.Error(t, err, "missing or corrupt current balance cannot be replaced by an earlier snapshot")
+			require.False(t, allowed)
+			require.Zero(t, inflightCount(t, cache, userID))
+		})
+	}
+}
+
+func TestStrictInflightReservationChecksLoneRequestAtomically(t *testing.T) {
+	_, cache, _ := newInflightTestEnv(t, true, 60)
+	ctx := context.Background()
+	const userID = int64(77)
+	require.NoError(t, cache.SetUserBalance(ctx, userID, 0.4))
+	allowed, pending, err := cache.ReserveInflightBalanceStrict(ctx, userID, "strict-insufficient", 0.6, time.Minute)
+	require.NoError(t, err)
+	require.False(t, allowed)
+	require.Zero(t, pending)
+	require.Zero(t, inflightCount(t, cache, userID))
+	allowed, _, err = cache.ReserveInflightBalanceStrict(ctx, userID, "strict-exact", 0.4, time.Minute)
+	require.NoError(t, err)
+	require.True(t, allowed)
+	require.Equal(t, int64(1), inflightCount(t, cache, userID))
 }

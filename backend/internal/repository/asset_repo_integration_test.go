@@ -88,6 +88,14 @@ func TestAssetMigrationDownAndUpCanRunWithoutLeavingSchemaBehind(t *testing.T) {
 	tx, err := integrationDB.BeginTx(context.Background(), nil)
 	require.NoError(t, err)
 	defer tx.Rollback()
+	// The database starts at the latest schema. Remove storage-policy columns
+	// first; retaining their migration marker while dropping assets would make
+	// the next startup skip the columns needed by the current application.
+	storageDown, err := os.ReadFile("../../migrations/down/252_donebot_storage_policies.sql")
+	require.NoError(t, err)
+	storageScript := strings.ReplaceAll(strings.ReplaceAll(string(storageDown), "BEGIN;", ""), "COMMIT;", "")
+	_, err = tx.Exec(storageScript)
+	require.NoError(t, err)
 	down, err := os.ReadFile("../../migrations/down/251_assets.sql")
 	require.NoError(t, err)
 	script := strings.ReplaceAll(strings.ReplaceAll(string(down), "BEGIN;", ""), "COMMIT;", "")

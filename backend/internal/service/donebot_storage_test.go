@@ -48,6 +48,41 @@ func (r *policyAssetRepo) StorageUsage(_ context.Context, purpose string) (int64
 	return size, count, nil
 }
 
+func TestDoneBotStorageLegacyPublicBaseURLDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name, driver, publicURL, nestedURL, generatedURL, wantUpload, wantGenerated string
+	}{
+		{name: "top-level S3 URL takes precedence", driver: "s3", publicURL: "https://upload.example", nestedURL: "https://legacy.example", wantUpload: "https://upload.example", wantGenerated: "https://upload.example"},
+		{name: "legacy S3 URL supports retention beyond presign limit", driver: "s3", nestedURL: "https://legacy.example", wantUpload: "https://legacy.example", wantGenerated: "https://legacy.example"},
+		{name: "local ignores legacy S3 URL", driver: "local", nestedURL: "https://legacy.example"},
+		{name: "local keeps its own public URL", driver: "local", publicURL: "https://gateway.example", nestedURL: "https://legacy.example", wantUpload: "https://gateway.example", wantGenerated: "https://gateway.example"},
+		{name: "generated legacy S3 URL remains independent", driver: "s3", nestedURL: "https://legacy.example", generatedURL: "https://generated.example", wantUpload: "https://legacy.example", wantGenerated: "https://generated.example"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{AssetStorage: config.AssetStorageConfig{
+				Driver: tc.driver, PublicBaseURL: tc.publicURL, TTLHours: 240,
+				S3: config.ImageStorageConfig{Bucket: "uploads", AccessKeyID: "id", SecretAccessKey: "secret", PublicBaseURL: tc.nestedURL},
+			}}
+			require.NoError(t, cfg.AssetStorage.Validate())
+			if tc.generatedURL != "" {
+				cfg.ImageStorage = config.ImageStorageConfig{Enabled: true, Driver: "s3", Bucket: "outputs", AccessKeyID: "id", SecretAccessKey: "secret", PublicBaseURL: tc.generatedURL}
+			}
+			service := NewDoneBotStorageService(nil, nil, nil, cfg, nil)
+			policies := service.defaults()
+			require.Equal(t, tc.wantUpload, policies.Upload.PublicBaseURL)
+			require.Equal(t, tc.wantGenerated, policies.Generated.PublicBaseURL)
+			require.NoError(t, normalizeDoneBotStoragePolicy(&policies.Upload, AssetPurposeUpload), "validated legacy S3 settings must remain valid as a runtime policy")
+			if tc.driver == "s3" {
+				require.Equal(t, "uploads", policies.Upload.S3.Bucket)
+			}
+			if tc.generatedURL != "" {
+				require.Equal(t, "outputs", policies.Generated.S3.Bucket)
+				require.NoError(t, normalizeDoneBotStoragePolicy(&policies.Generated, AssetPurposeGenerated))
+			}
+		})
+	}
+}
+
 func TestDoneBotStoragePoliciesPersistMaskAndKeepSecret(t *testing.T) {
 	ctx := context.Background()
 	repo := newStubSettingRepo()

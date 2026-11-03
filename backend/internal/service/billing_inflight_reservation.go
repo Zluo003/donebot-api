@@ -26,6 +26,14 @@ type InflightBalanceReservationCache interface {
 	ReleaseInflightBalance(ctx context.Context, userID int64, requestID string) error
 }
 
+// StrictInflightBalanceReservationCache optionally admits against the current
+// balance and outstanding reservations in one atomic cache operation. A balance
+// read before another request settles must not authorize a later reservation.
+// Existing cache implementations can retain the legacy operation above.
+type StrictInflightBalanceReservationCache interface {
+	ReserveInflightBalanceStrict(ctx context.Context, userID int64, requestID string, amount float64, ttl time.Duration) (bool, float64, error)
+}
+
 // InflightScopeReservationCache 订阅 / API Key 维度在途预留的缓存能力（可选），用于扣费前即可确定金额的费用；
 // 未实现时这两个维度不登记预留（fail-open），准入仍按库中用量校验。
 type InflightScopeReservationCache interface {
@@ -264,7 +272,7 @@ func (s *BillingCacheService) ReserveInflightBalance(ctx context.Context, user *
 //
 // 以下情况直接放行且不登记预留（fail-open，保持旧行为）：
 // 开关关闭 / 简易模式 / 订阅模式 / estimate <= 0 / 缓存不支持 / 余额读取失败 / Redis 执行失败。
-// 仅当 Redis 明确判定 缓存余额 - 在途合计 < estimate（且已有在途请求）时返回 ErrInsufficientBalance。
+// DoneBot 先要求余额覆盖完整估算，Redis 再扣除其他在途预留；非 DoneBot 保留首请求兼容行为。
 func (s *BillingCacheService) ReserveInflight(ctx context.Context, user *User, group *Group, subscription *UserSubscription, estimate float64) (*InflightReservation, error) {
 	return s.reserveInflight(ctx, user, group, subscription, estimate, true, true)
 }
@@ -317,7 +325,10 @@ func (s *BillingCacheService) reserveInflight(ctx context.Context, user *User, g
 	if group != nil && group.IsSubscriptionType() && subscription != nil {
 		return nil, nil
 	}
-	if capped && cfg.MaxReservationUSD > 0 && estimate > cfg.MaxReservationUSD {
+	// DoneBot admits against the full estimate, including the first request.
+	// Truncating a reservation is a legacy compatibility option, not a spending limit.
+	strictEstimate := s.cfg.DoneBot.Enabled
+	if capped && !strictEstimate && cfg.MaxReservationUSD > 0 && estimate > cfg.MaxReservationUSD {
 		estimate = cfg.MaxReservationUSD
 	}
 	if estimate <= 0 || math.IsNaN(estimate) || math.IsInf(estimate, 0) {
@@ -334,13 +345,23 @@ func (s *BillingCacheService) reserveInflight(ctx context.Context, user *User, g
 		return nil, nil
 	}
 
+	if strictEstimate && balance < estimate {
+		return nil, ErrInsufficientBalance
+	}
+
 	ttl := defaultInflightReservationTTL
 	if cfg.TTLSeconds > 0 {
 		ttl = time.Duration(cfg.TTLSeconds) * time.Second
 	}
 	requestID := uuid.NewString()
 	reserveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), inflightReservationReserveTimeout)
-	allowed, inflight, err := rc.ReserveInflightBalance(reserveCtx, user.ID, requestID, estimate, balance, ttl)
+	var allowed bool
+	var inflight float64
+	if strictCache, ok := s.cache.(StrictInflightBalanceReservationCache); strictEstimate && ok {
+		allowed, inflight, err = strictCache.ReserveInflightBalanceStrict(reserveCtx, user.ID, requestID, estimate, ttl)
+	} else {
+		allowed, inflight, err = rc.ReserveInflightBalance(reserveCtx, user.ID, requestID, estimate, balance, ttl)
+	}
 	cancel()
 	if err != nil {
 		logger.LegacyPrintf("service.billing_cache", "Warning: inflight reservation failed for user %d (fail-open): %v", user.ID, err)

@@ -102,6 +102,12 @@ type subscriptionCacheInvalidationPubSub interface {
 	SubscribeSubscriptionCacheInvalidation(ctx context.Context, handler func(cacheKey string)) error
 }
 
+// UserBalanceCacheInitializer fills a missing balance without replacing a newer
+// cached value. DoneBot needs this before strict inflight admission reads Redis.
+type UserBalanceCacheInitializer interface {
+	InitializeUserBalance(ctx context.Context, userID int64, balance float64) error
+}
+
 // BillingCacheService 计费缓存服务
 // 负责余额和订阅数据的缓存管理，提供高性能的计费资格检查
 type BillingCacheService struct {
@@ -329,6 +335,21 @@ func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) 
 		balance, err := s.getUserBalanceFromDB(loadCtx, userID)
 		if err != nil {
 			return nil, err
+		}
+
+		if s.cfg != nil && s.cfg.DoneBot.Enabled {
+			if initializer, ok := s.cache.(UserBalanceCacheInitializer); ok {
+				// Strict admission must see the balance before it reserves. SETNX
+				// preserves any concurrent deduction, and skipping the queued SET
+				// prevents this older DB snapshot from overwriting that deduction.
+				writeCtx, writeCancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
+				err := initializer.InitializeUserBalance(writeCtx, userID, balance)
+				writeCancel()
+				if err != nil {
+					logger.LegacyPrintf("service.billing_cache", "Warning: initialize balance cache failed for user %d: %v", userID, err)
+				}
+				return balance, nil
+			}
 		}
 
 		// 异步建立缓存

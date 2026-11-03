@@ -18,6 +18,8 @@ The preparation script downloads this repository's Compose and environment templ
 
 For an external PostgreSQL/Redis deployment, use `docker-compose.standalone.yml` and supply `DATABASE_HOST`, `DATABASE_PASSWORD` and `REDIS_HOST`. The complete environment reference and operations guide are in [deploy/README.md](README.md).
 
+DoneBot asynchronous media requires Redis AOF and a persistent Redis data directory. The bundled Redis uses `appendfsync everysec`; review its crash-loss window or use `always` when required, and test recovery. See [Redis persistence and retries](README.md#redis-persistence-and-retries). Upload and generated output storage are independent policies in DoneBot → Storage; they can use different local/S3 backends.
+
 ## Images and Upgrades
 
 ```bash

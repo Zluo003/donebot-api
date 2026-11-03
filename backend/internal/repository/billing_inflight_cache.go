@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -68,6 +69,42 @@ var (
 		redis.call('PEXPIRE', KEYS[1], ARGV[6])
 		redis.call('PEXPIRE', KEYS[2], ARGV[6])
 		return {1, tostring(sum), count}
+	`)
+
+	// Strict DoneBot admission also reads the existing balance cache inside the
+	// atomic script. The current billing cache uses a single-node redis.Client;
+	// billing:balance:<uid> and the two tagged inflight keys do not share a
+	// Redis Cluster slot. Keep legacy reservation/recovery on the two-key script.
+	// KEYS: [1]=zset [2]=amount hash [3]=current balance cache
+	// ARGV: [1]=now_ms [2]=expire_at_ms [3]=member [4]=amount [5]=key_ttl_ms
+	reserveInflightBalanceStrictScript = redis.NewScript(`
+		local raw_balance = redis.call('GET', KEYS[3])
+		if not raw_balance then
+			return redis.error_reply('strict inflight reservation balance cache is missing')
+		end
+		local balance = tonumber(raw_balance)
+		if not balance or balance ~= balance or balance == math.huge or balance == -math.huge then
+			return redis.error_reply('strict inflight reservation balance cache is invalid')
+		end
+		local now = tonumber(ARGV[1])
+		local expired = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now)
+		if #expired > 0 then
+			redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+			redis.call('HDEL', KEYS[2], unpack(expired))
+		end
+		local vals = redis.call('HVALS', KEYS[2])
+		local sum = 0
+		for i = 1, #vals do
+			sum = sum + (tonumber(vals[i]) or 0)
+		end
+		if balance - sum < tonumber(ARGV[4]) then
+			return {0, tostring(sum)}
+		end
+		redis.call('ZADD', KEYS[1], tonumber(ARGV[2]), ARGV[3])
+		redis.call('HSET', KEYS[2], ARGV[3], ARGV[4])
+		redis.call('PEXPIRE', KEYS[1], ARGV[5])
+		redis.call('PEXPIRE', KEYS[2], ARGV[5])
+		return {1, tostring(sum)}
 	`)
 
 	// KEYS: [1]=zset [2]=hash  ARGV: [1]=member [2]=expire_at_ms [3]=key_ttl_ms [4]=now_ms
@@ -153,6 +190,39 @@ func (c *billingCache) ReserveInflightBalance(ctx context.Context, userID int64,
 	return allowed == 1, sum, nil
 }
 
+// ReserveInflightBalanceStrict protects new DoneBot admission from a balance
+// changing between the service's initial read and registration. Missing or
+// invalid cache values return an error for the caller's existing failure policy.
+func (c *billingCache) ReserveInflightBalanceStrict(ctx context.Context, userID int64, requestID string, amount float64, ttl time.Duration) (bool, float64, error) {
+	if amount <= 0 || math.IsNaN(amount) || math.IsInf(amount, 0) {
+		return false, 0, fmt.Errorf("strict inflight reservation requires a positive finite amount")
+	}
+	zkey, hkey := billingInflightKeys(userID)
+	now := time.Now().UnixMilli()
+	ttlMs := ttl.Milliseconds()
+	if ttlMs <= 0 {
+		ttlMs = 1
+	}
+	res, err := reserveInflightBalanceStrictScript.Run(ctx, c.rdb, []string{zkey, hkey, billingBalanceKey(userID)},
+		now, now+ttlMs, requestID, strconv.FormatFloat(amount, 'f', -1, 64), ttlMs).Slice()
+	if err != nil {
+		return false, 0, err
+	}
+	if len(res) < 2 {
+		return false, 0, fmt.Errorf("unexpected strict inflight reservation reply: %v", res)
+	}
+	allowed, _ := res[0].(int64)
+	sumString, ok := res[1].(string)
+	if !ok {
+		return false, 0, fmt.Errorf("unexpected strict inflight reservation sum: %v", res[1])
+	}
+	sum, err := strconv.ParseFloat(sumString, 64)
+	if err != nil {
+		return false, 0, fmt.Errorf("invalid strict inflight reservation sum: %w", err)
+	}
+	return allowed == 1, sum, nil
+}
+
 // ReleaseInflightBalance 实现 service.InflightBalanceReservationCache。
 func (c *billingCache) ReleaseInflightBalance(ctx context.Context, userID int64, requestID string) error {
 	zkey, hkey := billingInflightKeys(userID)
@@ -202,7 +272,8 @@ func (c *billingCache) ReleaseInflightScope(ctx context.Context, scope, requestI
 }
 
 var (
-	_ service.InflightBalanceReservationCache   = (*billingCache)(nil)
-	_ service.InflightBalanceReservationRenewer = (*billingCache)(nil)
-	_ service.InflightScopeReservationCache     = (*billingCache)(nil)
+	_ service.InflightBalanceReservationCache       = (*billingCache)(nil)
+	_ service.StrictInflightBalanceReservationCache = (*billingCache)(nil)
+	_ service.InflightBalanceReservationRenewer     = (*billingCache)(nil)
+	_ service.InflightScopeReservationCache         = (*billingCache)(nil)
 )

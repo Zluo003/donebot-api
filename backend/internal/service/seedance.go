@@ -251,6 +251,16 @@ func buildSeedanceURL(base string, endpoint GrokMediaEndpoint, taskID string) (s
 // ForwardSeedance preserves the Ark protocol, including multimodal content and
 // future fields. Only model is rewritten using the account's configured mapping.
 func (s *OpenAIGatewayService) ForwardSeedance(ctx context.Context, c *gin.Context, account *Account, endpoint GrokMediaEndpoint, taskID string, body []byte) (*OpenAIForwardResult, error) {
+	return s.forwardSeedance(ctx, c, account, endpoint, taskID, body, false)
+}
+
+// ForwardSeedanceForBilling withholds native task status until the handler has
+// confirmed durable settlement. Background settlement keeps using ForwardSeedance.
+func (s *OpenAIGatewayService) ForwardSeedanceForBilling(ctx context.Context, c *gin.Context, account *Account, endpoint GrokMediaEndpoint, taskID string, body []byte) (*OpenAIForwardResult, error) {
+	return s.forwardSeedance(ctx, c, account, endpoint, taskID, body, true)
+}
+
+func (s *OpenAIGatewayService) forwardSeedance(ctx context.Context, c *gin.Context, account *Account, endpoint GrokMediaEndpoint, taskID string, body []byte, deferStatus bool) (*OpenAIForwardResult, error) {
 	if !account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilitySeedance) || !endpoint.IsSeedance() {
 		return nil, fmt.Errorf("seedance requires an OpenAI API key account with a custom base URL")
 	}
@@ -370,7 +380,7 @@ func (s *OpenAIGatewayService) ForwardSeedance(ctx context.Context, c *gin.Conte
 		}
 		responseBody = rewritten
 	}
-	if endpoint == SeedanceEndpointCreate {
+	if endpoint == SeedanceEndpointCreate || (endpoint == SeedanceEndpointStatus && deferStatus) {
 		result.SeedanceResponseBody = responseBody
 		result.SeedanceResponseStatus = resp.StatusCode
 		return result, nil
@@ -379,8 +389,8 @@ func (s *OpenAIGatewayService) ForwardSeedance(ctx context.Context, c *gin.Conte
 	return result, nil
 }
 
-// WriteSeedanceCreateResponse publishes the native accepted response only after
-// the handler persisted ownership, metadata and background settlement work.
+// WriteSeedanceCreateResponse publishes a buffered native response after create
+// persistence or completion billing has succeeded.
 func (s *OpenAIGatewayService) WriteSeedanceCreateResponse(c *gin.Context, result *OpenAIForwardResult) {
 	if result == nil {
 		return

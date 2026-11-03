@@ -4,8 +4,11 @@ package service
 
 import (
 	"context"
-	"github.com/stretchr/testify/require"
+	"errors"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 type seedanceWorkerKeyRepo struct {
@@ -55,4 +58,53 @@ func TestSeedanceWorkerNativeCompletionChargesActualSecondsOnceAfterRestart(t *t
 	require.NoError(t, err)
 	require.True(t, done)
 	require.Equal(t, 1, money.calls)
+}
+
+type seedanceWorkerUnavailableQueryCache struct {
+	GatewayCache
+	accesses int
+}
+
+func (c *seedanceWorkerUnavailableQueryCache) GetGrokVideoPendingBilling(context.Context, string) ([]byte, error) {
+	c.accesses++
+	return nil, errors.New("pending unavailable")
+}
+func (c *seedanceWorkerUnavailableQueryCache) ClaimGrokVideoBilled(context.Context, string, time.Duration) (bool, error) {
+	c.accesses++
+	return false, errors.New("claim unavailable")
+}
+func (c *seedanceWorkerUnavailableQueryCache) ReleaseGrokVideoBilled(context.Context, string) error {
+	c.accesses++
+	return errors.New("release unavailable")
+}
+
+func TestSeedanceWorkerRecoversBillingWithoutQueryPendingOrClaim(t *testing.T) {
+	usage := &openAIRecordUsageLogRepoStub{inserted: true}
+	money := &seedanceWorkerMoneyRepo{openAIRecordUsageBillingRepoStub: &openAIRecordUsageBillingRepoStub{err: errors.New("billing temporarily unavailable")}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usage, money, &openAIRecordUsageUserRepoStub{}, nil, nil)
+	svc.resolver = NewModelPricingResolver(nil, svc.billingService)
+	cache := &seedanceWorkerUnavailableQueryCache{}
+	svc.cache = cache
+	p := 0.2
+	gid := int64(7)
+	key := &APIKey{ID: 2, UserID: 1, User: &User{ID: 1}, GroupID: &gid, Group: &Group{ID: gid, Platform: PlatformOpenAI, RateMultiplier: 1, ModelPricing: []ChannelModelPricing{{Models: []string{"movie"}, BillingMode: BillingModeVideo, Intervals: []PricingInterval{{TierLabel: "720p|standard", PerRequestPrice: &p}}}}}}
+	account := seedanceTestAccount()
+	account.ID = 4
+	svc.accountRepo = &openAIRecordUsageAccountRepoStub{account: account}
+	response := `{"id":"task","status":"succeeded","duration":6,"resolution":"720p","content":{"video_url":"https://supplier.example/video.mp4"}}`
+	svc.httpUpstream = &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(response)}
+	job := APIMartSettlementJob{Provider: "seedance", TaskID: "task", UserID: 1, APIKeyID: 2, GroupID: gid, AccountID: 4, VideoPending: &GrokVideoPendingBilling{Model: "movie", BillingModel: "movie", VideoResolution: "720p", CreatedAt: GrokVideoPendingCreatedAtNow()}}
+	w := &apimartSettlementWorker{service: svc, keys: &APIKeyService{apiKeyRepo: seedanceWorkerKeyRepo{key: key}}}
+	done, err := w.settle(context.Background(), job)
+	require.Error(t, err)
+	require.False(t, done)
+	money.err = nil
+	svc.httpUpstream = &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(response)}
+	restarted := &apimartSettlementWorker{service: svc, keys: w.keys}
+	done, err = restarted.settle(context.Background(), job)
+	require.NoError(t, err)
+	require.True(t, done)
+	require.Equal(t, 2, money.calls, "one failed attempt and one committed money event")
+	require.Equal(t, StableGrokVideoBillingRequestID(job.TaskKey()), money.lastCmd.RequestID)
+	require.Zero(t, cache.accesses, "durable recovery must ignore stale query claims and expired pending cache")
 }

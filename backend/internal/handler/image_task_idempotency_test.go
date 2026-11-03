@@ -90,4 +90,11 @@ func TestAsyncImageIdempotencyExecutesOnceAndRejectsChangedPayload(t *testing.T)
 	require.Empty(t, executed, "duplicate submission must not start a worker")
 	changed := post("dog")
 	require.Equal(t, http.StatusConflict, changed.Code, changed.Body.String())
+	var conflict struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(changed.Body.Bytes(), &conflict))
+	require.Equal(t, "IDEMPOTENCY_KEY_CONFLICT", conflict.Error.Code)
 }

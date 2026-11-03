@@ -158,6 +158,12 @@ func (c *billingCache) SetUserBalance(ctx context.Context, userID int64, balance
 	return c.rdb.Set(ctx, key, balance, jitteredTTL()).Err()
 }
 
+// InitializeUserBalance warms DoneBot's balance before strict admission without
+// replacing a balance that another request has already initialized or deducted.
+func (c *billingCache) InitializeUserBalance(ctx context.Context, userID int64, balance float64) error {
+	return c.rdb.SetNX(ctx, billingBalanceKey(userID), balance, jitteredTTL()).Err()
+}
+
 func (c *billingCache) DeductUserBalance(ctx context.Context, userID int64, amount float64) error {
 	key := billingBalanceKey(userID)
 	_, err := deductBalanceScript.Run(ctx, c.rdb, []string{key}, amount, int(jitteredTTL().Seconds())).Result()

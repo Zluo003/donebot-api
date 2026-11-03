@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+// AssetStorageConfig reuses ImageStorageConfig for connection compatibility.
+// S3.Enabled and S3.Driver are ignored; Driver selects the upload backend.
 type AssetStorageConfig struct {
 	Driver        string             `mapstructure:"driver"`
 	LocalPath     string             `mapstructure:"local_path"`
@@ -28,6 +30,7 @@ func setAssetStorageDefaults() {
 	}
 	viper.SetDefault("asset_storage.s3.region", "auto")
 	viper.SetDefault("asset_storage.s3.force_path_style", false)
+	// Compatibility keys from ImageStorageConfig; neither selects the backend.
 	viper.SetDefault("asset_storage.s3.enabled", false)
 	viper.SetDefault("asset_storage.s3.driver", "s3")
 	viper.SetDefault("asset_storage.s3.prefix", "assets/")

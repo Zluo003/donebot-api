@@ -87,23 +87,6 @@ func TestSeedanceHandlerLifecycleAndOwnership(t *testing.T) {
 		require.Equal(t, before, upstream.calls)
 		slots.assertReleased(t)
 	}
-	c, _ = newContext(http.MethodGet)
-	key, _ := middleware.GetAPIKeyFromContext(c)
-	subject, _ := middleware.GetAuthSubjectFromContext(c)
-	result := &service.OpenAIForwardResult{Usage: service.OpenAIUsage{OutputTokens: 12345}, ResponseID: "seedance:task-ark", VideoActualDurationSeconds: 6}
-	for i := range 20 {
-		billed := prepareSeedanceCompletionBilling(context.Background(), h, key, subject, result.ResponseID, result)
-		if i == 0 {
-			require.NotNil(t, billed)
-			require.Equal(t, "doubao-seedance", billed.BillingModel)
-			require.Equal(t, 12345, billed.Usage.OutputTokens)
-			require.Equal(t, 1, billed.VideoCount)
-			require.Equal(t, 6.0, billed.VideoActualDurationSeconds)
-		} else {
-			require.Nil(t, billed)
-		}
-	}
-	require.Len(t, bindings.billed, 1)
 }
 
 func TestSeedanceQueueFailureReturnsAcceptedTaskAndNoSuccess(t *testing.T) {

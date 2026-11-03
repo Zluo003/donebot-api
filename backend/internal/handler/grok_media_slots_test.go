@@ -120,13 +120,17 @@ func (s *grokMediaSlotsCache) assertReleased(t *testing.T) {
 
 type grokMediaSlotBindings struct {
 	testutil.StubGatewayCache
-	owner    int64
-	writes   int
-	key      string
-	billed   map[string]bool
-	pending  map[string][]byte
-	jobs     map[string]service.APIMartSettlementJob
-	queueErr error
+	owner      int64
+	writes     int
+	key        string
+	billed     map[string]bool
+	pending    map[string][]byte
+	jobs       map[string]service.APIMartSettlementJob
+	queueErr   error
+	pendingErr error
+	claimErr   error
+	releaseErr error
+	releases   int
 }
 
 type grokMediaBindingsWithoutAPIMartQueue struct {
@@ -162,7 +166,7 @@ func (s *grokMediaSlotBindings) SetGrokVideoPendingBilling(_ context.Context, ke
 	return nil
 }
 func (s *grokMediaSlotBindings) GetGrokVideoPendingBilling(_ context.Context, key string) ([]byte, error) {
-	return s.pending[key], nil
+	return s.pending[key], s.pendingErr
 }
 
 func (s *grokMediaSlotBindings) GetSessionAccountID(_ context.Context, groupID int64, key string) (int64, error) {
@@ -186,6 +190,9 @@ func (s *grokMediaSlotBindings) DeleteSessionAccountID(context.Context, int64, s
 }
 
 func (s *grokMediaSlotBindings) ClaimGrokVideoBilled(_ context.Context, key string, _ time.Duration) (bool, error) {
+	if s.claimErr != nil {
+		return false, s.claimErr
+	}
 	if s.billed == nil {
 		s.billed = make(map[string]bool)
 	}
@@ -194,6 +201,18 @@ func (s *grokMediaSlotBindings) ClaimGrokVideoBilled(_ context.Context, key stri
 	}
 	s.billed[key] = true
 	return true, nil
+}
+
+func (s *grokMediaSlotBindings) ReleaseGrokVideoBilled(ctx context.Context, key string) error {
+	s.releases++
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.releaseErr != nil {
+		return s.releaseErr
+	}
+	delete(s.billed, key)
+	return nil
 }
 
 type grokMediaSlotRepo struct {
@@ -226,6 +245,10 @@ func (p grokMediaSlotProber) ProbeMediaEligibility(ctx context.Context, id int64
 }
 
 func newGrokMediaSlotHandler(t *testing.T, oauth, mismatch bool, platforms ...string) (*OpenAIGatewayHandler, *grokMediaSlotsCache, *grokMediaSlotBindings, *grokMediaSlotUpstream) {
+	return newGrokMediaSlotHandlerWithBilling(t, nil, oauth, mismatch, platforms...)
+}
+
+func newGrokMediaSlotHandlerWithBilling(t *testing.T, money service.UsageBillingRepository, oauth, mismatch bool, platforms ...string) (*OpenAIGatewayHandler, *grokMediaSlotsCache, *grokMediaSlotBindings, *grokMediaSlotUpstream) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	accounts := make([]service.Account, 3)
@@ -256,6 +279,9 @@ func newGrokMediaSlotHandler(t *testing.T, oauth, mismatch bool, platforms ...st
 			Body: io.NopCloser(strings.NewReader(`{"request_id":"task","status":"pending"}`))}, nil
 	}}
 	cfg := &config.Config{RunMode: config.RunModeSimple}
+	if money != nil {
+		cfg.RunMode = config.RunModeStandard
+	}
 	cfg.Gateway.Scheduling.StickySessionWaitTimeout = 20 * time.Millisecond
 	cfg.Gateway.Scheduling.StickySessionMaxWaiting = 3
 	cfg.Gateway.OpenAIScheduler.StickyEscapeEnabled = true
@@ -275,7 +301,7 @@ func newGrokMediaSlotHandler(t *testing.T, oauth, mismatch bool, platforms ...st
 	if len(platforms) > 1 && platforms[1] == "apimart-no-queue" {
 		gatewayCache = &grokMediaBindingsWithoutAPIMartQueue{}
 	}
-	gateway := service.NewOpenAIGatewayService(repo, nil, nil, nil, nil, nil, gatewayCache, cfg, nil, concurrency, mediaBilling, nil, nil, upstream, nil, nil, provider, mediaResolver, nil, nil, nil, nil)
+	gateway := service.NewOpenAIGatewayService(repo, nil, money, nil, nil, nil, gatewayCache, cfg, nil, concurrency, mediaBilling, nil, nil, upstream, &service.DeferredService{}, nil, provider, mediaResolver, nil, nil, nil, nil)
 	groupID := int64(24)
 	if len(platforms) < 2 || platforms[1] != "apimart-no-queue" {
 		require.NoError(t, gateway.BindGrokMediaVideoRequestAccount(context.Background(), &groupID, "task", 10, 20, 1))

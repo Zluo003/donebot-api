@@ -257,6 +257,86 @@ func newInflightSvc(t *testing.T, cache BillingCache, ttlSeconds int) *BillingCa
 	return svc
 }
 
+type pausedInflightBalanceCache struct {
+	*memInflightCache
+	pauseNext atomic.Bool
+	readDone  chan struct{}
+	resume    chan struct{}
+}
+
+func (m *pausedInflightBalanceCache) GetUserBalance(ctx context.Context, userID int64) (float64, error) {
+	balance, err := m.memInflightCache.GetUserBalance(ctx, userID)
+	if m.pauseNext.Swap(false) {
+		close(m.readDone)
+		select {
+		case <-m.resume:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+	return balance, err
+}
+
+// The optional strict cache operation reads the current balance while holding
+// the same lock as reservation admission, rather than accepting a stale value.
+func (m *pausedInflightBalanceCache) ReserveInflightBalanceStrict(_ context.Context, _ int64, id string, amount float64, ttl time.Duration) (bool, float64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.gc()
+	sum := 0.0
+	for _, value := range m.res {
+		sum += value
+	}
+	if m.balance-sum < amount {
+		return false, sum, nil
+	}
+	m.res[id] = amount
+	m.exp[id] = time.Now().Add(ttl)
+	return true, sum, nil
+}
+
+func TestDoneBotInflightReservationRechecksBalanceAfterConcurrentSettlement(t *testing.T) {
+	cache := &pausedInflightBalanceCache{memInflightCache: newMemInflightCache(1), readDone: make(chan struct{}), resume: make(chan struct{})}
+	cfg := &config.Config{DoneBot: config.DoneBotConfig{Enabled: true}}
+	cfg.Billing.InflightReservation = config.InflightReservationConfig{Enabled: true, TTLSeconds: 60}
+	svc := NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(svc.Stop)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	user := &User{ID: 74}
+	first, err := svc.ReserveInflight(ctx, user, nil, nil, 0.6)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	t.Cleanup(first.Release)
+	cache.pauseNext.Store(true)
+	type result struct {
+		reservation *InflightReservation
+		err         error
+	}
+	completed := make(chan result, 1)
+	go func() {
+		reservation, err := svc.ReserveInflight(ctx, user, nil, nil, 0.6)
+		completed <- result{reservation, err}
+	}()
+	select {
+	case <-cache.readDone:
+	case <-ctx.Done():
+		t.Fatal("second request did not read the original balance")
+	}
+	// B already read $1. A commits $0.6 and releases its reservation before
+	// B resumes, so B's original balance snapshot no longer covers its cost.
+	require.NoError(t, cache.DeductUserBalance(ctx, user.ID, 0.6))
+	first.Release()
+	close(cache.resume)
+	got := <-completed
+	if got.reservation != nil {
+		t.Cleanup(got.reservation.Release)
+	}
+	require.ErrorIs(t, got.err, ErrInsufficientBalance)
+	require.Nil(t, got.reservation)
+	require.Zero(t, cache.count())
+}
+
 func TestInflightReservation_HeldUntilBillingTaskDone(t *testing.T) {
 	cache := newMemInflightCache(1)
 	svc := newInflightSvc(t, cache, 60)

@@ -10,7 +10,7 @@ The supplied Compose templates and systemd installer enable DoneBot mode and its
 
 For Compose, review `.env` before starting. Set `ASSET_STORAGE_PUBLIC_BASE_URL=https://gateway.example.com` to an address upstream providers can reach and proxy `/assets/*` to the gateway before using asynchronous image generation. Local assets persist under the application data volume. An empty public URL allows the gateway to start, while asynchronous image result storage remains unavailable. Use a stable `JWT_SECRET` to preserve signed asset links across restarts.
 
-Set `DONEBOT_FEATURES_VIDEO=true` to enable [Seedance video tasks](../docs/donebot/Seedance-接入说明.md). Add the NewToken account from the dedicated video account panel and configure existing channel token pricing and group model permissions.
+Set `DONEBOT_FEATURES_VIDEO=true` to enable [Seedance video tasks](../docs/donebot/Seedance-接入说明.md). Add the NewToken account from the dedicated video account panel, configure its model mappings and official specifications, then set per-second prices and model permissions in DoneBot. Audio/video management stays available while the runtime feature is disabled.
 
 Binary installations can override the service defaults in `/etc/sub2api/environment` (plain `KEY=value`, without `export`):
 
@@ -19,7 +19,15 @@ ASSET_STORAGE_PUBLIC_BASE_URL=https://gateway.example.com
 DONEBOT_FEATURES_VIDEO=true
 ```
 
-After editing this file, run `sudo systemctl restart sub2api`. Existing installations that keep an older unit must update it or explicitly set `DONEBOT_ENABLED=true`, `IMAGE_STORAGE_ENABLED=true`, and both `IMAGE_STORAGE_DRIVER=local` and `ASSET_STORAGE_DRIVER=local` in their service environment. For S3/R2/OSS, mount a configured `config.yaml` and also set `ASSET_STORAGE_DRIVER=s3` and `IMAGE_STORAGE_DRIVER=s3` in Compose's `.env` or the binary service's `/etc/sub2api/environment`: these environment values override the configuration file. See the [DoneBot deployment notes](../docs/donebot/验收记录.md).
+After editing this file, run `sudo systemctl restart sub2api`. Existing installations that keep an older unit must update it or explicitly set `DONEBOT_ENABLED=true` and the storage bootstrap settings they need in their service environment. `ASSET_STORAGE_DRIVER` selects the initial upload backend; `IMAGE_STORAGE_ENABLED` and complete legacy `image_storage` S3 settings initialize the generated output policy before any policy is saved. Uploads and generated outputs may use different drivers, buckets and prefixes. Manage both policies under **DoneBot → Storage**; saved policies take precedence over these bootstrap values. Environment values override `config.yaml` bootstrap settings. See [storage settings](../docs/donebot/存储管理说明.md) for local/S3 setup and the [deployment notes](../docs/donebot/验收记录.md).
+
+## Redis Persistence and Retries
+
+Redis AOF and a persistent Redis data directory are production prerequisites for DoneBot asynchronous media. Image task metadata and image idempotency keys, plus unfinished APIMart/Seedance settlement jobs, live in Redis; PostgreSQL and object storage backups alone cannot reconstruct them. The supplied Compose templates enable AOF with `appendfsync everysec`, which can still lose roughly the latest second of writes on a crash. Choose `appendfsync always` when each accepted write must be flushed, assess its throughput, and rehearse recovery on the actual deployment. Preserve Redis volumes and backups; do not flush task or settlement keys.
+
+Redis errors do not produce a single global fallback behavior. Balance cache failures fall back to PostgreSQL, and an unavailable balance source returns 503. Generic in-flight reservation failures may preserve the original fail-open behavior. Positive-price APIMart/Seedance asynchronous creation in balance mode requires a reservation; unavailable reservation or settlement persistence returns 503. Image task creation and lookup also return 503 when their Redis store is unavailable. Successfully queued APIMart/Seedance settlement jobs resume background attempts after Redis recovers; in-progress legacy asynchronous image executions are not replayed after a process restart. A 503 after an upstream call does not prove that the provider did not create a task.
+
+`idempotency.observe_only` controls only management and user write endpoints wired to the generic coordinator. Asynchronous images use a separate, optional `Idempotency-Key`: within its retention window, the same user/installation credential, key and request return the same task, while a different request returns 409. Without a key, each submission creates a task. Image keys are retained for at least 24 hours; do not reuse them after that window. Disabling `observe_only` does not enforce keys on the image endpoints or add idempotency to other native model APIs.
 
 ## Deployment Methods
 

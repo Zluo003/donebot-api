@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/sjson"
+	"go.uber.org/zap"
 )
 
 func (h *OpenAIGatewayHandler) APIMartImages(c *gin.Context) {
@@ -144,6 +145,7 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 		taskKey = service.APIMartTaskKey(endpoint, taskID)
 		pending, err = h.gatewayService.LoadAPIMartPending(ctx, taskKey, subject.UserID, key.ID)
 		if err != nil {
+			log.Error("apimart.video_billing_pending_load_failed", zap.String("task_id", taskKey), zap.Error(err))
 			h.errorResponse(c, 503, "api_error", "Task storage is unavailable")
 			return
 		}
@@ -283,8 +285,22 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 		if lookup {
 			claimed, err = h.gatewayService.ClaimGrokVideoBilling(ctx, taskKey, subject.UserID, key.ID)
 			if err != nil {
+				log.Error("apimart.video_billing_claim_failed", zap.String("task_id", taskKey), zap.Error(err))
 				h.errorResponse(c, 503, "api_error", "Task billing is unavailable")
 				return
+			}
+			if !claimed {
+				recorded, lookupErr := h.gatewayService.UsageAlreadyRecorded(ctx, result.RequestID, key.ID)
+				if lookupErr != nil {
+					log.Error("apimart.video_billing_lookup_failed", zap.String("task_id", taskKey), zap.Error(lookupErr))
+					h.errorResponse(c, 503, "api_error", "Task billing is unavailable")
+					return
+				}
+				if !recorded {
+					log.Debug("apimart.video_billing_already_claimed", zap.String("task_id", taskKey))
+					h.errorResponse(c, 503, "api_error", "Task settlement is in progress; retry task lookup")
+					return
+				}
 			}
 		}
 		if claimed {
@@ -293,8 +309,9 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 				original = pending.OriginalModel
 			}
 			if err := h.recordAPIMartUsage(c, key, subscription, account, result, original); err != nil {
+				log.Error("apimart.video_billing_record_failed", zap.String("task_id", taskKey), zap.Error(err))
 				if lookup {
-					_ = h.gatewayService.ReleaseGrokVideoBilling(context.WithoutCancel(ctx), taskKey, subject.UserID, key.ID)
+					h.releaseMediaBillingClaim(c, log, "apimart", taskKey, subject.UserID, key.ID)
 				}
 				h.errorResponse(c, 503, "api_error", "Failed to record APIMart usage; retry task lookup")
 				return

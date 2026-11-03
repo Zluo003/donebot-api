@@ -14,7 +14,8 @@ donebot:
   group_name: "DoneBot"
   auto_create_group: true
   features:
-    # Reserved switches; DoneBot exposes no video or audio UI.
+    # Runtime request gates; audio/video admin tabs remain visible for configuration.
+    # 实际调用开关；音频/视频管理标签始终显示，可提前配置账号、模型与价格。
     video: false
     audio: false
 
@@ -845,9 +846,12 @@ usage_cleanup:
 # HTTP 写接口幂等配置
 # Idempotency Configuration
 # =============================================================================
+# 仅用于已接入通用幂等协调器的管理/用户写接口，不是所有模型调用的总开关。
+# 异步图片使用独立的可选 Idempotency-Key 机制，不受 observe_only 控制：
+# 带 Key 时至少保留 24 小时，同 Key 不同请求返回 409；不带 Key 则每次新建任务。
 idempotency:
   # Observe-only 模式：
-  # true: 观察期，不带 Idempotency-Key 仍放行（但会记录）
+  # true: 观察期，不带 Idempotency-Key 仍放行
   # false: 强制期，不带 Idempotency-Key 直接拒绝（仅对接入幂等保护的接口生效）
   observe_only: true
   # 关键写接口幂等记录 TTL（秒）
@@ -915,6 +919,10 @@ database:
 # Redis Configuration
 # Redis 配置
 # =============================================================================
+# DoneBot 异步图片任务、图片幂等记录和未完成的 APIMart/Seedance 结算队列保存在 Redis。
+# 生产必须启用 AOF 并持久化 Redis 数据目录；仅备份 PostgreSQL/对象存储无法恢复这些记录。
+# Compose 模板为 appendfsync everysec（故障时仍可能丢最近约一秒写入）；需要逐次落盘时
+# 改用 appendfsync always，并在实际部署环境验证断电/重启恢复。
 redis:
   # Redis host address
   # Redis 主机地址
@@ -1183,10 +1191,13 @@ billing:
   # In-flight balance reservation (Redis): at admission, estimate per-request cost
   # (input estimate + output price x max_tokens) and atomically require
   # cached_balance - in-flight reservations >= estimate. Released when the request ends.
-  # The first in-flight request of a user is always admitted (same as before).
-  # Fails open when the estimate cannot be computed or Redis is unavailable.
+  # Legacy non-DoneBot traffic preserves the first-inflight bypass. DoneBot
+  # requests require balance to cover the full estimate, including the first request.
+  # Generic reservation failures may fail open; asynchronous media paths also
+  # require their reservation and settlement stores (see deploy/README.md).
   # 余额模式在途预留：准入时估算单请求费用，要求 缓存余额 - 在途预留合计 >= 估算；
-  # 用户无在途请求时始终放行（与旧行为一致）；估算失败/Redis 不可用时 fail-open。
+  # 非 DoneBot 流量保留首个在途请求豁免；DoneBot 首请求也须覆盖完整估算。
+  # 通用预留失败可 fail-open；异步媒体还要求有效预留与结算存储，详见部署说明。
   inflight_reservation:
     enabled: true
     # Reservation TTL. Renewed every ttl/3 while the request is running; after the
@@ -1202,8 +1213,11 @@ billing:
     # 估算输出 / 输入 token 上限
     max_output_tokens: 128000
     max_input_tokens: 200000
-    # Cap for a single reservation in USD (0 = no cap)
-    # 单请求预留金额上限（USD，0 为不设上限）
+    # Generic reservation truncation cap in USD; 0 keeps the full estimate.
+    # This is not a per-request spending limit. DoneBot requests and fixed-charge
+    # media admission keep the full estimate instead of truncating it to this cap.
+    # 通用预留估算截断上限（USD）；0 表示不截断预留，并非单请求支出上限。
+    # DoneBot 请求与固定金额媒体准入使用完整估算，不因本字段截小预留。
     max_reservation_usd: 0
     # When a request cannot be priced (no base / group / channel pricing for the
     # billing model), reject it instead of admitting it without reservation.
@@ -1313,14 +1327,16 @@ update:
 # 任务完成后把生成的图片上传到对象存储，只在 Redis 存一个短链接，避免 gpt-image-1 等
 # 返回的大 base64 结果把 Redis 撑爆。
 #
-# enabled 同时是异步图片任务功能的总开关：为 false 或凭证未配全时，异步生图接口
-# 整体返回 404、不创建任务、不写 Redis。
+# 非 DoneBot 模式：enabled 为异步图片任务总开关；关闭或 S3 凭证未配全时返回 404。
+# DoneBot 模式：此处只用于尚未保存后台策略时的兼容初始值，运行时以
+# DoneBot → 存储的“生成产物存储”策略为准；该策略可独立于上传存储选择 local/S3。
 #
 # 换其它厂商对象存储：只要它兼容 S3 API 即可直接用；如需完全自定义，实现
 # service.ImageStorage 接口（Save(ctx, key, contentType, data) -> url）即可。
 image_storage:
   enabled: true
-  # DoneBot 模式下必须与 asset_storage.driver 一致；其他模式保留原 S3 设置。
+  # DoneBot 仅将已启用且完整的旧 S3 配置作为生成策略初始覆盖；local 不强制覆盖
+  # 从上传继承的驱动。运行时两套策略无需相同，可在 DoneBot → 存储分别配置。
   driver: "local"
   # S3 兼容端点。AWS 官方可留空；R2 形如 https://<account_id>.r2.cloudflarestorage.com
   endpoint: ""
@@ -1341,12 +1357,14 @@ image_storage:
   # 当上游返回的是图片 url 时，下载该图片再转存的字节上限（默认 32MB）
   max_download_bytes: 33554432
 
-# DoneBot 资源缓存。local 返回签名下载链接；S3 兼容 R2 / OSS / MinIO。
-# DoneBot 异步产物也经过此缓存，TTL 与 Redis 任务元数据分开。
+# DoneBot 上传存储的兼容初始值。后台保存后，上传/生成产物各自使用独立策略。
+# local 返回签名下载链接；S3 兼容 R2 / OSS / MinIO。文件 TTL 与 Redis 任务元数据分开。
 asset_storage:
+  # 唯一驱动选择；s3.enabled / s3.driver 是复用配置类型的兼容字段，不参与选择。
   driver: "local"
   local_path: "data/assets"
-  # local 异步任务必须配置上游可访问的绝对地址，反代 /assets/* 到本网关。
+  # 上传留空可用请求网关地址；启用的本地生成产物策略必须填写公开地址。
+  # 反代 /assets/* 到本网关。后台保存后可为上传与生成产物分别设置公开地址。
   public_base_url: ""
   ttl_hours: 168
   max_bytes: 33554432
@@ -1356,6 +1374,7 @@ asset_storage:
     bucket: ""
     access_key_id: ""
     secret_access_key: ""
+    prefix: "assets/"
     force_path_style: false
     public_base_url: ""
     presign_expiry_hours: 168

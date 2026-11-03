@@ -150,6 +150,8 @@ The PostgreSQL volume is mounted at `/var/lib/postgresql`, retaining PostgreSQL 
 
 DoneBot local assets default to `/app/storage/data/assets` in the persistent application volume. Leave `ASSET_STORAGE_LOCAL_PATH` empty to use that default. Set `ASSET_STORAGE_PUBLIC_BASE_URL` to an upstream-reachable gateway URL before using asynchronous images; the empty value leaves asynchronous result storage unavailable without blocking startup.
 
+Upload and generated output storage use independent policies in DoneBot → Storage and may select different local/S3 backends. Redis task metadata, image idempotency keys and unfinished media settlement jobs require AOF and a persistent Redis data directory; preserve its volume and rehearse recovery. Review the script's Redis fsync setting against the acceptable crash-loss window. See [Redis persistence and retries](README.md#redis-persistence-and-retries).
+
 ## Networking
 
 Apple `container` 1.1 does not provide Compose-style network-scoped service aliases. After PostgreSQL and Redis start, the script reads their current private-network IPv4 addresses from `container inspect`, injects those addresses into a newly created application container, and then starts Sub2API. The script does not modify `~/.config/container/config.toml` or the macOS host resolver.

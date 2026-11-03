@@ -77,6 +77,9 @@ func (s *DoneBotStorageService) defaults() DoneBotStoragePolicies {
 			p.LocalPath = c.LocalPath
 		}
 		p.PublicBaseURL = c.PublicBaseURL
+		if p.Driver == "s3" && p.PublicBaseURL == "" {
+			p.PublicBaseURL = c.S3.PublicBaseURL
+		}
 		if c.TTLHours > 0 {
 			p.TTLHours = c.TTLHours
 		}
