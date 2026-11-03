@@ -315,6 +315,36 @@ func TestInflightReservation_RenewedWhileHandlerActive(t *testing.T) {
 	done()
 }
 
+func TestInflightFixedChargeKeepAliveForAsyncImage(t *testing.T) {
+	cache := newMemInflightCache(1)
+	svc := newInflightSvc(t, cache, 1)
+	res, err := svc.ReserveFixedCharge(context.Background(), &User{ID: 2}, nil, nil, nil, 0.3)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	res.KeepAlive()
+	t.Cleanup(res.HandlerDone)
+	require.Eventually(t, func() bool { return cache.renews.Load() >= 4 }, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, 1, cache.count(), "async submission reservation must outlive its initial TTL")
+	res.HandlerDone()
+	require.Zero(t, cache.count())
+}
+
+func TestInflightEstimate_ImageUsesExplicitSizeTier(t *testing.T) {
+	groupID := int64(30)
+	p1k, p4k := 0.1, 0.5
+	group := &Group{ID: groupID, Platform: PlatformOpenAI, RateMultiplier: 1, ImagePrice1K: &p1k, ImagePrice4K: &p4k}
+	svc := newInflightEstimateGateway(t, nil)
+	key := &APIKey{User: &User{ID: 1}, GroupID: &groupID, Group: group}
+	request := InflightEstimateRequest{Kind: InflightEstimateImage, Model: "gpt-image-1", Units: 2, ImageSize: ImageBillingSize1K}
+	amount, priced := svc.EstimateInflightReservation(context.Background(), key, request)
+	require.True(t, priced)
+	require.InDelta(t, 0.2, amount, 1e-12, "a known 1K request must not reserve at the 4K group price")
+	request.ImageSize = ""
+	amount, priced = svc.EstimateInflightReservation(context.Background(), key, request)
+	require.True(t, priced)
+	require.GreaterOrEqual(t, amount, 1.0, "unknown image size retains conservative estimation")
+}
+
 func TestSyncBalanceCacheAfterDeduction_SynchronousWhenInflightEnabled(t *testing.T) {
 	cache := newMemInflightCache(1)
 	svc := newInflightSvc(t, cache, 60)

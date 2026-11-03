@@ -3482,6 +3482,12 @@ func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(parent context.Con
 	if task == nil {
 		return
 	}
+	if parent != nil {
+		if pending, ok := parent.Value(imageTaskBillingContextKey{}).(*imageTaskBilling); ok {
+			pending.hold(parent, task, h.submitMandatoryUsageRecordTask)
+			return
+		}
+	}
 	task, _ = wrapUsageRecordTaskContext(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); !mode.Dropped() {

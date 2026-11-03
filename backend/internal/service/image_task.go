@@ -32,16 +32,17 @@ var (
 // ImageTaskRecord is the private Redis representation of an asynchronous image
 // request. Ownership fields are intentionally omitted from the public view.
 type ImageTaskRecord struct {
-	ID          string          `json:"id"`
-	UserID      int64           `json:"user_id"`
-	APIKeyID    int64           `json:"api_key_id"`
-	Status      string          `json:"status"`
-	HTTPStatus  int             `json:"http_status,omitempty"`
-	Result      json.RawMessage `json:"result,omitempty"`
-	Error       json.RawMessage `json:"error,omitempty"`
-	CreatedAt   int64           `json:"created_at"`
-	CompletedAt *int64          `json:"completed_at,omitempty"`
-	ExpiresAt   int64           `json:"expires_at"`
+	IdempotencyExpiresAt int64           `json:"idempotency_expires_at,omitempty"`
+	ID                   string          `json:"id"`
+	UserID               int64           `json:"user_id"`
+	APIKeyID             int64           `json:"api_key_id"`
+	Status               string          `json:"status"`
+	HTTPStatus           int             `json:"http_status,omitempty"`
+	Result               json.RawMessage `json:"result,omitempty"`
+	Error                json.RawMessage `json:"error,omitempty"`
+	CreatedAt            int64           `json:"created_at"`
+	CompletedAt          *int64          `json:"completed_at,omitempty"`
+	ExpiresAt            int64           `json:"expires_at"`
 }
 
 // ImageTask is the API-safe task representation returned to callers.
@@ -188,19 +189,36 @@ func (s *ImageTaskService) Get(ctx context.Context, owner ImageTaskOwner, id str
 }
 
 func (s *ImageTaskService) Complete(ctx context.Context, id string, statusCode int, result json.RawMessage) error {
+	_, err := s.CompleteDelivered(ctx, id, statusCode, result)
+	return err
+}
+
+// CompleteDelivered reports whether the result was durably delivered, so an
+// asynchronous caller can commit existing usage jobs without another Redis read.
+func (s *ImageTaskService) CompleteDelivered(ctx context.Context, id string, statusCode int, result json.RawMessage) (bool, error) {
 	if !json.Valid(result) {
-		return s.Fail(ctx, id, http.StatusBadGateway, imageTaskErrorJSON("api_error", "upstream returned a non-JSON image response"))
+		return false, s.Fail(ctx, id, http.StatusBadGateway, imageTaskErrorJSON("api_error", "upstream returned a non-JSON image response"))
 	}
 	if uploader, _ := s.current(); uploader != nil {
-		rewritten, err := uploader.Rewrite(ctx, id, result)
+		// Local result assets use the same API-key ownership as the task. Resolve
+		// the owner from persisted metadata rather than request-supplied data.
+		task, err := s.store.Get(ctx, id)
+		if err != nil {
+			if errors.Is(err, ErrImageTaskNotFound) {
+				return false, ErrImageTaskNotFound
+			}
+			return false, ErrImageTaskUnavailable.WithCause(err)
+		}
+		rewritten, err := uploader.Rewrite(WithAssetOwnerKeyID(ctx, task.APIKeyID), id, result)
 		if err != nil {
 			// 转存失败不回退存 base64，避免大 blob 撑爆 Redis：直接把任务标记为失败。
 			logger.L().Error("image_task.offload_failed", zap.String("task_id", id), zap.Error(err))
-			return s.Fail(ctx, id, http.StatusBadGateway, imageTaskErrorJSON("api_error", "failed to store generated image to object storage"))
+			return false, s.Fail(ctx, id, http.StatusBadGateway, imageTaskErrorJSON("api_error", "failed to store generated image to object storage"))
 		}
 		result = rewritten
 	}
-	return s.finish(ctx, id, ImageTaskStatusCompleted, statusCode, result, nil)
+	err := s.finish(ctx, id, ImageTaskStatusCompleted, statusCode, result, nil)
+	return err == nil, err
 }
 
 func (s *ImageTaskService) Fail(ctx context.Context, id string, statusCode int, taskErr json.RawMessage) error {
@@ -229,7 +247,12 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 	task.Error = taskErr
 	task.CompletedAt = &completedAt
 	task.ExpiresAt = now.Add(s.ttl).Unix()
-	if err := s.store.Save(ctx, task, s.ttl); err != nil {
+	ttl := s.ttl
+	if remaining := time.Unix(task.IdempotencyExpiresAt, 0).Sub(now); remaining > ttl {
+		ttl = remaining
+		task.ExpiresAt = task.IdempotencyExpiresAt
+	}
+	if err := s.store.Save(ctx, task, ttl); err != nil {
 		return ErrImageTaskUnavailable.WithCause(err)
 	}
 	return nil

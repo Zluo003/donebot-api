@@ -183,6 +183,7 @@ func ProvideAdminSettingHandler(settingService *service.SettingService, emailSer
 
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
+	assetHandler *AssetHandler,
 	doneBotHandler *DoneBotHandler,
 	authHandler *AuthHandler,
 	userHandler *UserHandler,
@@ -211,6 +212,7 @@ func ProvideHandlers(
 	_ *service.OpenAIQuotaAutoResetService,
 ) *Handlers {
 	return &Handlers{
+		Asset:            assetHandler,
 		DoneBot:          doneBotHandler,
 		Auth:             authHandler,
 		User:             userHandler,
@@ -239,6 +241,7 @@ func ProvideHandlers(
 
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
+	NewAssetHandler,
 	NewDoneBotHandler,
 	admin.NewDoneBotHandler,
 	// Top-level handlers

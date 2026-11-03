@@ -848,6 +848,9 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true }
   ]
 
+  if (appStore.cachedPublicSettings?.donebot_enabled) {
+    baseItems.splice(1, 0, { path: '/admin/donebot', label: 'DoneBot', icon: FolderIcon })
+  }
   const visible = applyFeatureFlags(baseItems)
 
   // 简单模式下，在系统设置前插入 API密钥

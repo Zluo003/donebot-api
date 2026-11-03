@@ -1036,6 +1036,12 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.ModelAllowlist != nil {
 		modelAllowlist, err := normalizeGroupModelAllowlist(*input.ModelAllowlist)
+		// DoneBot starts with no selected models and supports disabling them all.
+		// Keep ordinary group form validation unchanged.
+		if ctx.Value(doneBotGroupUpdateContext{}) == true && group.Platform == PlatformComposite && input.ModelAllowlist.Enabled && len(input.ModelAllowlist.Models) == 0 {
+			modelAllowlist = GroupModelAllowlist{Enabled: true, Models: []string{}}
+			err = nil
+		}
 		if err != nil {
 			return nil, err
 		}

@@ -101,6 +101,12 @@ func TestDoneBotInstallConcurrentClaimPersistsOneKeyAndMapping(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, current.LastSeenAt)
 	require.WithinDuration(t, used, *current.LastSeenAt, time.Millisecond)
+	mapped, err := repo.(interface {
+		GetByAPIKeyID(context.Context, int64) (*service.DoneBotInstall, error)
+	}).GetByAPIKeyID(ctx, install.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, install.ID, mapped.ID)
+	require.Equal(t, g.ID, mapped.GroupID)
 	require.NoError(t, svc.Revoke(ctx, install.ID))
 	require.NoError(t, svc.Revoke(ctx, install.ID))
 	repeat, err := svc.Claim(ctx, u.ID, req)

@@ -221,13 +221,13 @@ CREATE INDEX idx_donebot_installs_status ON donebot_installs(status);
 2. 与渠道定价表求交集，得到“有价可卖”的模型。
 3. 写入 `model_allowlist.models`；已有开关状态不覆盖，只增不减，删除走人工。
 
-`/v1/models` 返回 `目录 ∩ allowlist`；allowlist 关闭某个模型后，请求准入直接拒绝。具体错误码沿用现有 allowlist 中间件，契约层统一暴露为：
+`/v1/models` 返回 `目录 ∩ allowlist`；allowlist 关闭某个模型后，请求准入直接拒绝。按用户确认，错误体与错误码沿用现有中间件，不增加 DoneBot 映射。以下仅示意拒绝结构：
 
 ```json
 { "error": { "type": "invalid_request_error", "code": "model_not_enabled", "message": "Model is not enabled for this group" } }
 ```
 
-P0 先核对现有中间件的实际返回，必要时只改错误码映射，不改准入逻辑。
+实际错误码以原版实现与验收记录为准。
 
 #### 图片的缺口
 
@@ -266,6 +266,9 @@ PUT  /api/v1/admin/donebot/images/models
 PUT  /api/v1/admin/donebot/images/pricing
 GET  /api/v1/admin/donebot/installs
 DELETE /api/v1/admin/donebot/installs/:id
+GET  /api/v1/admin/donebot/images/tasks/:task_id # 查询任务所属安装（不返回凭据）
+POST /api/v1/admin/donebot/llm/models/sync
+POST /api/v1/admin/donebot/images/models/sync
 ```
 
 安装凭据的创建走用户侧接口 `POST /api/v1/donebot/installations/claim`，管理端不代建。
@@ -424,7 +427,7 @@ DoneBot 侧契约固定为：
 {
   "id": "imgtask_...",
   "task_id": "imgtask_...",
-  "object": "image.task",
+  "object": "image.generation.task",
   "status": "processing | completed | failed",
   "http_status": 200,
   "image_url": "https://...",
@@ -436,7 +439,7 @@ DoneBot 侧契约固定为：
 }
 ```
 
-轮询建议 `Retry-After: 2`，连续失败 3 次才判死。
+轮询沿用基线 `Retry-After: 3`。处理中任务在网关进程重启后可查询，但不会自动重放上游请求。
 
 ---
 
@@ -521,18 +524,19 @@ DoneBot 首次连接时由用户登录自己的账号，DoneBot 用会话调领�
 
 ### 6.3 错误码
 
+用户已确认沿用原版错误码；不执行本节早期草案中的统一映射。鉴权、allowlist、限流、余额与原生协议错误体保持现有行为；新增资产与幂等接口的实际错误见验收记录。
+
 | HTTP | code | 场景 |
 |---|---|---|
-| 401 | `invalid_install_credential` | 凭据无效或已吊销 |
-| 403 | `INSUFFICIENT_BALANCE` | 余额不足（沿用原版） |
-| 403 | `model_not_enabled` | 模型未开启 |
-| 404 | `model_not_found` | 模型不存在 |
-| 413 | `asset_too_large` | 上传超限 |
-| 429 | `rate_limited` | 限流 |
-| 503 | `upstream_unavailable` | 上游不可用 |
-| 504 | `upstream_timeout` | 上游超时 |
+| 401 | `INVALID_API_KEY` / `API_KEY_DISABLED` | 凭据无效或已吊销 |
+| 403 | `INSUFFICIENT_BALANCE` / `billing_error` | 原鉴权或图片计费准入余额不足 |
+| 404 | 按入口协议输出 | allowlist 未开启模型，沿用原版 |
+| 413 | `ASSET_TOO_LARGE` | 上传超限 |
+| 403 | `ASSET_TOKEN_INVALID` | 本地资产签名无效或过期 |
+| 409 | `IDEMPOTENCY_KEY_CONFLICT` | 相同幂等键对应不同图片请求 |
+| 429 / 5xx | 原链路错误码 | 限流、上游不可用或超时 |
 
-错误体统一：
+以下错误体仅为示意，各原生协议继续使用各自现有错误格式：
 
 ```json
 { "error": { "type": "invalid_request_error", "code": "model_not_enabled", "message": "..." } }
@@ -606,7 +610,7 @@ DoneBot 首次连接时由用户登录自己的账号，DoneBot 用会话调领�
 
 **验收**：
 
-- 关闭某模型后，`/v1/models` 不返回它，直接请求返回 403；
+- 关闭某模型后，`/v1/models` 不返回它，直接请求沿用原 allowlist 的 404 与协议错误格式；
 - 改倍率后，新请求的计费按新倍率，历史账单不变；
 - 视频/音频标签不出现；
 - 页面在 1280 宽和手机宽度都不塌。

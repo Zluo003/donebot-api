@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -51,4 +52,16 @@ func TestDoneBotAdminListAndRevoke(t *testing.T) {
 		require.Equal(t, want, w.Code, w.Body.String())
 	}
 	require.Equal(t, []int64{12}, svc.revoked)
+}
+
+func TestDoneBotAdminRejectsMalformedModelUpdate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	h := &DoneBotHandler{}
+	router.PUT("/llm", h.UpdateLlmModels)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/llm", strings.NewReader(`{"models":[{"enabled":true}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
 }

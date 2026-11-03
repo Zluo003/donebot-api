@@ -48,6 +48,7 @@ type AdminHandlers struct {
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
+	Asset            *AssetHandler
 	DoneBot          *DoneBotHandler
 	Auth             *AuthHandler
 	User             *UserHandler

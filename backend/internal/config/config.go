@@ -109,6 +109,8 @@ type Config struct {
 	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
 	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
 	ImageStorage            ImageStorageConfig            `mapstructure:"image_storage"`
+	AssetStorage            AssetStorageConfig            `mapstructure:"asset_storage"`
+	ImageTask               ImageTaskConfig               `mapstructure:"image_task"`
 	Plugins                 PluginConfig                  `mapstructure:"plugins"`
 
 	// Enforce only API-key spending windows in simple mode.
@@ -331,11 +333,13 @@ type BatchImageConfig struct {
 	VertexGCSBaseURL             string `mapstructure:"vertex_gcs_base_url"`
 }
 
-// ImageStorageConfig 配置异步图片任务结果上传的 S3 兼容对象存储。
-// Enabled 同时作为异步图片任务功能的总开关：未启用或未配置完整凭证时，
-// 异步生图接口整体禁用，避免把上游返回的大 base64 结果塞进 Redis。
+// ImageStorageConfig configures asynchronous image result offload. The default
+// driver remains s3; DoneBot deployments may select local AssetStorage.
+// Enabled also gates async tasks. S3 needs complete credentials; the local
+// driver needs a configured AssetStorage public URL to avoid base64 in Redis.
 type ImageStorageConfig struct {
 	Enabled         bool   `mapstructure:"enabled"`
+	Driver          string `mapstructure:"driver"`
 	Endpoint        string `mapstructure:"endpoint"` // e.g. https://<account_id>.r2.cloudflarestorage.com
 	Region          string `mapstructure:"region"`   // R2 用 "auto"
 	Bucket          string `mapstructure:"bucket"`
@@ -346,6 +350,43 @@ type ImageStorageConfig struct {
 	PublicBaseURL   string `mapstructure:"public_base_url"`      // 配了则返回 public_base_url/key 直链；否则 presigned
 	PresignExpiry   int    `mapstructure:"presign_expiry_hours"` // public_base_url 为空时的 presigned 过期时长(小时)
 	MaxDownloadByte int64  `mapstructure:"max_download_bytes"`   // 下载上游 url 图片的字节上限
+}
+
+// ImageTaskConfig controls Redis metadata retention independently from result
+// assets. AssetStorage.TTLHours controls the lifetime of the stored image.
+type ImageTaskConfig struct {
+	TTLHours                int `mapstructure:"ttl_hours"`
+	ExecutionTimeoutMinutes int `mapstructure:"execution_timeout_minutes"`
+}
+
+func (c ImageTaskConfig) TTL() time.Duration {
+	if c.TTLHours <= 0 {
+		return 24 * time.Hour
+	}
+	return time.Duration(c.TTLHours) * time.Hour
+}
+
+func (c ImageTaskConfig) ExecutionTimeout() time.Duration {
+	if c.ExecutionTimeoutMinutes <= 0 {
+		return 30 * time.Minute
+	}
+	return time.Duration(c.ExecutionTimeoutMinutes) * time.Minute
+}
+
+func (c ImageTaskConfig) Validate() error {
+	if c.TTLHours < 0 {
+		return fmt.Errorf("image_task.ttl_hours must be non-negative")
+	}
+	if c.ExecutionTimeoutMinutes < 0 {
+		return fmt.Errorf("image_task.execution_timeout_minutes must be non-negative")
+	}
+	if c.TTLHours > 8760 {
+		return fmt.Errorf("image_task.ttl_hours must be at most 8760")
+	}
+	if c.ExecutionTimeoutMinutes > 1440 {
+		return fmt.Errorf("image_task.execution_timeout_minutes must be at most 1440")
+	}
+	return nil
 }
 
 // IsConfigured 检查对象存储必要字段是否已配置
@@ -2113,6 +2154,7 @@ func configureConfigSource(setConfigFile, addConfigPath func(string)) {
 }
 
 func setDefaults() {
+	setAssetStorageDefaults()
 	viper.SetDefault("donebot.enabled", false)
 	viper.SetDefault("donebot.group_name", "DoneBot")
 	viper.SetDefault("donebot.auto_create_group", true)
@@ -2373,6 +2415,7 @@ func setDefaults() {
 
 	// Image storage (async image task result offload to S3-compatible object storage)
 	viper.SetDefault("image_storage.enabled", false)
+	viper.SetDefault("image_storage.driver", "s3")
 	viper.SetDefault("image_storage.region", "auto")
 	viper.SetDefault("image_storage.prefix", "images/")
 	viper.SetDefault("image_storage.force_path_style", false)
@@ -2387,6 +2430,8 @@ func setDefaults() {
 	viper.SetDefault("image_storage.access_key_id", "")
 	viper.SetDefault("image_storage.secret_access_key", "")
 	viper.SetDefault("image_storage.public_base_url", "")
+	viper.SetDefault("image_task.ttl_hours", 24)
+	viper.SetDefault("image_task.execution_timeout_minutes", 30)
 
 	// Ops (vNext)
 	viper.SetDefault("ops.enabled", true)
@@ -2794,8 +2839,21 @@ func setEnvReachableDefaults() {
 }
 
 func (c *Config) Validate() error {
+	if err := c.AssetStorage.Validate(); err != nil {
+		return err
+	}
 	if err := c.DoneBot.Validate(); err != nil {
 		return err
+	}
+	if err := c.ImageTask.Validate(); err != nil {
+		return err
+	}
+	c.ImageStorage.Driver = strings.ToLower(strings.TrimSpace(c.ImageStorage.Driver))
+	if c.ImageStorage.Driver == "" {
+		c.ImageStorage.Driver = "s3"
+	}
+	if c.ImageStorage.Driver != "s3" && c.ImageStorage.Driver != "local" {
+		return fmt.Errorf("image_storage.driver must be local or s3")
 	}
 	if c.Gateway.MinOutputTokens < 16 {
 		return fmt.Errorf("gateway.min_output_tokens must be at least 16")

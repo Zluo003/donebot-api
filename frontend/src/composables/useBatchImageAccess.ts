@@ -2,6 +2,8 @@ import { computed, ref } from 'vue'
 import { keysAPI } from '@/api/keys'
 import { useAuthStore } from '@/stores/auth'
 import type { ApiKey } from '@/types'
+import { useAppStore } from '@/stores/app'
+import { shouldShowAPIKeyManagement } from '@/utils/donebot'
 
 const loaded = ref(false)
 const loading = ref(false)
@@ -19,7 +21,7 @@ function keyAllowsBatchImage(key: ApiKey): boolean {
 
 async function loadBatchImageAccess(force = false): Promise<boolean> {
   const authStore = useAuthStore()
-  if (!authStore.isAuthenticated) {
+  if (!authStore.isAuthenticated || !shouldShowAPIKeyManagement(useAppStore().cachedPublicSettings)) {
     loaded.value = true
     hasAllowedBatchImageKey.value = false
     return false

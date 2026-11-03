@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -704,6 +705,9 @@ func ProvideImageStorageSettingService(
 	cfg *config.Config,
 ) *ImageStorageSettingService {
 	if cfg.ImageStorage.Enabled && !cfg.ImageStorage.Active() {
+		if cfg.DoneBot.Enabled || cfg.ImageStorage.Driver == "local" {
+			return NewImageStorageSettingService(settingRepo, encryptor, backup, factory, cfg.ImageStorage)
+		}
 		// 列出具体缺失的键。若这些键其实已在环境变量里设过，说明它们没被读进来，
 		// 请确认 setDefaults 中已为其注册默认值（见 config.setEnvReachableDefaults）。
 		logger.L().Warn("image_storage.enabled is true in config but object storage is not fully configured; configure it in the admin UI or complete the config file",
@@ -714,11 +718,30 @@ func ProvideImageStorageSettingService(
 
 // ProvideImageTaskService 构造异步图片任务服务。
 //
-// 对象存储是异步图片任务的启用前提：仅当开关打开且凭证齐全时功能才可用，否则整体禁用
-// （handler 返回 404，不创建任务、不写 Redis），从而避免大 base64 结果撑爆 Redis。
-// 启用状态由 settings 服务在运行时解析，因此后台改开关后无需重启即可生效。
-func ProvideImageTaskService(store ImageTaskStore, settings *ImageStorageSettingService) *ImageTaskService {
-	return NewImageTaskServiceWithResolver(store, settings.Resolver(), defaultImageTaskTTL, defaultImageTaskExecutionTimeout)
+// DoneBot routes results through AssetService so both drivers share ownership,
+// deduplication and retention. Local results require an absolute public URL.
+// Other deployments retain the existing S3 settings resolver and hot switching.
+func ProvideImageTaskService(store ImageTaskStore, settings *ImageStorageSettingService, assets *AssetService, cfg *config.Config) *ImageTaskService {
+	var resolver ImageStorageResolver
+	if settings != nil {
+		resolver = settings.Resolver()
+	}
+	taskConfig := config.ImageTaskConfig{}
+	if cfg != nil {
+		taskConfig = cfg.ImageTask
+		if cfg.DoneBot.Enabled || cfg.ImageStorage.Driver == "local" {
+			resolver = func() (*ImageResultUploader, bool) {
+				if !cfg.DoneBot.Enabled || !cfg.ImageStorage.Enabled || assets == nil || cfg.AssetStorage.Driver != cfg.ImageStorage.Driver {
+					return nil, false
+				}
+				if cfg.AssetStorage.Driver == "local" && strings.TrimSpace(cfg.AssetStorage.PublicBaseURL) == "" {
+					return nil, false
+				}
+				return NewImageResultUploader(assets, cfg.ImageStorage.Prefix, cfg.ImageStorage.MaxDownloadByte, nil), true
+			}
+		}
+	}
+	return NewImageTaskServiceWithResolver(store, resolver, taskConfig.TTL(), taskConfig.ExecutionTimeout())
 }
 
 // ProvideBackupService creates and starts BackupService
@@ -859,9 +882,19 @@ func ProvideAPIKeyService(
 	return svc
 }
 
+func ProvideAssetService(repo AssetRepository, storage AssetStorage, cfg *config.Config) *AssetService {
+	svc := NewAssetService(repo, storage, cfg)
+	if cfg != nil && cfg.DoneBot.Enabled {
+		svc.Start()
+	}
+	return svc
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	ProvideAssetService,
 	NewDoneBotService,
+	NewDoneBotAdminService,
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,

@@ -64,7 +64,7 @@ func TestDoneBotClaimedCredentialUsesGatewayAndRevokesCachedAuth(t *testing.T) {
 	keys := service.NewAPIKeyService(keyRepo, NewUserRepository(client, integrationDB), groupRepo, nil, nil, NewAPIKeyCache(integrationRedis), cfg)
 	installs := service.NewDoneBotService(NewDoneBotInstallRepository(client), keys, settings, groupRepo, cfg)
 	claimHandler := handler.NewDoneBotHandler(installs, settings, cfg)
-	adminHandler := adminhandler.NewDoneBotHandler(installs)
+	adminHandler := adminhandler.NewDoneBotHandler(installs, nil)
 	router := gin.New()
 	router.POST("/api/v1/donebot/installations/claim", func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: user.ID})

@@ -23,6 +23,13 @@ func TestDoneBotInstallRoutesRequireExplicitGlobalPermissions(t *testing.T) {
 	for _, tc := range []struct{ method, path, permission string }{
 		{"GET", "/api/v1/admin/donebot/installs", "donebot.installs.read"},
 		{"DELETE", "/api/v1/admin/donebot/installs/:id", "donebot.installs.revoke"},
+		{"GET", "/api/v1/admin/donebot/overview", "donebot.catalog.read"},
+		{"GET", "/api/v1/admin/donebot/llm/models", "donebot.catalog.read"},
+		{"GET", "/api/v1/admin/donebot/images/models", "donebot.catalog.read"},
+		{"PUT", "/api/v1/admin/donebot/llm/models", "donebot.models.write"},
+		{"POST", "/api/v1/admin/donebot/images/models/sync", "donebot.models.write"},
+		{"PUT", "/api/v1/admin/donebot/images/pricing", "donebot.pricing.write"},
+		{"GET", "/api/v1/admin/donebot/images/tasks/:task_id", "donebot.tasks.read"},
 	} {
 		if RouteAllowed(Policy{}, tc.method, tc.path) {
 			t.Fatalf("%s %s must require a permission", tc.method, tc.path)

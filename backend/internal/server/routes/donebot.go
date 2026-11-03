@@ -14,7 +14,18 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 
 func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUp middleware.StepUpAuthMiddleware) {
 	if h.Admin.DoneBot != nil {
-		installs := admin.Group("/donebot/installs")
+		donebot := admin.Group("/donebot")
+		donebot.GET("/overview", h.Admin.DoneBot.Overview)
+		donebot.GET("/llm/models", h.Admin.DoneBot.LlmModels)
+		donebot.PUT("/llm/models", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateLlmModels)
+		donebot.PUT("/llm/pricing", gin.HandlerFunc(stepUp), h.Admin.DoneBot.LlmPricing)
+		donebot.POST("/llm/models/sync", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SyncLlmModels)
+		donebot.GET("/images/tasks/:task_id", h.Admin.DoneBot.ImageTask)
+		donebot.GET("/images/models", h.Admin.DoneBot.ImageModels)
+		donebot.PUT("/images/models", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateImageModels)
+		donebot.PUT("/images/pricing", gin.HandlerFunc(stepUp), h.Admin.DoneBot.ImagePricing)
+		donebot.POST("/images/models/sync", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SyncImageModels)
+		installs := donebot.Group("/installs")
 		installs.GET("", h.Admin.DoneBot.List)
 		installs.DELETE("/:id", gin.HandlerFunc(stepUp), h.Admin.DoneBot.Revoke)
 	}

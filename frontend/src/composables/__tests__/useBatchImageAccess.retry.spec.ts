@@ -1,12 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const list = vi.hoisted(() => vi.fn())
+const state = vi.hoisted(() => ({ donebot: false }))
+vi.mock('@/stores/app', () => ({ useAppStore: () => ({ cachedPublicSettings: { donebot_enabled: state.donebot } }) }))
 vi.mock('@/api/keys', () => ({ keysAPI: { list } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ isAuthenticated: true }) }))
 
-beforeEach(() => { vi.resetModules(); list.mockReset() })
+beforeEach(() => { vi.resetModules(); list.mockReset(); state.donebot = false })
 
 describe('batch image access lookup', () => {
+  it('does not request ordinary keys in DoneBot mode', async () => {
+    state.donebot = true
+    const { useBatchImageAccess } = await import('../useBatchImageAccess')
+    expect(await useBatchImageAccess().refreshBatchImageAccess()).toBe(false)
+    expect(list).not.toHaveBeenCalled()
+  })
   it('retries a failed lookup when another consumer requests access', async () => {
     list.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({
       items: [{ status: 'active', group: { platform: 'gemini', allow_batch_image_generation: true } }], pages: 1,

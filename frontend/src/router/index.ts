@@ -474,6 +474,12 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/donebot',
+    name: 'AdminDoneBot',
+    component: () => import('@/views/admin/DoneBotView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'DoneBot' }
+  },
+  {
     path: '/admin/groups',
     name: 'AdminGroups',
     component: () => import('@/views/admin/GroupsView.vue'),

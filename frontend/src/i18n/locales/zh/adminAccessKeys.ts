@@ -78,6 +78,12 @@ export default {
   "fullAccessPhraseHint": "请输入“{phrase}”以确认：",
   "unknownPermission": "未知权限（{id}）",
   "permissions": {
+    "donebot_dcatalog_dread": { "label": "查看 DoneBot 概览与模型价格", "category": "DoneBot" },
+    "donebot_dmodels_dwrite": { "label": "同步与切换 DoneBot 模型", "category": "DoneBot" },
+    "donebot_dpricing_dwrite": { "label": "修改 DoneBot 倍率与图片价格", "category": "DoneBot" },
+    "donebot_dtasks_dread": { "label": "查看 DoneBot 图片任务所属安装", "category": "DoneBot" },
+    "donebot_dinstalls_dread": { "label": "查看 DoneBot 安装记录", "category": "DoneBot" },
+    "donebot_dinstalls_drevoke": { "label": "吊销 DoneBot 安装凭据", "category": "DoneBot" },
     "accounts_didentity_dread": {
       "label": "读取账户邮箱、套餐及创建时间（不含令牌）",
       "category": "账户"

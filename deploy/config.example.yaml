@@ -13,7 +13,7 @@ donebot:
   group_name: "DoneBot"
   auto_create_group: true
   features:
-    # Reserved switches only; P1 does not add video or audio endpoints.
+    # Reserved switches; DoneBot exposes no video or audio UI.
     video: false
     audio: false
 
@@ -1319,6 +1319,8 @@ update:
 # service.ImageStorage 接口（Save(ctx, key, contentType, data) -> url）即可。
 image_storage:
   enabled: false
+  # DoneBot 模式下必须与 asset_storage.driver 一致；其他模式保留原 S3 设置。
+  driver: "s3"
   # S3 兼容端点。AWS 官方可留空；R2 形如 https://<account_id>.r2.cloudflarestorage.com
   endpoint: ""
   # 区域。Cloudflare R2 用 "auto"
@@ -1337,3 +1339,26 @@ image_storage:
   presign_expiry_hours: 24
   # 当上游返回的是图片 url 时，下载该图片再转存的字节上限（默认 32MB）
   max_download_bytes: 33554432
+
+# DoneBot 资源缓存。local 返回签名下载链接；S3 兼容 R2 / OSS / MinIO。
+# DoneBot 异步产物也经过此缓存，TTL 与 Redis 任务元数据分开。
+asset_storage:
+  driver: "local"
+  local_path: "data/assets"
+  # local 异步任务必须配置上游可访问的绝对地址，反代 /assets/* 到本网关。
+  public_base_url: ""
+  ttl_hours: 168
+  max_bytes: 33554432
+  s3:
+    endpoint: ""
+    region: "auto"
+    bucket: ""
+    access_key_id: ""
+    secret_access_key: ""
+    force_path_style: false
+    public_base_url: ""
+    presign_expiry_hours: 168
+
+image_task:
+  ttl_hours: 24
+  execution_timeout_minutes: 30

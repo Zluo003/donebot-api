@@ -20,6 +20,10 @@ type permissionDefinition struct {
 // 接口按方法和 Gin 完整路径精确登记；新增接口不会继承同目录权限。
 // 全站权限与账户规则独立，选中分组绝不会隐式授予全站操作。
 var definitions = []permissionDefinition{
+	{Permission{"donebot.catalog.read", "查看 DoneBot 概览与模型价格", "DoneBot", "global"}, []string{"GET /donebot/overview", "GET /donebot/llm/models", "GET /donebot/images/models"}},
+	{Permission{"donebot.models.write", "同步与切换 DoneBot 模型", "DoneBot", "global"}, []string{"PUT /donebot/llm/models", "PUT /donebot/images/models", "POST /donebot/llm/models/sync", "POST /donebot/images/models/sync"}},
+	{Permission{"donebot.pricing.write", "修改 DoneBot 倍率与图片价格", "DoneBot", "global"}, []string{"PUT /donebot/llm/pricing", "PUT /donebot/images/pricing"}},
+	{Permission{"donebot.tasks.read", "查看 DoneBot 图片任务所属安装", "DoneBot", "global"}, []string{"GET /donebot/images/tasks/:task_id"}},
 	{Permission{"donebot.installs.read", "查看 DoneBot 安装记录", "DoneBot", "global"}, []string{"GET /donebot/installs"}},
 	{Permission{"donebot.installs.revoke", "吊销 DoneBot 安装凭据", "DoneBot", "global"}, []string{"DELETE /donebot/installs/:id"}},
 	{Permission{"accounts.identity.read", "读取账户邮箱、套餐及创建时间（不含令牌）", "账户", "account"}, []string{"GET /accounts/:id"}},

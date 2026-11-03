@@ -71,6 +71,11 @@ func reserveInflightBalanceCtx(
 	subscription *service.UserSubscription,
 	req service.InflightEstimateRequest,
 ) (context.Context, func(), error) {
+	// Async image submission can transfer a fixed-charge reservation to this
+	// worker. Reuse that handle so the normal usage task owns the same funds.
+	if existing := service.InflightReservationFromContext(ctx); existing != nil {
+		return ctx, inflightNoop, nil
+	}
 	if billing == nil || estimator == nil || apiKey == nil || apiKey.User == nil || !billing.InflightReservationEnabled() {
 		return ctx, inflightNoop, nil
 	}

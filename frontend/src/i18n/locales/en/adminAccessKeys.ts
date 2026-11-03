@@ -78,6 +78,12 @@ export default {
   "fullAccessPhraseHint": "Type “{phrase}” to confirm:",
   "unknownPermission": "Unknown permission ({id})",
   "permissions": {
+    "donebot_dcatalog_dread": { "label": "Read DoneBot overview and model prices", "category": "DoneBot" },
+    "donebot_dmodels_dwrite": { "label": "Sync and toggle DoneBot models", "category": "DoneBot" },
+    "donebot_dpricing_dwrite": { "label": "Change DoneBot multipliers and image prices", "category": "DoneBot" },
+    "donebot_dtasks_dread": { "label": "Read the installation for a DoneBot image task", "category": "DoneBot" },
+    "donebot_dinstalls_dread": { "label": "Read DoneBot installations", "category": "DoneBot" },
+    "donebot_dinstalls_drevoke": { "label": "Revoke DoneBot installation credentials", "category": "DoneBot" },
     "accounts_didentity_dread": {
       "label": "Read account email, plan, and creation time (no tokens)",
       "category": "Accounts"

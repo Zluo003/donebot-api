@@ -59,6 +59,9 @@ func (r *doneBotInstallRepository) get(ctx context.Context, where string, value 
 func (r *doneBotInstallRepository) GetByInstallationID(ctx context.Context, id string) (*service.DoneBotInstall, error) {
 	return r.get(ctx, "WHERE i.installation_id = $1::uuid", id)
 }
+func (r *doneBotInstallRepository) GetByAPIKeyID(ctx context.Context, id int64) (*service.DoneBotInstall, error) {
+	return r.get(ctx, "WHERE i.api_key_id = $1", id)
+}
 func (r *doneBotInstallRepository) GetByID(ctx context.Context, id int64) (*service.DoneBotInstall, error) {
 	return r.get(ctx, "WHERE i.id = $1", id)
 }

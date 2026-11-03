@@ -91,6 +91,18 @@ func (r *InflightReservation) Amount() float64 {
 	return r.amount
 }
 
+// KeepAlive starts balance renewal when a fixed-charge reservation is handed
+// from async submission to a worker. Call before handing the handle to another
+// goroutine; HandlerDone retains the existing stop/release behavior.
+func (r *InflightReservation) KeepAlive() {
+	if r == nil || r.stopRenew != nil {
+		return
+	}
+	if renewer, ok := r.cache.(InflightBalanceReservationRenewer); ok && renewer != nil {
+		r.startRenewal(renewer)
+	}
+}
+
 // Acquire 为一个异步计费任务增加引用；返回的 done 幂等，必须在任务结束（或被丢弃）时调用。
 // 预留已释放时返回 no-op。
 func (r *InflightReservation) Acquire() func() {
@@ -375,6 +387,9 @@ type InflightEstimateRequest struct {
 	Kind      InflightEstimateKind
 	// Units 按次/按张数量（<=0 视为 1）。
 	Units int
+	// ImageSize is an explicitly requested billing size tier. Empty preserves
+	// conservative estimation across all sizes for existing callers.
+	ImageSize string
 	// SearchCalls 叠加的搜索次数（按分组 search_price_per_1k 计）。
 	SearchCalls int
 	// 视频：分辨率与时长（秒）。
@@ -575,11 +590,22 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 	switch req.Kind {
 	case InflightEstimateImage:
 		if perRequestMode {
-			cost = maxPerRequestPrice(resolved) * float64(units) * imageRate
+			price := maxPerRequestPrice(resolved)
+			if req.ImageSize != "" {
+				price = resolved.DefaultPerRequestPrice
+				if tierPrice := d.resolver.GetRequestTierPrice(resolved, req.ImageSize); tierPrice > 0 {
+					price = tierPrice
+				}
+			}
+			cost = price * float64(units) * imageRate
 		}
 		if d.billing != nil {
 			cfgImg := imagePriceConfigFromAPIKey(apiKey)
-			for _, tier := range []string{ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K} {
+			tiers := []string{ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K}
+			if req.ImageSize != "" {
+				tiers = []string{req.ImageSize}
+			}
+			for _, tier := range tiers {
 				if b := d.billing.CalculateImageCost(model, tier, units, cfgImg, imageRate); b != nil && b.ActualCost > cost {
 					cost = b.ActualCost
 				}
