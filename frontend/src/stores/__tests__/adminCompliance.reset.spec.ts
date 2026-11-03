@@ -81,3 +81,10 @@ it('still updates compliance status during a normal fetch and acceptance', async
   expect(store.status).toEqual(status(false))
   expect(store.shouldShow).toBe(false)
 })
+
+it('uses this repository for fallback compliance documents', () => {
+  const store = useAdminComplianceStore()
+  store.requireAcknowledgement()
+  expect(store.status?.document_url_zh).toBe('https://github.com/Zluo003/donebot-api/blob/main/docs/legal/admin-compliance.zh.md')
+  expect(store.status?.document_url_en).toBe('https://github.com/Zluo003/donebot-api/blob/main/docs/legal/admin-compliance.en.md')
+})

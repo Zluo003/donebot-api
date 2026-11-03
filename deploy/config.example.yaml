@@ -1,15 +1,16 @@
-# Sub2API Configuration File
-# Sub2API 配置文件
+# DoneBot API Configuration File
+# DoneBot API 配置文件
 #
-# Copy this file to /etc/sub2api/config.yaml and modify as needed
-# 复制此文件到 /etc/sub2api/config.yaml 并根据需要修改
+# Copy to the service data/working directory as config.yaml, or explicitly set
+# CONFIG_FILE=/etc/sub2api/config.yaml for a manually managed configuration.
+# 复制到服务数据/工作目录的 config.yaml；使用 /etc/sub2api/config.yaml 时可设置 CONFIG_FILE。
 #
-# Documentation / 文档: https://github.com/Wei-Shaw/sub2api
+# Documentation / 文档: https://github.com/Zluo003/donebot-api
 
-# DoneBot mode (opt in). Startup runs after database migrations.
+# DoneBot gateway defaults. Startup runs after database migrations.
 # DONEBOT_ENABLED / DONEBOT_GROUP_NAME / DONEBOT_AUTO_CREATE_GROUP
 donebot:
-  enabled: false
+  enabled: true
   group_name: "DoneBot"
   auto_create_group: true
   features:
@@ -1318,9 +1319,9 @@ update:
 # 换其它厂商对象存储：只要它兼容 S3 API 即可直接用；如需完全自定义，实现
 # service.ImageStorage 接口（Save(ctx, key, contentType, data) -> url）即可。
 image_storage:
-  enabled: false
+  enabled: true
   # DoneBot 模式下必须与 asset_storage.driver 一致；其他模式保留原 S3 设置。
-  driver: "s3"
+  driver: "local"
   # S3 兼容端点。AWS 官方可留空；R2 形如 https://<account_id>.r2.cloudflarestorage.com
   endpoint: ""
   # 区域。Cloudflare R2 用 "auto"

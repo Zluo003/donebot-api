@@ -11,7 +11,7 @@
 ## 2. 宿主机构建与运行
 
 ```bash
-cd /opt/sub2api-src/datamanagement
+cd /opt/donebot-api-src/datamanagement
 go build -o /opt/sub2api/datamanagementd ./cmd/datamanagementd
 
 mkdir -p /var/lib/sub2api/datamanagement
@@ -51,7 +51,7 @@ sudo journalctl -u sub2api-datamanagementd -f
 sudo ./deploy/install-datamanagementd.sh --binary /path/to/datamanagementd
 
 # 方式二：从源码构建后安装
-sudo ./deploy/install-datamanagementd.sh --source /path/to/sub2api
+sudo ./deploy/install-datamanagementd.sh --source /path/to/donebot-api
 ```
 
 ## 4. Docker 部署联动

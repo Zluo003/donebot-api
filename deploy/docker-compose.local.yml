@@ -24,7 +24,7 @@ services:
   # Sub2API Application
   # ===========================================================================
   sub2api:
-    image: weishaw/sub2api:latest
+    image: ghcr.io/zluo003/donebot-api:latest
     container_name: sub2api
     restart: unless-stopped
     security_opt:
@@ -59,6 +59,23 @@ services:
       - SIMPLE_MODE_AUTO_CREATE_DEFAULT_GROUPS=${SIMPLE_MODE_AUTO_CREATE_DEFAULT_GROUPS:-}
       - SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED=${SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED:-false}
       - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
+
+      # DoneBot gateway defaults (override in .env).
+      - DONEBOT_ENABLED=${DONEBOT_ENABLED:-true}
+      - DONEBOT_GROUP_NAME=${DONEBOT_GROUP_NAME:-DoneBot}
+      - DONEBOT_AUTO_CREATE_GROUP=${DONEBOT_AUTO_CREATE_GROUP:-true}
+      - DONEBOT_FEATURES_VIDEO=${DONEBOT_FEATURES_VIDEO:-false}
+      - DONEBOT_FEATURES_AUDIO=${DONEBOT_FEATURES_AUDIO:-false}
+      - ASSET_STORAGE_DRIVER=${ASSET_STORAGE_DRIVER:-local}
+      - ASSET_STORAGE_LOCAL_PATH=${ASSET_STORAGE_LOCAL_PATH:-data/assets}
+      - ASSET_STORAGE_PUBLIC_BASE_URL=${ASSET_STORAGE_PUBLIC_BASE_URL:-}
+      - ASSET_STORAGE_TTL_HOURS=${ASSET_STORAGE_TTL_HOURS:-168}
+      - ASSET_STORAGE_MAX_BYTES=${ASSET_STORAGE_MAX_BYTES:-33554432}
+      - IMAGE_STORAGE_ENABLED=${IMAGE_STORAGE_ENABLED:-true}
+      - IMAGE_STORAGE_DRIVER=${IMAGE_STORAGE_DRIVER:-local}
+      - IMAGE_TASK_TTL_HOURS=${IMAGE_TASK_TTL_HOURS:-24}
+      - IMAGE_TASK_EXECUTION_TIMEOUT_MINUTES=${IMAGE_TASK_EXECUTION_TIMEOUT_MINUTES:-30}
+
 
       # =======================================================================
       # Database Configuration (PostgreSQL)

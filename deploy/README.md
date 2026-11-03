@@ -1,6 +1,25 @@
-# Sub2API Deployment Files
+# DoneBot API Deployment
 
-This directory contains files for deploying Sub2API on Linux servers and Apple-silicon Macs.
+This directory deploys [Zluo003/donebot-api](https://github.com/Zluo003/donebot-api) on Linux servers and Apple-silicon Macs. Release downloads and application update checks use this repository. Container images use `ghcr.io/zluo003/donebot-api`.
+
+The binary, systemd unit, existing storage paths and Compose service remain named `sub2api` for compatibility. Linux release assets are `sub2api_<version>_linux_amd64.tar.gz` and `sub2api_<version>_linux_arm64.tar.gz`, with SHA256 values in `checksums.txt`.
+
+## DoneBot Defaults
+
+The supplied Compose templates and systemd installer enable DoneBot mode and its aggregate group. Users receive installation credentials through the DoneBot flow; ordinary user API key management is hidden. Video and audio remain disabled by default.
+
+For Compose, review `.env` before starting. Set `ASSET_STORAGE_PUBLIC_BASE_URL=https://gateway.example.com` to an address upstream providers can reach and proxy `/assets/*` to the gateway before using asynchronous image generation. Local assets persist under the application data volume. An empty public URL allows the gateway to start, while asynchronous image result storage remains unavailable. Use a stable `JWT_SECRET` to preserve signed asset links across restarts.
+
+Set `DONEBOT_FEATURES_VIDEO=true` to enable [Seedance video tasks](../docs/donebot/Seedance-接入说明.md). Add the NewToken account from the dedicated video account panel and configure existing channel token pricing and group model permissions.
+
+Binary installations can override the service defaults in `/etc/sub2api/environment` (plain `KEY=value`, without `export`):
+
+```ini
+ASSET_STORAGE_PUBLIC_BASE_URL=https://gateway.example.com
+DONEBOT_FEATURES_VIDEO=true
+```
+
+After editing this file, run `sudo systemctl restart sub2api`. Existing installations that keep an older unit must update it or explicitly set `DONEBOT_ENABLED=true`, `IMAGE_STORAGE_ENABLED=true`, and both `IMAGE_STORAGE_DRIVER=local` and `ASSET_STORAGE_DRIVER=local` in their service environment. For S3/R2/OSS, mount a configured `config.yaml` and also set `ASSET_STORAGE_DRIVER=s3` and `IMAGE_STORAGE_DRIVER=s3` in Compose's `.env` or the binary service's `/etc/sub2api/environment`: these environment values override the configuration file. See the [DoneBot deployment notes](../docs/donebot/验收记录.md).
 
 ## Deployment Methods
 
@@ -20,7 +39,7 @@ This directory contains files for deploying Sub2API on Linux servers and Apple-s
 | `apple-container.sh` | Native Apple `container` lifecycle script |
 | `APPLE_CONTAINER.md` | Apple `container` deployment and operations guide |
 | `.env.example` | Container environment variables template |
-| `DOCKER.md` | Docker Hub documentation |
+| `DOCKER.md` | GHCR image and Docker deployment documentation |
 | `install.sh` | One-click binary installation script |
 | `install-datamanagementd.sh` | datamanagementd 一键安装脚本 |
 | `sub2api.service` | Systemd service unit file |
@@ -56,10 +75,10 @@ Use the automated preparation script for the easiest setup:
 
 ```bash
 # Download and run the preparation script
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-deploy.sh | bash
+curl -sSL https://raw.githubusercontent.com/Zluo003/donebot-api/main/deploy/docker-deploy.sh | bash
 
 # Or download first, then run
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-deploy.sh -o docker-deploy.sh
+curl -sSL https://raw.githubusercontent.com/Zluo003/donebot-api/main/deploy/docker-deploy.sh -o docker-deploy.sh
 chmod +x docker-deploy.sh
 ./docker-deploy.sh
 ```
@@ -92,8 +111,8 @@ If you prefer manual control:
 
 ```bash
 # Clone repository
-git clone https://github.com/Wei-Shaw/sub2api.git
-cd sub2api/deploy
+git clone https://github.com/Zluo003/donebot-api.git
+cd donebot-api/deploy
 
 # Configure environment
 cp .env.example .env
@@ -398,12 +417,12 @@ For production servers using systemd.
 ### One-Line Installation
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Zluo003/donebot-api/main/deploy/install.sh | sudo bash
 ```
 
 ### Manual Installation
 
-1. Download the latest release from [GitHub Releases](https://github.com/Wei-Shaw/sub2api/releases)
+1. Download the latest release from [GitHub Releases](https://github.com/Zluo003/donebot-api/releases)
 2. Extract and copy the binary to `/opt/sub2api/`
 3. Copy `sub2api.service` to `/etc/systemd/system/`
 4. Run:
@@ -506,7 +525,9 @@ If you need to use AI Studio OAuth for Gemini accounts, add the OAuth client cre
 
 #### Application Configuration
 
-The main config file is at `/etc/sub2api/config.yaml` (created by Setup Wizard).
+For a fresh binary installation using the supplied systemd unit, the Setup Wizard writes `/opt/sub2api/config.yaml` and `/opt/sub2api/.installed`, because the service working directory is `/opt/sub2api`. Container deployments write their configuration beneath `DATA_DIR` in the persistent volume.
+
+`/etc/sub2api/config.yaml` remains a supported manual configuration location. To select it explicitly, set `CONFIG_FILE=/etc/sub2api/config.yaml` in `/etc/sub2api/environment`; keep that file owned and readable by the service user. The optional environment file overrides the defaults in the unit.
 
 ### Prerequisites
 
@@ -521,10 +542,12 @@ The main config file is at `/etc/sub2api/config.yaml` (created by Setup Wizard).
 /opt/sub2api/
 ├── sub2api              # Main binary
 ├── sub2api.backup       # Backup (after upgrade)
+├── config.yaml          # Written by the Setup Wizard
+├── .installed           # Setup completion marker
 └── data/                # Runtime data
 
 /etc/sub2api/
-└── config.yaml          # Configuration file
+└── environment          # Optional operator environment overrides
 ```
 
 ---
@@ -584,7 +607,7 @@ sudo systemctl status sub2api
 sudo journalctl -u sub2api -n 50
 
 # Check config file
-sudo cat /etc/sub2api/config.yaml
+sudo cat /opt/sub2api/config.yaml
 
 # Check PostgreSQL
 sudo systemctl status postgresql

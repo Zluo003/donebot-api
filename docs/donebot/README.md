@@ -1,22 +1,30 @@
-# DoneBot 网关（独立项目）
+# DoneBot 网关文档
 
-本目录只描述 **DoneBot 专用网关**：以干净的 sub2api 为基线，改造成 DoneBot 客户端使用的模型网关。
+本目录描述 [Zluo003/donebot-api](https://github.com/Zluo003/donebot-api) 的网关实现、配置和验收，只涉及本仓库。网关与客户端通过 HTTP 契约交互。
 
-## 和 DoneBot 客户端文档的关系
+## 安装与部署
 
-| 项目 | 仓库 | 文档 |
-|---|---|---|
-| DoneBot 客户端二开 | `~/Dev/DoneBot` | `~/Dev/DoneBot 开发文档/01-开发指导/` |
-| **DoneBot 网关（本项目）** | `~/Dev/donebot-api` | 本目录 |
+- [项目说明](../../README_CN.md)：能力、Linux 安装、Docker 和源码构建。
+- [部署说明](../../deploy/README.md)：运行配置、数据库、Redis、升级和备份。
+- [Linux Releases](https://github.com/Zluo003/donebot-api/releases)：`amd64` / `arm64` 二进制及校验和。
+- [完整配置示例](../../deploy/config.example.yaml)。
 
-两份文档互不引用、互不合并。DoneBot 客户端文档里的 `02-统一网关接入方案.md` 已冻结，不再作为本项目的输入；本项目也不要求客户端按那份文档改。
+Linux 安装脚本：
 
-两边唯一的耦合是第 6 节的 HTTP 契约：客户端按契约调用，网关按契约返回。任何一侧改契约，必须先改契约再改实现。
+```bash
+curl -fsSL https://raw.githubusercontent.com/Zluo003/donebot-api/main/deploy/install.sh | sudo bash
+```
 
-## 文档
+服务名和二进制名保留 `sub2api` 以兼容部署脚本，仓库、下载和更新来源均为 `Zluo003/donebot-api`。
 
-- [`DoneBot-网关改造方案.md`](./DoneBot-网关改造方案.md)：基线盘点、目标架构、改造点、数据模型、接口契约、阶段验收、Codex 执行提示。
+## 架构与验收
 
-## 一句话范围
+- [DoneBot 网关改造方案](DoneBot-网关改造方案.md)：最初的分阶段施工方案与接口契约；视频范围以之后的 Seedance 接入说明为准。
+- [P2–P5 验收记录](验收记录.md)：安装凭据、资产存储、异步图片、部署约束和测试证据。
+- [Seedance 接入说明](Seedance-接入说明.md)：六种视频模式、NewToken 账号配置、官方分辨率、素材引用、token 计费和验收。
 
-LLM 走官方原生接口、按 token 计量；图片同步 + 异步；上传缓存支持本地 / S3 / R2 / OSS；一个 DoneBot 聚合分组；管理页只做 LLM 和图片两页。视频、音频、报价单都不在范围内。
+## 当前范围
+
+LLM 使用原生接口，按 token 计费；图片支持同步/异步及按张/尺寸计价；上传资产支持本地或 S3 兼容存储；用户凭据按安装领取，复用现有 API Key 鉴权与余额链路，不提供普通 Key 管理。
+
+DoneBot 聚合分组及管理页已实现。Seedance 视频通过账号管理中的专用面板配置，需开启 `DONEBOT_FEATURES_VIDEO=true`；独立音频生成尚未新增。不引入报价单、预授权单或另一套账本。

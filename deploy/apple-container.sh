@@ -414,7 +414,7 @@ validate_env_file_security() {
 prepare_environment() {
     validate_env_file_security
 
-    APP_IMAGE="$(read_env_value APPLE_CONTAINER_SUB2API_IMAGE weishaw/sub2api:latest)"
+    APP_IMAGE="$(read_env_value APPLE_CONTAINER_SUB2API_IMAGE ghcr.io/zluo003/donebot-api:latest)"
     POSTGRES_IMAGE="$(read_env_value APPLE_CONTAINER_POSTGRES_IMAGE postgres:18-alpine)"
     REDIS_IMAGE="$(read_env_value APPLE_CONTAINER_REDIS_IMAGE redis:8-alpine)"
     BIND_HOST="$(read_env_value BIND_HOST 0.0.0.0)"
@@ -473,6 +473,9 @@ prepare_app_environment() {
         die "Dependency network addresses or application image ID are not available."
 
     cp "${ENV_FILE}" "${APP_ENV_FILE}"
+    local asset_path
+    asset_path="$(read_env_value ASSET_STORAGE_LOCAL_PATH)"
+    asset_path="${asset_path:-/app/storage/data/assets}"
     cat >>"${APP_ENV_FILE}" <<EOF
 
 AUTO_SETUP=true
@@ -488,6 +491,7 @@ REDIS_HOST=${REDIS_ADDRESS}
 REDIS_PORT=6379
 REDIS_PASSWORD=${REDIS_PASSWORD}
 DATA_DIR=/app/storage/data
+ASSET_STORAGE_LOCAL_PATH=${asset_path}
 APPLE_CONTAINER_SUB2API_IMAGE_ID=${APP_IMAGE_ID}
 EOF
     chmod 600 "${APP_ENV_FILE}"

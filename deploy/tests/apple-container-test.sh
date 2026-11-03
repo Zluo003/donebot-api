@@ -58,6 +58,8 @@ grep -q '^runtime_binary="$runtime_dir/sub2api"$' "${STATE_DIR}/create-arguments
     fail "app container does not run its updatable binary from persistent storage"
 grep -q '^APPLE_CONTAINER_SUB2API_IMAGE_ID=fake-image-id$' "${STATE_DIR}/env-files/sub2api-apple" || \
     fail "app container did not receive the inspected base image ID"
+grep -q '^ASSET_STORAGE_LOCAL_PATH=/app/storage/data/assets$' "${STATE_DIR}/env-files/sub2api-apple" || \
+    fail "DoneBot local assets must use the persistent application volume"
 [[ ! -s "${STATE_DIR}/network-subnets/sub2api-apple" ]] || \
     fail "up passed a subnet when APPLE_CONTAINER_NETWORK_SUBNET was unset"
 "${SCRIPT}" status >/dev/null

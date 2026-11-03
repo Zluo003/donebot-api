@@ -1,6 +1,6 @@
 [Unit]
-Description=Sub2API - AI API Gateway Platform
-Documentation=https://github.com/Wei-Shaw/sub2api
+Description=DoneBot API Gateway
+Documentation=https://github.com/Zluo003/donebot-api
 After=network.target postgresql.service redis.service
 Wants=postgresql.service redis.service
 
@@ -28,6 +28,16 @@ ReadWritePaths=/opt/sub2api
 Environment=GIN_MODE=release
 Environment=SERVER_HOST=0.0.0.0
 Environment=SERVER_PORT=8080
+Environment=DONEBOT_ENABLED=true
+Environment=DONEBOT_GROUP_NAME=DoneBot
+Environment=DONEBOT_AUTO_CREATE_GROUP=true
+Environment=DONEBOT_FEATURES_VIDEO=false
+Environment=DONEBOT_FEATURES_AUDIO=false
+Environment=ASSET_STORAGE_DRIVER=local
+Environment=IMAGE_STORAGE_DRIVER=local
+Environment=IMAGE_STORAGE_ENABLED=true
+# Optional operator overrides (e.g. public assets URL or video feature).
+EnvironmentFile=-/etc/sub2api/environment
 
 [Install]
 WantedBy=multi-user.target

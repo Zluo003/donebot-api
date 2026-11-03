@@ -5,7 +5,7 @@ set -euo pipefail
 # 用法：
 #   sudo ./install-datamanagementd.sh --binary /path/to/datamanagementd
 # 或：
-#   sudo ./install-datamanagementd.sh --source /path/to/sub2api/repo
+#   sudo ./install-datamanagementd.sh --source /path/to/donebot-api
 
 BIN_PATH=""
 SOURCE_PATH=""
@@ -20,12 +20,12 @@ function print_help() {
 
 参数:
   --binary  指定已构建的 datamanagementd 二进制路径
-  --source  指定 sub2api 仓库路径（脚本会执行 go build）
+  --source  指定 donebot-api 仓库路径（脚本会执行 go build）
   -h, --help 显示帮助
 
 示例:
   sudo ./install-datamanagementd.sh --binary ./datamanagement/datamanagementd
-  sudo ./install-datamanagementd.sh --source /opt/sub2api-src
+  sudo ./install-datamanagementd.sh --source /opt/donebot-api-src
 EOF
 }
 

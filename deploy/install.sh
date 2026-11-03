@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Sub2API Installation Script
-# Sub2API 安装脚本
-# Usage: curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | bash
+# DoneBot API Installation Script (sub2api binary/service compatibility)
+# DoneBot API 安装脚本
+# Usage: curl -sSL https://raw.githubusercontent.com/Zluo003/donebot-api/main/deploy/install.sh | bash
 #
 
 set -e
@@ -31,7 +31,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
-GITHUB_REPO="Wei-Shaw/sub2api"
+GITHUB_REPO="Zluo003/donebot-api"
 INSTALL_DIR="/opt/sub2api"
 SERVICE_NAME="sub2api"
 SERVICE_USER="sub2api"
@@ -63,7 +63,7 @@ declare -A MSG_ZH=(
     ["enter_choice"]="请输入选择 (默认: 1)"
 
     # Installation
-    ["install_title"]="Sub2API 安装脚本"
+    ["install_title"]="DoneBot API 安装脚本"
     ["run_as_root"]="请使用 root 权限运行 (使用 sudo)"
     ["detected_platform"]="检测到平台"
     ["unsupported_arch"]="不支持的架构"
@@ -188,7 +188,7 @@ declare -A MSG_EN=(
     ["enter_choice"]="Enter your choice (default: 1)"
 
     # Installation
-    ["install_title"]="Sub2API Installation Script"
+    ["install_title"]="DoneBot API Installation Script"
     ["run_as_root"]="Please run as root (use sudo)"
     ["detected_platform"]="Detected platform"
     ["unsupported_arch"]="Unsupported architecture"
@@ -717,8 +717,8 @@ install_service() {
     # Create service file with configured host and port
     cat > /etc/systemd/system/sub2api.service << EOF
 [Unit]
-Description=Sub2API - AI API Gateway Platform
-Documentation=https://github.com/Wei-Shaw/sub2api
+Description=DoneBot API Gateway
+Documentation=https://github.com/Zluo003/donebot-api
 After=network.target postgresql.service redis.service
 Wants=postgresql.service redis.service
 
@@ -745,6 +745,16 @@ ReadWritePaths=/opt/sub2api
 Environment=GIN_MODE=release
 Environment=SERVER_HOST=${SERVER_HOST}
 Environment=SERVER_PORT=${SERVER_PORT}
+Environment=DONEBOT_ENABLED=true
+Environment=DONEBOT_GROUP_NAME=DoneBot
+Environment=DONEBOT_AUTO_CREATE_GROUP=true
+Environment=DONEBOT_FEATURES_VIDEO=false
+Environment=DONEBOT_FEATURES_AUDIO=false
+Environment=ASSET_STORAGE_DRIVER=local
+Environment=IMAGE_STORAGE_DRIVER=local
+Environment=IMAGE_STORAGE_ENABLED=true
+# Optional operator overrides (e.g. public assets URL or video feature).
+EnvironmentFile=-/etc/sub2api/environment
 
 [Install]
 WantedBy=multi-user.target

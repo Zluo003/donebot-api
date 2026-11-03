@@ -1,90 +1,43 @@
-# Sub2API Docker Image
+# DoneBot API Container Image
 
-Sub2API is an AI API Gateway Platform for distributing and managing AI product subscription API quotas.
+The image for this repository is `ghcr.io/zluo003/donebot-api`. It supports `linux/amd64` and `linux/arm64`. Existing container paths, executable names and Compose service names remain `sub2api` for compatibility.
 
-## Quick Start
+## Deploy with Compose
 
 ```bash
-docker run -d \
-  --name sub2api \
-  -p 8080:8080 \
-  -e DATABASE_URL="postgres://user:pass@host:5432/sub2api" \
-  -e REDIS_URL="redis://host:6379" \
-  weishaw/sub2api:latest
+mkdir -p donebot-api-deploy && cd donebot-api-deploy
+curl -fsSL https://raw.githubusercontent.com/Zluo003/donebot-api/main/deploy/docker-deploy.sh -o docker-deploy.sh
+bash docker-deploy.sh
+# Review secrets and set ASSET_STORAGE_PUBLIC_BASE_URL before using async images.
+nano .env
+docker compose up -d
+docker compose logs -f sub2api
 ```
 
-## Docker Compose
+The preparation script downloads this repository's Compose and environment templates and generates local credentials. The templates enable DoneBot mode, PostgreSQL and Redis persistence, and local asset storage. Configure an upstream-reachable public gateway URL and proxy `/assets/*` before using asynchronous images. Set `DONEBOT_FEATURES_VIDEO=true` for Seedance; audio remains disabled by default.
 
-```yaml
-version: '3.8'
+For an external PostgreSQL/Redis deployment, use `docker-compose.standalone.yml` and supply `DATABASE_HOST`, `DATABASE_PASSWORD` and `REDIS_HOST`. The complete environment reference and operations guide are in [deploy/README.md](README.md).
 
-services:
-  sub2api:
-    image: weishaw/sub2api:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/sub2api?sslmode=disable
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - db
-      - redis
+## Images and Upgrades
 
-  db:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=sub2api
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis_data:/data
-
-volumes:
-  postgres_data:
-  redis_data:
+```bash
+docker pull ghcr.io/zluo003/donebot-api:latest
+# Pin a published version for repeatable deployments:
+docker pull ghcr.io/zluo003/donebot-api:0.3.0
 ```
 
-## Startup and Database Recovery
+Use a published version tag or digest when repeatability is required. Preserve the application, PostgreSQL and Redis volumes when recreating containers. PostgreSQL readiness checks and the application's bounded database startup retries handle transient recovery; invalid credentials and migration errors still require correction.
 
-Sub2API runs database migrations while starting. PostgreSQL may still be
-recovering briefly after a host or Docker daemon restart. The application
-retries transient PostgreSQL startup and connection errors with bounded
-exponential backoff, then continues startup when the database is ready.
-Permanent errors such as invalid credentials, migration checksum mismatches,
-SQL errors, and incompatible data fail immediately.
+## Build from This Checkout
 
-The Compose deployment also checks PostgreSQL readiness with both `pg_isready`
-and a simple SQL query. `depends_on: condition: service_healthy` helps order a
-fresh Compose start, but application-level retries are still required when
-Docker restores existing containers after a host restart.
-
-## Environment Variables
-
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Yes | - |
-| `REDIS_URL` | Redis connection string | Yes | - |
-| `PORT` | Server port | No | `8080` |
-| `GIN_MODE` | Gin framework mode (`debug`/`release`) | No | `release` |
-
-## Supported Architectures
-
-- `linux/amd64`
-- `linux/arm64`
-
-## Tags
-
-- `latest` - Latest stable release
-- `x.y.z` - Specific version
-- `x.y` - Latest patch of minor version
-- `x` - Latest minor of major version
+```bash
+git clone https://github.com/Zluo003/donebot-api.git
+cd donebot-api
+docker build -t ghcr.io/zluo003/donebot-api:local .
+```
 
 ## Links
 
-- [GitHub Repository](https://github.com/weishaw/sub2api)
-- [Documentation](https://github.com/weishaw/sub2api#readme)
+- [Repository](https://github.com/Zluo003/donebot-api)
+- [Releases](https://github.com/Zluo003/donebot-api/releases)
+- [Deployment guide](https://github.com/Zluo003/donebot-api/blob/main/deploy/README.md)

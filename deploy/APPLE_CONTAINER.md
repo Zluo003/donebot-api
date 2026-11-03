@@ -1,6 +1,6 @@
 # Apple container Deployment
 
-Sub2API can run as a native three-service stack with Apple's `container` CLI. This workflow runs the published Sub2API, PostgreSQL, and Redis OCI images without Docker Desktop or a Docker-compatible daemon.
+DoneBot API can run as a native three-service stack with Apple's `container` CLI. This workflow runs `ghcr.io/zluo003/donebot-api`, PostgreSQL, and Redis OCI images without Docker Desktop or a Docker-compatible daemon. Existing resource and executable names remain `sub2api` for compatibility.
 
 ## Support Level
 
@@ -25,8 +25,8 @@ container --version
 ## Quick Start
 
 ```bash
-git clone https://github.com/Wei-Shaw/sub2api.git
-cd sub2api/deploy
+git clone https://github.com/Zluo003/donebot-api.git
+cd donebot-api/deploy
 
 # Creates .env with random PostgreSQL, JWT, and TOTP secrets.
 ./apple-container.sh init
@@ -100,7 +100,7 @@ export SUB2API_ENV_FILE=/absolute/path/to/sub2api.env
 Apple-specific image overrides are available:
 
 ```dotenv
-APPLE_CONTAINER_SUB2API_IMAGE=weishaw/sub2api:latest
+APPLE_CONTAINER_SUB2API_IMAGE=ghcr.io/zluo003/donebot-api:latest
 APPLE_CONTAINER_POSTGRES_IMAGE=postgres:18-alpine
 APPLE_CONTAINER_REDIS_IMAGE=redis:8-alpine
 ```
@@ -147,6 +147,8 @@ The script creates only resources carrying the `org.sub2api.stack=apple-containe
 | Volumes | `sub2api-apple-data`, `sub2api-apple-postgres-data`, `sub2api-apple-redis-data` |
 
 The PostgreSQL volume is mounted at `/var/lib/postgresql`, retaining PostgreSQL 18's default child data directory. Sub2API data and its updatable runtime binary use separate child directories in `sub2api-apple-data`; Redis also stores data below its Apple volume mount point. This is required because Apple named volumes do not have Docker's copy-up and mount-point ownership behavior.
+
+DoneBot local assets default to `/app/storage/data/assets` in the persistent application volume. Leave `ASSET_STORAGE_LOCAL_PATH` empty to use that default. Set `ASSET_STORAGE_PUBLIC_BASE_URL` to an upstream-reachable gateway URL before using asynchronous images; the empty value leaves asynchronous result storage unavailable without blocking startup.
 
 ## Networking
 
@@ -199,7 +201,7 @@ To restore these backups into an existing stack, first ensure the image versions
 
 # Remove only the app container so a helper can mount its named volume.
 container delete sub2api-apple
-SUB2API_IMAGE=weishaw/sub2api:latest # Match APPLE_CONTAINER_SUB2API_IMAGE in .env.
+SUB2API_IMAGE=ghcr.io/zluo003/donebot-api:latest # Match APPLE_CONTAINER_SUB2API_IMAGE in .env.
 container run --rm --name sub2api-apple-data-restore \
   --entrypoint /bin/sh \
   --volume sub2api-apple-data:/restore \

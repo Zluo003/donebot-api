@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -29,16 +30,70 @@ func (s *updateServiceCacheStub) SetUpdateInfo(_ context.Context, data string, _
 
 type updateServiceGitHubClientStub struct {
 	release        *GitHubRelease
+	latestErr      error
 	recentReleases []*GitHubRelease
 	recentErr      error
+	latestRepo     string
+	recentRepo     string
 }
 
-func (s *updateServiceGitHubClientStub) FetchLatestRelease(context.Context, string) (*GitHubRelease, error) {
-	return s.release, nil
+func (s *updateServiceGitHubClientStub) FetchLatestRelease(_ context.Context, repo string) (*GitHubRelease, error) {
+	s.latestRepo = repo
+	return s.release, s.latestErr
 }
 
-func (s *updateServiceGitHubClientStub) FetchRecentReleases(context.Context, string, int) ([]*GitHubRelease, error) {
+func (s *updateServiceGitHubClientStub) FetchRecentReleases(_ context.Context, repo string, _ int) ([]*GitHubRelease, error) {
+	s.recentRepo = repo
 	return s.recentReleases, s.recentErr
+}
+
+func TestDoneBotUpdateAndRollbackUseOwnRepository(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		release:        &GitHubRelease{TagName: "v1.0.1", HTMLURL: "https://github.com/Zluo003/donebot-api/releases/tag/v1.0.1"},
+		recentReleases: []*GitHubRelease{{TagName: "v0.9.0"}},
+	}
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "1.0.0", "release")
+	info, err := svc.CheckUpdate(context.Background(), true)
+	require.NoError(t, err)
+	require.True(t, info.HasUpdate)
+	require.Equal(t, "Zluo003/donebot-api", client.latestRepo)
+	_, err = svc.ListRollbackVersions(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "Zluo003/donebot-api", client.recentRepo)
+}
+
+func TestDoneBotUpdateRejectsCacheFromAnotherRepository(t *testing.T) {
+	for _, source := range []string{"", "Wei-Shaw/sub2api"} {
+		t.Run(source, func(t *testing.T) {
+			cached, err := json.Marshal(map[string]any{"repository": source, "latest": "99.0.0", "timestamp": time.Now().Unix()})
+			require.NoError(t, err)
+			cache := &updateServiceCacheStub{data: string(cached)}
+			client := &updateServiceGitHubClientStub{release: &GitHubRelease{TagName: "v1.0.1"}}
+			svc := NewUpdateService(cache, client, "1.0.0", "release")
+			info, err := svc.CheckUpdate(context.Background(), false)
+			require.NoError(t, err)
+			require.Equal(t, "1.0.1", info.LatestVersion)
+			require.False(t, info.Cached)
+			require.Equal(t, "Zluo003/donebot-api", client.latestRepo)
+			client.latestRepo = ""
+			info, err = svc.CheckUpdate(context.Background(), false)
+			require.NoError(t, err)
+			require.True(t, info.Cached, "cache saved for this repository should remain usable")
+			require.Empty(t, client.latestRepo)
+		})
+	}
+}
+
+func TestDoneBotUpdateDoesNotFallBackToUpstreamCacheOnError(t *testing.T) {
+	cached, err := json.Marshal(map[string]any{"latest": "99.0.0", "timestamp": time.Now().Unix()})
+	require.NoError(t, err)
+	svc := NewUpdateService(&updateServiceCacheStub{data: string(cached)},
+		&updateServiceGitHubClientStub{latestErr: errors.New("GitHub unavailable")}, "1.0.0", "release")
+	info, err := svc.CheckUpdate(context.Background(), true)
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", info.LatestVersion)
+	require.False(t, info.HasUpdate)
+	require.False(t, info.Cached)
 }
 
 func (s *updateServiceGitHubClientStub) DownloadFile(context.Context, string, string, int64) error {
