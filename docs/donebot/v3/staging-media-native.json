@@ -239,5 +239,168 @@
     "status": 204,
     "request_id": "af687d53-792a-4a60-bf72-7d68d5ad15d3",
     "installation_id": "47d5abf8-c08d-49e5-8c2e-8ad350bdd66c"
+  },
+  {
+    "kind": "responses-tool-native-keychain",
+    "at": "2026-11-03T21:28:42.526Z",
+    "status": 200,
+    "request_id": "154d45b8-7cc8-42c6-9300-54d3cdcbc00b, fcb62a9b-d7e9-4b94-b418-57302b59a4e6",
+    "receipt_id": "6c78a565-cfae-42e9-9574-193ff8aad733",
+    "tool_calls": [
+      {
+        "type": "function_call",
+        "name": "acceptance_probe"
+      }
+    ],
+    "receipt": {
+      "receipt_id": "6c78a565-cfae-42e9-9574-193ff8aad733",
+      "request_id": "client:6c78a565-cfae-42e9-9574-193ff8aad733",
+      "installation_id": "50dbdfab-2180-41f0-996f-ad9af37040e0",
+      "status": "completed",
+      "model": "gpt-6.1-terra",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.158585,
+      "requested_reasoning": "low",
+      "effective_reasoning": "low"
+    },
+    "revoked": true,
+    "installation_key_on_disk": false,
+    "records": [
+      {
+        "path": "/api/v1/auth/login",
+        "status": 200,
+        "request_id": "0c7e55ac-ae0e-49cc-bb7b-e61138c91d28",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/donebot/installations/claim",
+        "status": 200,
+        "request_id": "a54d5339-1009-45da-8789-050f1aa686d2",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/donebot/models",
+        "status": 200,
+        "request_id": "6b387352-c7f9-40c9-9bb5-07e105a28677",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/donebot/account",
+        "status": 200,
+        "request_id": "46c338f1-7bc1-4a63-a110-a45d89b7c03b",
+        "receipt_id": null
+      },
+      {
+        "path": "/v1/models",
+        "status": 200,
+        "request_id": "cf19265b-29bc-4e71-b65b-2ead3c669b1b",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/donebot/receipts/6c78a565-cfae-42e9-9574-193ff8aad733",
+        "status": 200,
+        "request_id": "660015aa-ba67-4606-9ae3-0cb4af11451c",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/donebot/installations/50dbdfab-2180-41f0-996f-ad9af37040e0",
+        "status": 204,
+        "request_id": "738f8e14-7651-4483-aa44-e6a3d860b938",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/auth/logout",
+        "status": 200,
+        "request_id": "668641a5-4150-41d8-bf6e-d10eca4ac3f2",
+        "receipt_id": null
+      }
+    ]
+  },
+  {
+    "kind": "official-codex-native-staging",
+    "at": "2026-11-03T21:30:32.917Z",
+    "catalog_tool_calling": true,
+    "turn_ok": true,
+    "event_types": [
+      "turn.started",
+      "session.started",
+      "content.delta",
+      "item.completed",
+      "thread.token-usage.updated",
+      "turn.completed"
+    ],
+    "native_requests": [
+      {
+        "path": "/v1/responses",
+        "status": 200,
+        "request_id_header": "fccf271d-434d-4e87-a39c-fd8fb7f98707",
+        "receipt_id": "f607c6b0-cf0a-4121-8829-a883163d1d29"
+      }
+    ],
+    "receipt": {
+      "receipt_id": "f607c6b0-cf0a-4121-8829-a883163d1d29",
+      "request_id": "client:f607c6b0-cf0a-4121-8829-a883163d1d29",
+      "installation_id": "1901d38e-679b-4b8e-aa54-7a48d2559654",
+      "status": "completed",
+      "model": "gpt-6.1-terra",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.203952,
+      "requested_reasoning": "low",
+      "effective_reasoning": "low"
+    },
+    "revoked": true,
+    "installation_key_on_disk": false,
+    "records": [
+      {
+        "path": "/api/v1/auth/login",
+        "status": 200,
+        "request_id": "819bc5ad-9568-4e27-9692-316d86d4b4f5",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/donebot/installations/claim",
+        "status": 200,
+        "request_id": "778539cc-ed59-4ea4-bcf2-7f8b2aceca58",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/donebot/models",
+        "status": 200,
+        "request_id": "c944007b-e707-43e5-b7fe-c6b500d4f061",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/donebot/account",
+        "status": 200,
+        "request_id": "6271feca-6e1c-400b-bdb2-92278d9b197e",
+        "receipt_id": null
+      },
+      {
+        "path": "/v1/models",
+        "status": 200,
+        "request_id": "7b088761-7b4c-459e-b68c-c0e4b0c2a8f6",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/donebot/receipts/f607c6b0-cf0a-4121-8829-a883163d1d29",
+        "status": 200,
+        "request_id": "0682979c-4459-49c0-9db0-514e109ec155",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/donebot/installations/1901d38e-679b-4b8e-aa54-7a48d2559654",
+        "status": 204,
+        "request_id": "f8452704-a546-452e-9834-4d94ccf3a51e",
+        "receipt_id": null
+      },
+      {
+        "path": "/api/v1/auth/logout",
+        "status": 200,
+        "request_id": "50676b99-d6c0-4ea4-ad62-97a6b933e35e",
+        "receipt_id": null
+      }
+    ]
   }
 ]
