@@ -4,7 +4,7 @@
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('dashboard.quickActions') }}</h2>
     </div>
     <div class="space-y-3 p-4">
-      <button @click="router.push('/keys')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
+      <button v-if="shouldShowAPIKeyManagement(appStore.cachedPublicSettings)" @click="router.push('/keys')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
         <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary-100 transition-transform group-hover:scale-105 dark:bg-primary-900/30">
           <Icon name="key" size="lg" class="text-primary-600 dark:text-primary-400" />
         </div>
@@ -73,8 +73,11 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { useAppStore } from '@/stores/app'
+import { shouldShowAPIKeyManagement } from '@/utils/donebot'
 const router = useRouter()
 const { t } = useI18n()
+const appStore = useAppStore()
 const { canUseBatchImage, refreshBatchImageAccess } = useBatchImageAccess()
 
 onMounted(() => {

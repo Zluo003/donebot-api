@@ -312,6 +312,21 @@ func TestSettingService_GetPublicSettings_PaymentBalanceDisabledStrictTrue(t *te
 	}
 }
 
+func TestSettingService_ExposesDoneBotEnabledToFrontend(t *testing.T) {
+	cfg := &config.Config{DoneBot: config.DoneBotConfig{Enabled: true}}
+	svc := NewSettingService(&settingPublicRepoStub{values: map[string]string{}}, cfg)
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.DoneBotEnabled)
+
+	raw, err := svc.GetPublicSettingsForInjection(context.Background())
+	require.NoError(t, err)
+	payload, ok := raw.(*PublicSettingsInjectionPayload)
+	require.True(t, ok)
+	require.True(t, payload.DoneBotEnabled)
+}
+
 func TestSettingService_GetPublicSettings_MCPEnabledFollowsExplicitPublicURL(t *testing.T) {
 	for _, tc := range []struct {
 		publicURL, frontendURL string

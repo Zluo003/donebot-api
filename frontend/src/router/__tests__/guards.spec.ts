@@ -55,6 +55,7 @@ interface MockAuthState {
   backendModeEnabled: boolean
   hasPendingAuthSession: boolean
   setupNeedsSetup?: boolean
+  doneBotEnabled?: boolean
 }
 
 /**
@@ -111,6 +112,10 @@ function simulateGuard(
 
   // 需要管理员但不是管理员
   if (requiresAdmin && !authState.isAdmin) {
+    return '/dashboard'
+  }
+
+  if (toPath === '/keys' && authState.doneBotEnabled) {
     return '/dashboard'
   }
 
@@ -331,6 +336,18 @@ describe('路由守卫逻辑', () => {
       }
       const redirect = simulateGuard('/keys', {}, authState)
       expect(redirect).toBeNull()
+    })
+
+    it('DoneBot 模式下直接访问 /keys 重定向到 /dashboard', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: true,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: false,
+        hasPendingAuthSession: false,
+        doneBotEnabled: true,
+      }
+      expect(simulateGuard('/keys', {}, authState)).toBe('/dashboard')
     })
   })
 

@@ -160,7 +160,7 @@
                   {{ t('nav.profile') }}
                 </router-link>
 
-                <router-link to="/keys" @click="closeDropdown" class="dropdown-item">
+                <router-link v-if="shouldShowAPIKeyManagement(appStore.cachedPublicSettings)" to="/keys" @click="closeDropdown" class="dropdown-item">
                   <Icon name="key" size="sm" />
                   {{ t('nav.apiKeys') }}
                 </router-link>
@@ -265,6 +265,7 @@ import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveRouteMetaKeys } from '@/router/title'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
+import { shouldShowAPIKeyManagement } from '@/utils/donebot'
 
 const router = useRouter()
 const route = useRoute()

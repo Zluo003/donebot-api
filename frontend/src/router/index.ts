@@ -913,6 +913,20 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
+  if (to.path === '/keys') {
+    if (!appStore.publicSettingsLoaded) {
+      try {
+        await appStore.fetchPublicSettings()
+      } catch (error) {
+        console.warn('Failed to load public settings before API key route', error)
+      }
+    }
+    if (appStore.cachedPublicSettings?.donebot_enabled === true) {
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
+    }
+  }
+
   if (requiresAdmin && authStore.isAdmin) {
     const adminComplianceStore = useAdminComplianceStore()
     if (!adminComplianceStore.initialized) {
