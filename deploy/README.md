@@ -100,7 +100,7 @@ chmod +x docker-deploy.sh
 **What the script does:**
 - Downloads `docker-compose.local.yml` and `.env.example`
 - Automatically generates secure secrets (JWT_SECRET, TOTP_ENCRYPTION_KEY, POSTGRES_PASSWORD)
-- Creates `.env` file with generated secrets
+- Creates `.env` file with generated secrets and `COMPOSE_FILE=docker-compose.local.yml`
 - Creates necessary data directories (data/, postgres_data/, redis_data/)
 - **Displays generated credentials** (POSTGRES_PASSWORD, JWT_SECRET, etc.)
 
@@ -160,6 +160,14 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 | **docker-compose.yml** | Named volumes (/var/lib/docker/volumes/) | ⚠️ Requires docker commands | Simple setup, don't need migration |
 
 **Recommendation:** Use `docker-compose.local.yml` (deployed by `docker-deploy.sh`) for easier data management and migration.
+
+The deployment script writes `COMPOSE_FILE=docker-compose.local.yml` into `.env`,
+so plain commands such as `docker compose up -d` use local directories. When
+using the named-volume file, always add `-f docker-compose.yml`. If you have an
+older deployment whose data lives in `./data`, `./postgres_data` and
+`./redis_data`, add that same `COMPOSE_FILE` line to `.env` before running
+`docker compose` after upgrading. Otherwise Compose would select the
+named-volume file and start with an empty database.
 
 ### How Auto-Setup Works
 
@@ -259,27 +267,28 @@ docker compose -f docker-compose.local.yml down
 rm -rf data/ postgres_data/ redis_data/
 ```
 
-For **named volumes version** (docker-compose.yml):
+For **named volumes version** (`docker-compose.yml`), always pass `-f` because
+the generated `.env` sets `COMPOSE_FILE=docker-compose.local.yml`:
 
 ```bash
 # Start services
-docker compose up -d
+docker compose -f docker-compose.yml up -d
 
 # Stop services
-docker compose down
+docker compose -f docker-compose.yml down
 
 # View logs
-docker compose logs -f sub2api
+docker compose -f docker-compose.yml logs -f sub2api
 
 # Restart Sub2API only
-docker compose restart sub2api
+docker compose -f docker-compose.yml restart sub2api
 
 # Update to latest version
-docker compose pull
-docker compose up -d
+docker compose -f docker-compose.yml pull
+docker compose -f docker-compose.yml up -d
 
 # Remove all data (caution!)
-docker compose down -v
+docker compose -f docker-compose.yml down -v
 ```
 
 ### Environment Variables
@@ -596,19 +605,19 @@ For **named volumes version**:
 
 ```bash
 # Check container status
-docker compose ps
+docker compose -f docker-compose.yml ps
 
 # View detailed logs
-docker compose logs --tail=100 sub2api
+docker compose -f docker-compose.yml logs --tail=100 sub2api
 
 # Check database connection
-docker compose exec postgres pg_isready
+docker compose -f docker-compose.yml exec postgres pg_isready
 
 # Check Redis connection
-docker compose exec redis redis-cli ping
+docker compose -f docker-compose.yml exec redis redis-cli ping
 
 # Restart all services
-docker compose restart
+docker compose -f docker-compose.yml restart
 ```
 
 ### Binary Install
