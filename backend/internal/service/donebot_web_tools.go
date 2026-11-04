@@ -246,7 +246,7 @@ func (s *DoneBotWebToolsService) Execute(ctx context.Context, userID int64, acti
 		}
 		return nil, infraerrors.New(http.StatusBadGateway, "donebot_web_upstream_unavailable", "Web tools provider request failed")
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if ctx.Err() != nil {
 		return nil, infraerrors.New(http.StatusBadGateway, "DONEBOT_WEB_TOOLS_CANCELLED", "Web tools request was cancelled")
 	}
@@ -308,7 +308,11 @@ func doneBotWebToolResponse(action string, data []byte) ([]byte, bool, error) {
 			}
 			item[field] = value
 		}
-		parsed, err := url.Parse(item["url"].(string))
+		resultURL, ok := item["url"].(string)
+		if !ok {
+			return nil, false, fmt.Errorf("invalid result URL")
+		}
+		parsed, err := url.Parse(resultURL)
 		if err != nil || parsed.Hostname() == "" || parsed.User != nil || parsed.Scheme != "http" && parsed.Scheme != "https" {
 			return nil, false, fmt.Errorf("invalid result URL")
 		}
