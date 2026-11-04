@@ -1,4 +1,12 @@
 export default {
+    donebot: {
+      pricing: {
+        resolution: 'Resolution',
+        videoWithoutReference: 'No reference video (USD / output second)',
+        videoWithReference: 'With reference video (USD / input video second + output second)',
+        videoDescription: 'Configure Seedance rates by model, official resolution and reference video presence. Without reference video, only actual output duration is billed. With reference video, total input video duration + actual output duration is billed. Durations of multiple input videos are summed; input and output use the same reference-video rate. Image and audio references do not add input video duration.'
+      }
+    },
     // Dashboard
     dashboard: {
       title: 'Admin Dashboard',

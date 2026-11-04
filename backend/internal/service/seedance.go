@@ -105,6 +105,7 @@ func parseSeedanceRequest(body []byte, resolveSpec func(string) string) (GrokMed
 			if kind == "video_url" {
 				videos++
 				info.HasReferenceVideo = true
+				info.InputVideoURLs = append(info.InputVideoURLs, material.String())
 				if item.Get("role").String() != "reference_video" {
 					return info, fmt.Errorf("video role must be reference_video")
 				}

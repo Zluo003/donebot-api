@@ -1,6 +1,8 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { config, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createI18n } from 'vue-i18n'
+import zh from '@/i18n/locales/zh/admin/overview'
 import AudioModelsPanel from '../AudioModelsPanel.vue'
 import donebot from '@/api/admin/donebot'
 import type { ModelsResult } from '@/api/admin/donebot'
@@ -11,10 +13,13 @@ const fixture: ModelsResult = {
     { model: 'gpt-4o-mini-tts', platform: 'openai', enabled: true, available: true, kind: 'audio', effective_input_price: null, effective_output_price: null, effective_per_request_price: 15, effective_tier_prices: { tts: 15 } }
   ], rate_multiplier: 1.5, image_price_1k: null, image_price_2k: null, image_price_4k: null, image_rate_multiplier: 1, image_rate_independent: false, image_count_billing: false
 }
+const originalPlugins = config.global.plugins
 beforeEach(() => {
   vi.clearAllMocks(); setActivePinia(createPinia())
+  config.global.plugins = [createI18n({ legacy: false, locale: 'zh', messages: { zh: { admin: zh } } })]
   for (const fn of [donebot.getModels, donebot.models, donebot.pricing, donebot.saveConfiguration, donebot.sync]) vi.mocked(fn).mockResolvedValue(structuredClone(fixture))
 })
+afterEach(() => { config.global.plugins = originalPlugins })
 describe('Audio model management', () => {
   it('displays server prices with the correct Suno and TTS units and saves switches', async () => {
     const wrapper = mount(AudioModelsPanel); await flushPromises()

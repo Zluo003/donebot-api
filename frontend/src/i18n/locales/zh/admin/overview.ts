@@ -1,4 +1,12 @@
 export default {
+    donebot: {
+      pricing: {
+        resolution: '分辨率',
+        videoWithoutReference: '无参考视频（USD / 输出秒）',
+        videoWithReference: '有参考视频（USD / 输入视频秒 + 输出秒）',
+        videoDescription: 'Seedance 按模型、官方分辨率及是否含参考视频分别配置秒价。无参考视频仅按实际输出时长计费；有参考视频按全部输入视频总时长 + 实际输出时长计费。多个输入视频的时长相加，输入与输出均使用同一有参考视频秒价。图片与音频参考不计入输入视频时长。'
+      }
+    },
     // Dashboard
     dashboard: {
       title: '管理控制台',

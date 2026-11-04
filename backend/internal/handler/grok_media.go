@@ -184,7 +184,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	}
 
 	// 余额模式在途预留（与计费同口径估算；计费任务扣减余额缓存后才释放）。
-	var inflightDone func()
+	inflightDone := func() {}
 	var inflightErr error
 	seedanceReservationTransferred := false
 	if endpoint == service.SeedanceEndpointCreate {
@@ -192,26 +192,8 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			h.errorResponse(c, 503, "api_error", "Seedance background settlement is unavailable")
 			return
 		}
-		amount, priced := h.gatewayService.SeedanceInflightCost(c.Request.Context(), apiKey, routingModel, requestInfo)
-		if !priced {
-			h.errorResponse(c, 503, "api_error", "Seedance model has no configured price for this resolution and reference-video tier")
-			return
-		}
-		inflightDone = func() {}
-		if h.cfg == nil || h.cfg.RunMode != config.RunModeSimple {
-			var reservation *service.InflightReservation
-			reservation, inflightErr = h.billingCacheService.ReserveFixedCharge(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, amount)
-			subscriptionMode := apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && subscription != nil
-			if inflightErr == nil && amount > 0 && reservation == nil && !subscriptionMode {
-				h.errorResponse(c, 503, "api_error", "Seedance balance reservation is unavailable")
-				return
-			}
-			if reservation != nil {
-				reservation.KeepAlive()
-				c.Request = c.Request.WithContext(service.WithInflightReservation(c.Request.Context(), reservation))
-				inflightDone = func() { reservation.HandlerDone() }
-			}
-		}
+		// Reference assets belong to the selected upstream account. Measure
+		// them before reserving input+output cost and before creating a task.
 	} else {
 		inflightDone, inflightErr = reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, grokMediaInflightEstimate(endpoint, routingModel, requestInfo, body))
 	}
@@ -251,6 +233,8 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	// 范围内：显式豁免，防止 service 层防御性装门按文本 D 误过滤媒体请求，
 	// 也防止已计费的在途视频任务因绑定账号被门排除而查询返回伪 404。
 	requestCtx := service.WithAssetOwnerKeyID(service.WithOpenAIProfitControlSuppressed(c.Request.Context()), apiKey.ID)
+	seedanceBaseContext := requestCtx
+	seedanceInputDurations := make(map[int64]float64)
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
@@ -392,6 +376,57 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", parseErr.Error())
 				return
 			}
+			if requestInfo.HasReferenceVideo {
+				inputSeconds, measured := seedanceInputDurations[account.ID]
+				if !measured {
+					resolveDuration := h.seedanceReferenceDurationResolver
+					if resolveDuration == nil {
+						resolveDuration = h.gatewayService.ResolveSeedanceReferenceVideoDuration
+					}
+					inputSeconds, err = resolveDuration(requestCtx, account, &requestInfo)
+					if err != nil {
+						reqLog.Warn("seedance.reference_duration_unavailable", zap.Int64("account_id", account.ID), zap.Error(err))
+						h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Reference video duration could not be verified")
+						return
+					}
+					seedanceInputDurations[account.ID] = inputSeconds
+				}
+				requestInfo.ReferenceVideoDurationSeconds = inputSeconds
+			}
+			// Account failover can resolve a different provider asset. Replace any
+			// previous reservation using this account's verified input duration.
+			inflightDone()
+			inflightDone = func() {}
+			requestCtx = seedanceBaseContext
+			c.Request = c.Request.WithContext(requestCtx)
+			amount, priced := h.gatewayService.SeedanceInflightCost(c.Request.Context(), apiKey, routingModel, requestInfo)
+			if !priced {
+				h.errorResponse(c, 503, "api_error", "Seedance model has no configured price for this resolution and reference-video tier")
+				return
+			}
+			if h.cfg == nil || h.cfg.RunMode != config.RunModeSimple {
+				var reservation *service.InflightReservation
+				reservation, inflightErr = h.billingCacheService.ReserveFixedCharge(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, amount)
+				subscriptionMode := apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && subscription != nil
+				if inflightErr == nil && amount > 0 && reservation == nil && !subscriptionMode {
+					h.errorResponse(c, 503, "api_error", "Seedance balance reservation is unavailable")
+					return
+				}
+				if reservation != nil {
+					reservation.KeepAlive()
+					c.Request = c.Request.WithContext(service.WithInflightReservation(c.Request.Context(), reservation))
+					inflightDone = func() { reservation.HandlerDone() }
+				}
+			}
+			if inflightErr != nil {
+				status, code, message, retryAfter := billingErrorDetailsForRequest(c, inflightErr)
+				if retryAfter > 0 {
+					c.Header("Retry-After", strconv.Itoa(retryAfter))
+				}
+				h.errorResponse(c, status, code, message)
+				return
+			}
+			requestCtx = c.Request.Context()
 		}
 		if endpoint.IsGenerationRequest() && !endpoint.IsSeedance() {
 			eligible, eligibilityReason, eligibilityErr := h.ensureGrokMediaAccountEligibility(requestCtx, account)
@@ -539,6 +574,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 
 		if endpoint == service.SeedanceEndpointCreate {
+			result.VideoInputDurationSeconds = requestInfo.ReferenceVideoDurationSeconds
 			result.BillingModel = h.gatewayService.SeedanceBillingModel(requestCtx, apiKey, result.BillingModel)
 		}
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account, grokMediaScheduleModel(account, routingModel, result), true, nil)
@@ -555,13 +591,14 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			// model/duration/resolution so status can still price if upstream omits them.
 			// Retry once: missing pending causes silent underpricing (status omits resolution).
 			pending := service.GrokVideoPendingBilling{
-				Model:                requestModel,
-				BillingModel:         firstNonEmptyString(result.BillingModel, requestModel),
-				UpstreamModel:        result.UpstreamModel,
-				VideoResolution:      result.VideoResolution,
-				VideoReference:       result.VideoReference,
-				VideoDurationSeconds: result.VideoDurationSeconds,
-				OriginalModel:        clientRequestedModel(c, requestModel),
+				Model:                     requestModel,
+				BillingModel:              firstNonEmptyString(result.BillingModel, requestModel),
+				UpstreamModel:             result.UpstreamModel,
+				VideoResolution:           result.VideoResolution,
+				VideoReference:            result.VideoReference,
+				VideoDurationSeconds:      result.VideoDurationSeconds,
+				VideoInputDurationSeconds: result.VideoInputDurationSeconds,
+				OriginalModel:             clientRequestedModel(c, requestModel),
 				// Wall-clock start for usage duration_ms: create accepted → first done discovery.
 				CreatedAt: videoCreateStartedAt,
 			}

@@ -35,20 +35,21 @@ import (
 
 // OpenAIGatewayHandler handles OpenAI API gateway requests
 type OpenAIGatewayHandler struct {
-	compositeResolver          *service.CompositeRouteResolver
-	gatewayService             *service.OpenAIGatewayService
-	billingCacheService        *service.BillingCacheService
-	apiKeyService              *service.APIKeyService
-	usageRecordWorkerPool      *service.UsageRecordWorkerPool
-	errorPassthroughService    *service.ErrorPassthroughService
-	contentModerationService   *service.ContentModerationService
-	securityAuditCoordinator   *securityaudit.Coordinator
-	grokMediaEligibilityProber grokMediaEligibilityProber
-	opsService                 *service.OpsService
-	concurrencyHelper          *ConcurrencyHelper
-	imageLimiter               *imageConcurrencyLimiter
-	maxAccountSwitches         int
-	cfg                        *config.Config
+	compositeResolver                 *service.CompositeRouteResolver
+	gatewayService                    *service.OpenAIGatewayService
+	billingCacheService               *service.BillingCacheService
+	apiKeyService                     *service.APIKeyService
+	usageRecordWorkerPool             *service.UsageRecordWorkerPool
+	errorPassthroughService           *service.ErrorPassthroughService
+	contentModerationService          *service.ContentModerationService
+	securityAuditCoordinator          *securityaudit.Coordinator
+	grokMediaEligibilityProber        grokMediaEligibilityProber
+	seedanceReferenceDurationResolver func(context.Context, *service.Account, *service.GrokMediaRequestInfo) (float64, error)
+	opsService                        *service.OpsService
+	concurrencyHelper                 *ConcurrencyHelper
+	imageLimiter                      *imageConcurrencyLimiter
+	maxAccountSwitches                int
+	cfg                               *config.Config
 }
 
 type openAIWSTurnChannelMappingSnapshot struct {

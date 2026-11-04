@@ -308,7 +308,6 @@ func estimateDoneBotMediaModel(model *DoneBotCatalogModel, parameters map[string
 		if resolution == "" {
 			resolution = "720p"
 		}
-		reference := false
 		content, exists := parameters["content"].([]any)
 		if !exists {
 			return nil
@@ -319,10 +318,13 @@ func estimateDoneBotMediaModel(model *DoneBotCatalogModel, parameters map[string
 				return nil
 			}
 			if part["type"] == "video_url" {
-				reference = true
+				// Catalog estimation has no selected account or trusted material
+				// metadata. Never understate input+output billing by treating the
+				// unknown reference duration as zero or trusting client fields.
+				return nil
 			}
 		}
-		tariff = valueAt(model.Pricing.Tiers, SeedancePricingTier(resolution, reference))
+		tariff = valueAt(model.Pricing.Tiers, SeedancePricingTier(resolution, false))
 		units = decimal.NewFromInt(int64(seconds))
 	default:
 		return nil

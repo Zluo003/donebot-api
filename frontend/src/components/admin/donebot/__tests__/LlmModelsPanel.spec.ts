@@ -1,6 +1,8 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { createI18n } from 'vue-i18n'
+import zh from '@/i18n/locales/zh/admin/overview'
 import LlmModelsPanel from '../LlmModelsPanel.vue'
 import donebot from '@/api/admin/donebot'
 vi.mock('@/api/admin/donebot', () => ({ default: { getModels: vi.fn(), models: vi.fn(), pricing: vi.fn(), saveConfiguration: vi.fn(), sync: vi.fn() } }))
@@ -8,7 +10,7 @@ const fixture = { models: [{ model: 'gpt-test', platform: 'openai', enabled: tru
 describe('LLM model panel', () => {
  it('saves a disabled model and defaults its independent multiplier to one', async () => {
   setActivePinia(createPinia());vi.mocked(donebot.getModels).mockResolvedValue(structuredClone(fixture));vi.mocked(donebot.saveConfiguration).mockResolvedValue(structuredClone(fixture))
-  const wrapper=mount(LlmModelsPanel);await flushPromises()
+  const wrapper=mount(LlmModelsPanel, { global: { plugins: [createI18n({ legacy: false, locale: 'zh', messages: { zh: { admin: zh } } })] } });await flushPromises()
   expect(wrapper.get<HTMLInputElement>('[data-testid=price-gpt-test-rate_multiplier]').element.value).toBe('1')
   await wrapper.get('input[type=checkbox]').setValue(false)
   await wrapper.get('[data-test=save-configuration]').trigger('click');await flushPromises()

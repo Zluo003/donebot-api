@@ -16,7 +16,7 @@
         <template v-if="drafts[index]">
           <div v-if="kind === 'video'" class="overflow-x-auto">
             <table class="w-full min-w-[420px] text-left text-sm">
-              <thead><tr><th class="py-2">分辨率</th><th class="px-2 py-2">无参考视频（USD / 秒）</th><th class="px-2 py-2">有参考视频（USD / 秒）</th></tr></thead>
+              <thead><tr><th class="py-2">{{ t('admin.donebot.pricing.resolution') }}</th><th class="px-2 py-2">{{ t('admin.donebot.pricing.videoWithoutReference') }}</th><th class="px-2 py-2">{{ t('admin.donebot.pricing.videoWithReference') }}</th></tr></thead>
               <tbody>
                 <tr v-for="resolution in videoResolutions(drafts[index])" :key="resolution">
                   <td class="py-2 font-medium">{{ resolution === '4k' ? '4K' : resolution }}</td>
@@ -44,10 +44,12 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { DoneBotModel, Modality } from '@/api/admin/donebot'
 import { useDoneBotModels } from './useDoneBotModels'
 import { createModelPriceDraft, draftToSalePricing, validPriceDraft, type ModelPriceDraft } from './modelSalePricing'
 const props = defineProps<{ kind: Modality }>()
+const { t } = useI18n()
 const { state, busy, error, sync, saveConfiguration } = useDoneBotModels(props.kind)
 const drafts = ref<ModelPriceDraft[]>([])
 const savedDrafts = new Map<string, string>()
@@ -64,12 +66,12 @@ watch(state, value => {
   for (const [model, snapshot] of nextSaved) savedDrafts.set(model, snapshot)
 })
 const validPrices = computed(() => drafts.value.every(validPriceDraft))
-const descriptions: Record<Modality, string> = {
+const descriptions = computed<Record<Modality, string>>(() => ({
   llm: 'LLM 按渠道价格 × 每模型倍率计费。',
   images: '图片按模型与尺寸逐张计费（USD / 张）。Seedream 1.5K 与 1K 使用相同价格。',
   audio: 'Suno 按版本配置每次生成价格，Max 模式为 2 倍；TTS 按百万字符配置价格。',
-  video: '视频按实际输出时长计费（USD / 秒），按模型、官方分辨率及是否使用参考视频分别配置。'
-}
+  video: t('admin.donebot.pricing.videoDescription')
+}))
 const emptyMessages: Record<Modality, string> = {
   llm: '暂无模型。请为 DoneBot 分组绑定账号，在账号中启用模型，再同步模型。',
   images: '暂无图片模型。请在账号管理添加并启用图片账号，绑定 DoneBot 分组并开启对应图片模型，再同步模型。',

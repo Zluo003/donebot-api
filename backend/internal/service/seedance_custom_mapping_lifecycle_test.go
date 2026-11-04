@@ -40,9 +40,11 @@ func TestSeedanceCustomMappingsKeepPublicTariffAcrossDurableSettlement(t *testin
 			body := []byte(`{"model":"studio-motion","resolution":"1080p","duration":8,"content":[{"type":"text","text":"a tracking shot"},{"type":"video_url","video_url":{"url":"asset://source-clip"},"role":"reference_video"}]}`)
 			info, err := ParseSeedanceRequest(body)
 			require.NoError(t, err)
+			// This total was resolved from trusted input metadata before admission.
+			info.ReferenceVideoDurationSeconds = 4.75
 			estimated, priced := svc.SeedanceInflightCost(ctx, key, downstream, info)
 			require.True(t, priced)
-			require.InDelta(t, 8*.2*1.5, estimated, 1e-12)
+			require.InDelta(t, (4.75+8)*.2*1.5, estimated, 1e-12)
 
 			createUpstream := &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(`{"id":"custom-task","status":"queued"}`)}
 			svc.httpUpstream = createUpstream
@@ -56,10 +58,12 @@ func TestSeedanceCustomMappingsKeepPublicTariffAcrossDurableSettlement(t *testin
 			require.Equal(t, downstream, created.Model)
 			require.Equal(t, upstream, created.UpstreamModel)
 			created.BillingModel = svc.SeedanceBillingModel(ctx, key, created.BillingModel)
+			created.VideoInputDurationSeconds = info.ReferenceVideoDurationSeconds
 			require.Equal(t, public, created.BillingModel)
 			pending := &GrokVideoPendingBilling{Model: created.Model, BillingModel: created.BillingModel, UpstreamModel: created.UpstreamModel,
 				OriginalModel: public, VideoResolution: created.VideoResolution, VideoReference: created.VideoReference,
 				VideoDurationSeconds: created.VideoDurationSeconds, CreatedAt: GrokVideoPendingCreatedAtNow(),
+				VideoInputDurationSeconds: created.VideoInputDurationSeconds,
 			}
 			job := APIMartSettlementJob{Provider: "seedance", TaskID: "custom-task", UserID: 1, APIKeyID: 2, GroupID: gid, AccountID: account.ID, VideoPending: pending}
 			encoded, err := json.Marshal(job)
@@ -81,6 +85,7 @@ func TestSeedanceCustomMappingsKeepPublicTariffAcrossDurableSettlement(t *testin
 			require.Equal(t, upstream, merged.UpstreamModel)
 			require.Equal(t, "1080p", merged.VideoResolution, "status can omit resolution; pending keeps the billed tier")
 			require.True(t, merged.VideoReference)
+			require.InDelta(t, 4.75, merged.VideoInputDurationSeconds, 1e-12)
 
 			// A new worker has only durable metadata, with no original composite
 			// request context. Polling model names cannot change the public tariff.
@@ -96,7 +101,7 @@ func TestSeedanceCustomMappingsKeepPublicTariffAcrossDurableSettlement(t *testin
 			require.Equal(t, upstream, *usage.lastLog.UpstreamModel)
 			require.NotNil(t, usage.lastLog.BillingMode)
 			require.Equal(t, string(BillingModeVideo), *usage.lastLog.BillingMode)
-			require.InDelta(t, 6.25*.2*1.5, usage.lastLog.ActualCost, 1e-12)
+			require.InDelta(t, (4.75+6.25)*.2*1.5, usage.lastLog.ActualCost, 1e-12)
 			require.Equal(t, 999, usage.lastLog.OutputTokens, "native token usage is reported but does not price this video")
 			money.found = true
 			key.Group.ModelPricing = nil

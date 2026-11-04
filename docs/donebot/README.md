@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/Zluo003/donebot-api/main/deploy/ins
 
 - [DoneBot 网关改造方案](DoneBot-网关改造方案.md)：最初的分阶段施工方案与接口契约；视频、音频范围以之后的 Seedance、APIMart 接入说明为准。
 - [P2–P5 验收记录](验收记录.md)：安装凭据、资产存储、异步图片、部署约束和测试证据。
-- [Seedance 接入说明](Seedance-接入说明.md)：六种视频模式、NewToken 账号配置、官方分辨率、素材引用、按实际输出秒数计费和验收。
+- [Seedance 接入说明](Seedance-接入说明.md)：六种视频模式、NewToken 账号配置、官方分辨率、素材引用、按输入/输出视频秒数计费和验收。
 - [APIMart 接入说明](APIMart-接入说明.md)：Seedream Flash、Suno 歌曲/音乐、TTS、账号配置、计费与后台升级。
 
 - [存储管理说明](存储管理说明.md)：上传与生成产物两种独立策略、本地/S3、容量及到期清理。
@@ -31,4 +31,4 @@ curl -fsSL https://raw.githubusercontent.com/Zluo003/donebot-api/main/deploy/ins
 
 LLM 使用原生接口，按 token 计费；图片支持同步/异步及按张/尺寸计价；上传资产支持本地或 S3 兼容存储；用户凭据按安装领取，复用现有 API Key 鉴权与余额链路，不提供普通 Key 管理。
 
-DoneBot 聚合分组及管理页已实现，目录来自绑定账号实际开启的模型。LLM 按渠道价格 × 每模型倍率计费，媒体按模型配置售价，复用现有分组价格链路；开关与定价一次保存。视频按实际输出秒数计费，Suno 按生成次数、TTS 按 Unicode 字符计费。音频和视频标签始终显示，可在开启实际调用前配置。Seedance 视频通过账号管理中的专用面板配置，需开启 `DONEBOT_FEATURES_VIDEO=true`；APIMart 图片与音频已有专用账号面板，Suno / TTS 需开启 `DONEBOT_FEATURES_AUDIO=true`。不引入报价单、预授权单或另一套账本。
+DoneBot 聚合分组及管理页已实现，目录来自绑定账号实际开启的模型。LLM 按渠道价格 × 每模型倍率计费，媒体按模型配置售价，复用现有分组价格链路；开关与定价一次保存。Seedance 无参考视频按实际输出秒数计费，有参考视频按全部输入视频总秒数 + 实际输出秒数计费；Suno 按生成次数、TTS 按 Unicode 字符计费。音频和视频标签始终显示，可在开启实际调用前配置。Seedance 视频通过账号管理中的专用面板配置，需开启 `DONEBOT_FEATURES_VIDEO=true`；APIMart 图片与音频已有专用账号面板，Suno / TTS 需开启 `DONEBOT_FEATURES_AUDIO=true`。不引入报价单、预授权单或另一套账本。

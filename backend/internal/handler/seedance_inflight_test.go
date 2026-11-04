@@ -21,9 +21,11 @@ func TestSeedanceInflightMatchesSecondsAndReferenceTariff(t *testing.T) {
 	require.True(t, priced)
 	require.InDelta(t, 3, cost, 1e-12)
 	info.HasReferenceVideo = true
+	info.ReferenceVideoDurationSeconds = 2.5 + 3.75
+	info.InputVideoURLs = []string{"asset://clip-a", "https://example.com/clip-b.mp4"}
 	cost, priced = gateway.SeedanceInflightCost(context.Background(), key, "video", info)
 	require.True(t, priced)
-	require.InDelta(t, 6, cost, 1e-12)
+	require.InDelta(t, (2.5+3.75+30)*.2, cost, 1e-12)
 	info.Resolution = "720p"
 	_, priced = gateway.SeedanceInflightCost(context.Background(), key, "video", info)
 	require.False(t, priced, "missing tiers must not fall back")

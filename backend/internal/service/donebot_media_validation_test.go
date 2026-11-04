@@ -168,7 +168,6 @@ func TestDoneBotMediaEstimateUsesCNYTariffAndNativeUnits(t *testing.T) {
 		{"music", "music", `{"version":"v6","audio_format":"mp3","custom":true,"duration":20,"max_mode":true}`, "60"},
 		{"speech", "speech", `{"input":"你好🌍","voice":"alloy","response_format":"wav"}`, "0.0036"},
 		{"video", "video", `{"content":[{"type":"text","text":"hi"}],"duration":5,"resolution":"720p","ratio":"16:9"}`, "50"},
-		{"video", "video", `{"content":[{"type":"text","text":"hi"},{"type":"video_url","role":"reference_video","video_url":{"url":"https://fixture.invalid/video.mp4"}}],"duration":5,"resolution":"720p","ratio":"16:9"}`, "125"},
 	} {
 		t.Run(test.kind+test.cents, func(t *testing.T) {
 			estimate, err := s.EstimateMedia(context.Background(), owner, test.kind, test.model, decodeDoneBotMediaTest(t, test.raw))
@@ -183,6 +182,8 @@ func TestDoneBotMediaEstimateReturnsUnknownWithoutInventingPricesOrUnits(t *test
 	s, owner, _, _ := doneBotMediaValidationFixture(t)
 	for _, test := range []struct{ kind, model, raw string }{
 		{"image", "image", `{"size":"2K","layer_decomposition":true}`},
+		{"video", "video", `{"content":[{"type":"text","text":"hi"},{"type":"video_url","role":"reference_video","video_url":{"url":"https://fixture.invalid/video.mp4"}}],"duration":5,"resolution":"720p","ratio":"16:9"}`},
+		{"video", "video", `{"content":[{"type":"text","text":"hi"},{"type":"video_url","role":"reference_video","video_url":{"url":"asset://ast-reference","duration":1}}],"reference_video_duration_seconds":1,"duration":5,"resolution":"720p","ratio":"16:9"}`},
 		{"video", "video", `{"content":[{"type":"text","text":"hi"}],"duration":-1,"resolution":"720p","ratio":"adaptive"}`},
 		{"speech", "speech", `{"voice":"alloy","response_format":"wav"}`},
 	} {

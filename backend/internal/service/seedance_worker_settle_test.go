@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -39,14 +40,19 @@ func TestSeedanceWorkerNativeCompletionChargesActualSecondsOnceAfterRestart(t *t
 	svc.accountRepo = &openAIRecordUsageAccountRepoStub{account: account}
 	response := `{"id":"task","status":"succeeded","duration":30,"resolution":"1080p","content":{"video_url":"https://supplier.example/video.mp4"},"usage":{"total_tokens":999}}`
 	svc.httpUpstream = &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(response)}
-	job := APIMartSettlementJob{Provider: "seedance", TaskID: "task", UserID: 1, APIKeyID: 2, GroupID: gid, AccountID: 4, VideoPending: &GrokVideoPendingBilling{Model: "movie", BillingModel: "movie", UpstreamModel: "native", VideoResolution: "1080p", VideoReference: true, CreatedAt: GrokVideoPendingCreatedAtNow()}}
+	job := APIMartSettlementJob{Provider: "seedance", TaskID: "task", UserID: 1, APIKeyID: 2, GroupID: gid, AccountID: 4, VideoPending: &GrokVideoPendingBilling{Model: "movie", BillingModel: "movie", UpstreamModel: "native", VideoResolution: "1080p", VideoReference: true, VideoInputDurationSeconds: 2.5 + 3.75, CreatedAt: GrokVideoPendingCreatedAtNow()}}
+	encoded, err := json.Marshal(job)
+	require.NoError(t, err)
+	var restored APIMartSettlementJob
+	require.NoError(t, json.Unmarshal(encoded, &restored))
+	require.Equal(t, job.VideoPending, restored.VideoPending)
 	w := &apimartSettlementWorker{service: svc, keys: &APIKeyService{apiKeyRepo: seedanceWorkerKeyRepo{key: key}}}
-	done, err := w.settle(context.Background(), job)
+	done, err := w.settle(context.Background(), restored)
 	require.NoError(t, err)
 	require.True(t, done)
 	require.Equal(t, 1, money.calls)
 	require.Equal(t, StableGrokVideoBillingRequestID("seedance:task"), money.lastCmd.RequestID)
-	require.InDelta(t, 6.0, usage.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, (2.5+3.75+30)*.2, usage.lastLog.ActualCost, 1e-12)
 	require.Equal(t, 30, *usage.lastLog.VideoDurationSeconds)
 	// A fresh worker polls a task after the first billing transaction committed;
 	// repricing must not cause a second command or fingerprint conflict.
@@ -54,10 +60,43 @@ func TestSeedanceWorkerNativeCompletionChargesActualSecondsOnceAfterRestart(t *t
 	key.Group.ModelPricing = nil
 	svc.httpUpstream = &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(response)}
 	restarted := &apimartSettlementWorker{service: svc, keys: w.keys}
-	done, err = restarted.settle(context.Background(), job)
+	done, err = restarted.settle(context.Background(), restored)
 	require.NoError(t, err)
 	require.True(t, done)
 	require.Equal(t, 1, money.calls)
+}
+
+func TestSeedanceWorkerLegacyReferenceMissingInputNeedsReviewUnlessAlreadyCharged(t *testing.T) {
+	usage := &openAIRecordUsageLogRepoStub{inserted: true}
+	money := &seedanceWorkerMoneyRepo{openAIRecordUsageBillingRepoStub: &openAIRecordUsageBillingRepoStub{}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usage, money, &openAIRecordUsageUserRepoStub{}, nil, nil)
+	svc.resolver = NewModelPricingResolver(nil, svc.billingService)
+	price := .2
+	gid := int64(7)
+	key := &APIKey{ID: 2, UserID: 1, User: &User{ID: 1}, GroupID: &gid, Group: &Group{ID: gid, RateMultiplier: 1, ModelPricing: []ChannelModelPricing{{Models: []string{"movie"}, BillingMode: BillingModeVideo, Intervals: []PricingInterval{{TierLabel: "720p|reference", PerRequestPrice: &price}}}}}}
+	account := seedanceTestAccount()
+	account.ID = 4
+	svc.accountRepo = &openAIRecordUsageAccountRepoStub{account: account}
+	response := `{"id":"legacy","status":"succeeded","duration":6.25,"resolution":"720p","content":{"video_url":"https://supplier.example/video.mp4"}}`
+	// This is a durable pre-upgrade reference task. It has no trusted input
+	// duration, and must wait for reconciliation rather than undercharging.
+	legacy := `{"provider":"seedance","task_id":"legacy","user_id":1,"api_key_id":2,"group_id":7,"account_id":4,"video_pending":{"model":"movie","billing_model":"movie","video_resolution":"720p","video_reference":true}}`
+	var job APIMartSettlementJob
+	require.NoError(t, json.Unmarshal([]byte(legacy), &job))
+	worker := &apimartSettlementWorker{service: svc, keys: &APIKeyService{apiKeyRepo: seedanceWorkerKeyRepo{key: key}}}
+	svc.httpUpstream = &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(response)}
+	done, err := worker.settle(context.Background(), job)
+	require.ErrorContains(t, err, "input")
+	require.False(t, done)
+	require.Zero(t, money.calls, "unmetered reference jobs must not commit a partial charge")
+	// Existing durable billing remains authoritative across the upgrade.
+	money.found = true
+	svc.httpUpstream = &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(response)}
+	restarted := &apimartSettlementWorker{service: svc, keys: worker.keys}
+	done, err = restarted.settle(context.Background(), job)
+	require.NoError(t, err)
+	require.True(t, done)
+	require.Zero(t, money.calls)
 }
 
 type seedanceWorkerUnavailableQueryCache struct {

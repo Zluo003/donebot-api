@@ -1,6 +1,9 @@
-import { mount, flushPromises } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { config, mount, flushPromises } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { createI18n } from 'vue-i18n'
+import en from '@/i18n/locales/en/admin/overview'
+import zh from '@/i18n/locales/zh/admin/overview'
 import LlmModelsPanel from '../LlmModelsPanel.vue'
 import ImageModelsPanel from '../ImageModelsPanel.vue'
 import AudioModelsPanel from '../AudioModelsPanel.vue'
@@ -16,7 +19,12 @@ function row(model: string, kind: DoneBotModel['kind'], pricing: DoneBotModel['e
 function mockResult(result: ModelsResult) {
   for (const fn of [donebot.getModels, donebot.models, donebot.pricing, donebot.saveConfiguration, donebot.sync]) vi.mocked(fn).mockResolvedValue(structuredClone(result))
 }
-beforeEach(() => { vi.clearAllMocks(); setActivePinia(createPinia()) })
+const originalPlugins = config.global.plugins
+beforeEach(() => {
+  vi.clearAllMocks(); setActivePinia(createPinia())
+  config.global.plugins = [createI18n({ legacy: false, locale: 'zh', messages: { zh: { admin: zh } } })]
+})
+afterEach(() => { config.global.plugins = originalPlugins })
 describe('DoneBot individual model sale prices', () => {
   it('edits only a multiplier for each LLM and never submits token prices', async () => {
     mockResult(fixture([
@@ -77,7 +85,7 @@ describe('DoneBot individual model sale prices', () => {
       { resolution: '720p', reference_video: true, price_per_second: .1 }
     ] }), video_resolutions: ['480p', '720p'] }]))
     const wrapper = mount(VideoModelsPanel); await flushPromises()
-    expect(wrapper.text()).toContain('USD / 秒')
+    expect(wrapper.text()).toContain('USD / 输出秒')
     expect(wrapper.find('[data-testid*="1080p"]').exists()).toBe(false)
     await wrapper.get('[data-testid="price-doubao-seedance-2-0-fast-260128-video-720p-reference"]').setValue('0.12')
     await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
@@ -87,6 +95,33 @@ describe('DoneBot individual model sale prices', () => {
       { resolution: '720p', reference_video: false, price_per_second: .2 },
       { resolution: '720p', reference_video: true, price_per_second: .12 }
     ] } }] })
+  })
+  it.each([
+    {
+      locale: 'zh',
+      resolution: '分辨率',
+      outputUnit: '无参考视频（USD / 输出秒）',
+      referenceUnit: '有参考视频（USD / 输入视频秒 + 输出秒）',
+      measurement: '无参考视频仅按实际输出时长计费；有参考视频按全部输入视频总时长 + 实际输出时长计费。',
+      sharedRate: '多个输入视频的时长相加，输入与输出均使用同一有参考视频秒价。'
+    },
+    {
+      locale: 'en',
+      resolution: 'Resolution',
+      outputUnit: 'No reference video (USD / output second)',
+      referenceUnit: 'With reference video (USD / input video second + output second)',
+      measurement: 'Without reference video, only actual output duration is billed. With reference video, total input video duration + actual output duration is billed.',
+      sharedRate: 'Durations of multiple input videos are summed; input and output use the same reference-video rate.'
+    }
+  ])('explains reference video billing duration in $locale', async ({ locale, resolution, outputUnit, referenceUnit, measurement, sharedRate }) => {
+    mockResult(fixture([{ ...row('doubao-seedance-2-5-260628', 'video', {}), video_resolutions: ['720p'] }]))
+    const i18n = createI18n({ legacy: false, locale, messages: { en: { admin: en }, zh: { admin: zh } } })
+    config.global.plugins = [i18n]
+    const wrapper = mount(VideoModelsPanel); await flushPromises()
+    expect(wrapper.findAll('th').map(header => header.text())).toEqual([resolution, outputUnit, referenceUnit])
+    expect(wrapper.text()).toContain(measurement)
+    expect(wrapper.text()).toContain(sharedRate)
+    wrapper.unmount()
   })
   it('requires channel pricing before enabling an account LLM', async () => {
     mockResult(fixture([{ ...row('gpt-new', 'llm', { rate_multiplier: 1 }), enabled: false, pricing_configured: false }]))

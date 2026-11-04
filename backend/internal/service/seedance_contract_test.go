@@ -131,3 +131,14 @@ func TestSeedanceRoutingParseDefersOfficialSpecToSelectedAccount(t *testing.T) {
 	require.NoError(t, err, "a downstream name can also be an alias for a different official specification")
 	require.Equal(t, "doubao-seedance-2-0-260128", info.Model)
 }
+
+func TestSeedanceParseCollectsEveryReferenceVideoWithoutTrustingClientDuration(t *testing.T) {
+	body := []byte(`{"model":"doubao-seedance-2-5-260628","resolution":"720p","duration":8,"reference_video_duration_seconds":1,"content":[{"type":"text","text":"create"},{"type":"video_url","role":"reference_video","video_url":{"url":"asset://ast-one","duration":1}},{"type":"video_url","role":"reference_video","video_url":{"url":"https://cdn.example/two.mp4?sig=abc","duration":1}},{"type":"audio_url","role":"reference_audio","audio_url":{"url":"https://cdn.example/sound.mp3"}}]}`)
+	for _, parse := range []func([]byte) (GrokMediaRequestInfo, error){ParseSeedanceRequest, ParseSeedanceRoutingRequest} {
+		info, err := parse(body)
+		require.NoError(t, err)
+		require.True(t, info.HasReferenceVideo)
+		require.Equal(t, []string{"asset://ast-one", "https://cdn.example/two.mp4?sig=abc"}, info.InputVideoURLs)
+		require.Zero(t, info.ReferenceVideoDurationSeconds, "duration must be measured by the server, never copied from the native request")
+	}
+}

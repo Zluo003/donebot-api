@@ -54,12 +54,22 @@ func (s *OpenAIGatewayService) calculateSeedanceVideoCost(ctx context.Context, m
 	if result == nil || result.VideoActualDurationSeconds <= 0 || math.IsNaN(result.VideoActualDurationSeconds) || math.IsInf(result.VideoActualDurationSeconds, 0) {
 		return nil, fmt.Errorf("seedance actual output duration is unavailable")
 	}
+	seconds := result.VideoActualDurationSeconds
+	if result.VideoReference {
+		if result.VideoInputDurationSeconds <= 0 || math.IsNaN(result.VideoInputDurationSeconds) || math.IsInf(result.VideoInputDurationSeconds, 0) {
+			return nil, fmt.Errorf("seedance trusted input video duration is unavailable; reference task requires reconciliation")
+		}
+		seconds += result.VideoInputDurationSeconds
+		if math.IsInf(seconds, 0) {
+			return nil, fmt.Errorf("seedance total input and output video duration is invalid")
+		}
+	}
 	resolved, err := s.seedanceResolvedPrice(ctx, key, model, result.VideoResolution, result.VideoReference)
 	if err != nil {
 		return nil, err
 	}
 	gid := key.Group.ID
-	cost, err := s.billingService.CalculateCostUnified(CostInput{Ctx: ctx, Model: model, GroupID: &gid, Group: key.Group, UsageUnits: result.VideoActualDurationSeconds, RateMultiplier: multiplier, Resolver: s.resolver, Resolved: resolved})
+	cost, err := s.billingService.CalculateCostUnified(CostInput{Ctx: ctx, Model: model, GroupID: &gid, Group: key.Group, UsageUnits: seconds, RateMultiplier: multiplier, Resolver: s.resolver, Resolved: resolved})
 	if err == nil {
 		cost.BillingMode = string(BillingModeVideo)
 	}
@@ -79,7 +89,8 @@ func (s *OpenAIGatewayService) SeedanceBillingModel(ctx context.Context, key *AP
 
 // SeedanceInflightCost checks the exact model/resolution/reference tariff before
 // an upstream job is created. The estimate only reserves existing user balance;
-// settlement always uses the actual duration returned by the completed task.
+// settlement uses actual output duration plus the trusted input total for
+// reference-video requests.
 func (s *OpenAIGatewayService) SeedanceInflightCost(ctx context.Context, key *APIKey, model string, info GrokMediaRequestInfo) (float64, bool) {
 	if s == nil || key == nil || key.Group == nil {
 		return 0, false
@@ -97,7 +108,7 @@ func (s *OpenAIGatewayService) SeedanceInflightCost(ctx context.Context, key *AP
 	if key.User != nil && key.GroupID != nil {
 		rate = s.ResolveUserGroupRateMultiplier(ctx, key.User.ID, *key.GroupID, rate)
 	}
-	cost, err := s.calculateSeedanceVideoCost(ctx, model, key, &OpenAIForwardResult{VideoResolution: resolution, VideoReference: info.HasReferenceVideo, VideoActualDurationSeconds: seconds}, resolveVideoRateMultiplier(key, rate))
+	cost, err := s.calculateSeedanceVideoCost(ctx, model, key, &OpenAIForwardResult{VideoResolution: resolution, VideoReference: info.HasReferenceVideo, VideoActualDurationSeconds: seconds, VideoInputDurationSeconds: info.ReferenceVideoDurationSeconds}, resolveVideoRateMultiplier(key, rate))
 	if err != nil {
 		return 0, false
 	}
@@ -116,6 +127,7 @@ func MergeSeedanceCompletion(result *OpenAIForwardResult, pending *GrokVideoPend
 	merged.UpstreamModel = firstNonEmpty(pending.UpstreamModel, result.UpstreamModel)
 	merged.VideoCount = 1
 	merged.VideoReference = pending.VideoReference
+	merged.VideoInputDurationSeconds = pending.VideoInputDurationSeconds
 	if merged.VideoResolution == "" {
 		merged.VideoResolution = pending.VideoResolution
 	}
