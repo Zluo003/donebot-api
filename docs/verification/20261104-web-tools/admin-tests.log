@@ -1,0 +1,14 @@
+
+ RUN  v2.1.9 /Users/zluo/Dev/donebot-api/frontend
+
+ ✓ src/api/admin/__tests__/donebot.spec.ts (4 tests) 4ms
+Browserslist: browsers data (caniuse-lite) is 11 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+ ✓ src/components/admin/donebot/__tests__/WebToolsPanel.spec.ts (6 tests) 47ms
+ ✓ src/components/admin/donebot/__tests__/DoneBotView.spec.ts (4 tests) 23ms
+
+ Test Files  3 passed (3)
+      Tests  14 passed (14)
+   Start at  15:13:23
+   Duration  1.92s (transform 734ms, setup 186ms, collect 1.02s, tests 75ms, environment 1.21s, prepare 326ms)

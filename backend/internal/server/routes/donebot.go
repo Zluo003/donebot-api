@@ -22,6 +22,8 @@ func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, ste
 	if h.Admin.DoneBot != nil {
 		donebot := admin.Group("/donebot")
 		donebot.GET("/storage", h.Admin.DoneBot.Storage)
+		donebot.GET("/web-tools", h.Admin.DoneBot.WebTools)
+		donebot.PUT("/web-tools", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateWebTools)
 		donebot.PUT("/storage", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateStorage)
 		donebot.GET("/overview", h.Admin.DoneBot.Overview)
 		donebot.GET("/llm/models", h.Admin.DoneBot.LlmModels)

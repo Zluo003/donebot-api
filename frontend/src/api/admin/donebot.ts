@@ -41,7 +41,11 @@ export interface StoragePolicyInput {
 export interface StoragePolicy extends StoragePolicyInput { secret_configured?: boolean; usage_bytes?: number; file_count?: number }
 export interface StorageSettingsInput { upload: StoragePolicyInput; generated: StoragePolicyInput }
 export interface StorageSettings { upload: StoragePolicy; generated: StoragePolicy }
+export interface WebToolsSettings { enabled: boolean; key_configured: boolean }
+export interface WebToolsSettingsInput { enabled: boolean; api_key?: string; clear_api_key?: boolean }
 const donebot = {
+ async webTools() { return (await apiClient.get<WebToolsSettings>('/admin/donebot/web-tools')).data },
+ async saveWebTools(input: WebToolsSettingsInput) { return (await apiClient.put<WebToolsSettings>('/admin/donebot/web-tools', input)).data },
  async storage() { return (await apiClient.get<StorageSettings>('/admin/donebot/storage')).data },
  async saveStorage(input: StorageSettingsInput) { return (await apiClient.put<StorageSettings>('/admin/donebot/storage', input)).data },
  async overview() { return (await apiClient.get<Overview>('/admin/donebot/overview')).data },

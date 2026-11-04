@@ -1,0 +1,3 @@
+
+> sub2api-frontend@1.0.0 typecheck /Users/zluo/Dev/donebot-api/frontend
+> vue-tsc --noEmit

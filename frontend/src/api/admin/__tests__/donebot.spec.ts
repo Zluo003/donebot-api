@@ -3,6 +3,17 @@ import donebot, { type StorageSettings } from '../donebot'
 import { apiClient } from '../../client'
 vi.mock('../../client', () => ({ apiClient: { get: vi.fn(), put: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 describe('DoneBot admin API', () => {
+ it('loads public web tool status and writes replacement or clear commands separately', async () => {
+  const status = { enabled: true, key_configured: true }
+  vi.mocked(apiClient.get).mockResolvedValue({ data: status })
+  vi.mocked(apiClient.put).mockResolvedValue({ data: status })
+  expect(await donebot.webTools()).toEqual(status)
+  expect(apiClient.get).toHaveBeenCalledWith('/admin/donebot/web-tools')
+  expect(await donebot.saveWebTools({ enabled: true, api_key: 'fixture-secret' })).toEqual(status)
+  expect(apiClient.put).toHaveBeenLastCalledWith('/admin/donebot/web-tools', { enabled: true, api_key: 'fixture-secret' })
+  await donebot.saveWebTools({ enabled: false, clear_api_key: true })
+  expect(apiClient.put).toHaveBeenLastCalledWith('/admin/donebot/web-tools', { enabled: false, clear_api_key: true })
+ })
  it('loads and saves the two shared storage policies', async () => {
   const policies = { upload: { driver: 'local' }, generated: { driver: 's3' } } as StorageSettings
   vi.mocked(apiClient.get).mockResolvedValue({ data: policies })

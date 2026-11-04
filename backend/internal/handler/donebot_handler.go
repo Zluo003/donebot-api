@@ -42,12 +42,14 @@ func doneBotUserInstallation(install *service.DoneBotInstall) doneBotUserInstall
 }
 
 type DoneBotHandler struct {
-	installs doneBotClaimer
-	settings service.SettingRepository
-	cfg      *config.Config
-	catalog  doneBotCatalogReader
-	account  doneBotAccountReader
-	media    *service.DoneBotMediaService
+	installs     doneBotClaimer
+	settings     service.SettingRepository
+	cfg          *config.Config
+	catalog      doneBotCatalogReader
+	account      doneBotAccountReader
+	media        *service.DoneBotMediaService
+	webTools     doneBotWebToolsRunner
+	webToolOwner doneBotWebToolsOwner
 }
 
 func NewDoneBotHandler(installs *service.DoneBotService, settings service.SettingRepository, cfg *config.Config) *DoneBotHandler {

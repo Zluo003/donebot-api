@@ -23,10 +23,12 @@ type doneBotAccountReader interface {
 }
 
 func ProvideDoneBotUserHandler(installs *service.DoneBotService, settings service.SettingRepository, cfg *config.Config,
-	catalog *service.DoneBotCatalogService, account *service.DoneBotAccountService, media *service.DoneBotMediaService) *DoneBotHandler {
+	catalog *service.DoneBotCatalogService, account *service.DoneBotAccountService, media *service.DoneBotMediaService, webTools *service.DoneBotWebToolsService) *DoneBotHandler {
 	h := NewDoneBotHandler(installs, settings, cfg)
 	h.catalog, h.account = catalog, account
 	h.media = media
+	h.webTools = webTools
+	h.webToolOwner = installs
 	return h
 }
 

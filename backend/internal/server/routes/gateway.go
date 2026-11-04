@@ -141,6 +141,7 @@ func RegisterGatewayRoutes(
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
 	gateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot))
 	gateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
+	registerDoneBotWebToolsRoutes(gateway, h.DoneBot)
 	gateway.Use(groupModelAllowlist)
 	gateway.Use(compositeTarget)
 	gateway.Use(requireGroupAnthropic)
