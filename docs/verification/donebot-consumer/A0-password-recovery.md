@@ -71,4 +71,22 @@ sudo bash ./install.sh rollback --version v0.4.5
 以上仅记录可用命令，未对生产或测试服务器执行安装、升级、回退。不要清空数据库、Redis 或客户端凭据。
 
 
-发布状态说明：已核实 prepare、前端、amd64/arm64 构建，以及 release 中的发布、清理、Complete job 各步骤成功；正式 release 及全部安装资产均可下载。最后观察时 GitHub REST 的 release 作业汇总仍为 `in_progress`，run 汇总为 `queued`，`sync-version-file` 为 `queued`，虽然没有运行中的具体步骤；因此没有声明整个 workflow 最终绿色。main 的 VERSION 已是 0.4.6，远端 main 精确为 `caf01d5`。未因汇总状态滞后重复发布或部署。
+发布最终状态：2026-11-05 已核实发布工作流 `41875968089` 为 `completed / success`；prepare、前端、amd64/arm64 构建、release、sync-version-file 六个作业全部成功。正式 release 和全部安装资产均可下载，源码仍为 `caf01d5`，VERSION 为 0.4.6。完整最终状态见 `logs/a0-release-workflow-final.json`。未重复发布、替换不可变发布资产或部署。
+
+## A0 CI 收尾
+
+独立 CI [41879016460](https://github.com/Zluo003/donebot-api/actions/runs/41879016460) 对提交 `a3de4ed` 的最终结果为失败，仅 golangci-lint 作业失败；后端 unit/integration、前端、部署脚本及 release-helpers 作业成功。完整最终状态和原始失败输出保留在 `logs/a0-original-ci-final.json`、`logs/a0-original-ci-failure.log`。发布工作流成功不能代替这次 CI 验收。
+
+CI 报出的三项 errcheck 是测试中未检查类型断言结果，同文件七处同类断言均改为 comma-ok 并用 `require.True` 检查。另一项 staticcheck SA4006 是 OAuth 2FA 分支内读取的 user 紧接着被无条件再次读取覆盖，已删除前一次冗余读取；后续凭据版本、账号状态校验和 Token 签发路径保留。
+
+修正后的本地验收使用 Go 1.27.3 和与 CI 一致的 golangci-lint 2.14.0：
+
+```sh
+cd backend
+go test -p 1 -tags=unit ./internal/service ./internal/repository ./internal/handler ./internal/server/routes -run 'Test(PasswordRecovery|PasswordResetCodeCache|UserPasswordReset|RedactAuditBody|ConsumePasswordResetToken|EmailCache|Auth.*|Totp.*|.*PasswordReset.*|AuthRateLimit.*|Login2FA.*|.*PendingOAuth.*2FA.*|NotificationEmail.*|SMTP.*)' -count=1 -v
+golangci-lint run --timeout=30m
+```
+
+四包目标验收退出 0，169 个顶层测试 / 207 项（含子项），分别为 service 9.994s、repository 0.971s、handler 3.003s、routes 9.542s；完整 lint 退出 0，`0 issues.`。完整命令与输出见 `logs/a0-ci-fix-auth-tests.log`、`logs/a0-ci-fix-golangci-lint.log`。修正提交推送后的独立远端 CI 状态另行记录，不能以本地通过冒充远端通过。
+
+此收尾不修改验证码协议，不重发 v0.4.6，不部署网关；修正尚未进入不可变的 v0.4.6 二进制。原有安装和回滚命令继续对应已核验的 v0.4.6 / v0.4.5。

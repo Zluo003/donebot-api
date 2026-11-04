@@ -26,7 +26,8 @@ func resetCodeData(generation, code string) *service.PasswordResetCodeData {
 
 func TestPasswordResetCodeCacheResendAndGenerationFences(t *testing.T) {
 	emailCache, mr, _ := newMiniredisEmailCache(t)
-	cache := emailCache.(service.PasswordResetCodeCache)
+	cache, implementsResetCode := emailCache.(service.PasswordResetCodeCache)
+	require.True(t, implementsResetCode)
 	ctx := context.Background()
 	email := " User@Example.com "
 	first := resetCodeData("first", "938274")
@@ -79,7 +80,8 @@ func TestPasswordResetCodeCacheResendAndGenerationFences(t *testing.T) {
 
 func TestPasswordResetCodeCacheConcurrentReservationsAndConsumption(t *testing.T) {
 	emailCache, _, _ := newMiniredisEmailCache(t)
-	cache := emailCache.(service.PasswordResetCodeCache)
+	cache, implementsResetCode := emailCache.(service.PasswordResetCodeCache)
+	require.True(t, implementsResetCode)
 	ctx := context.Background()
 	email := "concurrent@example.com"
 	const callers = 30
@@ -134,7 +136,8 @@ func TestPasswordResetCodeCacheAttemptLimitAndExpiry(t *testing.T) {
 	for _, correctOnFifth := range []bool{false, true} {
 		t.Run(fmt.Sprintf("correct_on_fifth_%t", correctOnFifth), func(t *testing.T) {
 			emailCache, mr, _ := newMiniredisEmailCache(t)
-			cache := emailCache.(service.PasswordResetCodeCache)
+			cache, implementsResetCode := emailCache.(service.PasswordResetCodeCache)
+			require.True(t, implementsResetCode)
 			ctx := context.Background()
 			email := "attempts@example.com"
 			data := resetCodeData("attempts", "652918")
@@ -190,7 +193,8 @@ func TestPasswordResetCodeCacheAttemptLimitAndExpiry(t *testing.T) {
 
 func TestPasswordResetCodeCacheConcurrentWrongGuessesStopAtFive(t *testing.T) {
 	emailCache, _, _ := newMiniredisEmailCache(t)
-	cache := emailCache.(service.PasswordResetCodeCache)
+	cache, implementsResetCode := emailCache.(service.PasswordResetCodeCache)
+	require.True(t, implementsResetCode)
 	ctx := context.Background()
 	email := "guesses@example.com"
 	data := resetCodeData("guesses", "847261")
@@ -219,7 +223,8 @@ func TestPasswordResetCodeCacheConcurrentWrongGuessesStopAtFive(t *testing.T) {
 
 func TestPasswordResetCodeCacheUnconsumedCodeExpires(t *testing.T) {
 	emailCache, mr, _ := newMiniredisEmailCache(t)
-	cache := emailCache.(service.PasswordResetCodeCache)
+	cache, implementsResetCode := emailCache.(service.PasswordResetCodeCache)
+	require.True(t, implementsResetCode)
 	ctx := context.Background()
 	email := "expiry@example.com"
 	data := resetCodeData("expiry", "391826")
@@ -240,7 +245,8 @@ func TestPasswordResetCodeCacheUnconsumedCodeExpires(t *testing.T) {
 
 func TestPasswordResetCodeCacheNamespacesStayIndependent(t *testing.T) {
 	emailCache, _, _ := newMiniredisEmailCache(t)
-	cache := emailCache.(service.PasswordResetCodeCache)
+	cache, implementsResetCode := emailCache.(service.PasswordResetCodeCache)
+	require.True(t, implementsResetCode)
 	ctx := context.Background()
 	email := "purposes@example.com"
 	require.NoError(t, emailCache.SetVerificationCode(ctx, email, &service.VerificationCodeData{Code: "821739"}, time.Minute))
@@ -272,7 +278,8 @@ func TestPasswordResetCodeCacheNamespacesStayIndependent(t *testing.T) {
 
 func TestPasswordResetCodeCacheFailsClosedOnRedisAndCorruption(t *testing.T) {
 	emailCache, mr, rdb := newMiniredisEmailCache(t)
-	cache := emailCache.(service.PasswordResetCodeCache)
+	cache, implementsResetCode := emailCache.(service.PasswordResetCodeCache)
+	require.True(t, implementsResetCode)
 	ctx := context.Background()
 	email := "failure@example.com"
 	require.NoError(t, mr.Set(passwordResetCodeKey(email), "not-json"))

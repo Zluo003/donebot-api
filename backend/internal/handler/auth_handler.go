@@ -402,12 +402,6 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 		clearOAuthPendingSessionCookie(c, secureCookie)
 		clearOAuthPendingBrowserCookie(c, secureCookie)
 		h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
-
-		user, err = h.userService.GetByID(c.Request.Context(), session.UserID)
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
 	}
 
 	user, err = h.userService.GetByID(c.Request.Context(), session.UserID)

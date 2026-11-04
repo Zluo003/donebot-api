@@ -1,0 +1,303 @@
+golangci-lint	UNKNOWN STEP	﻿2026-11-04T17:37:19.6891780Z Current runner version: '2.338.2'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6908335Z ##[group]Runner Image Provisioner
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6909278Z Hosted Compute Agent
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6909721Z Version: 20261028.624
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6910161Z Commit: 54898b74c23fde5556c9b3c3a2290865feef0dfe
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6910693Z Build Date: 2026-10-28T21:51:42Z
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6911168Z Worker ID: {ab4756e9-96eb-4142-8c2c-0f3e7be3579a}
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6911699Z Region: us-west-2
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6912101Z Cloud: AWS
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6912472Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6913638Z ##[group]Operating System
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6914091Z Ubuntu
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6914451Z 24.04.5
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6914859Z LTS
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6915230Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6915616Z ##[group]Runner Image
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6916053Z Image: ubuntu-24.04
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6916474Z Version: 20261101.114.1
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6917415Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261101.114/images/ubuntu/Ubuntu2404-Readme.md
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6918499Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261101.114
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6919405Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6920213Z ##[group]GITHUB_TOKEN Permissions
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6922017Z Contents: read
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6922386Z Metadata: read
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6922962Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6924481Z Secret source: Actions
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6925138Z Cache mode: write
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.6925639Z Prepare workflow directory
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.7148867Z Prepare all required actions
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:19.7184024Z Getting action download info
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:20.1135852Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:22.5957149Z Download action repository 'actions/setup-go@v6' (SHA:924ae3a1cded613372ab5595356fb5720e22ba16)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:22.8813748Z Download action repository 'golangci/golangci-lint-action@v9' (SHA:ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3044174Z Complete job name: golangci-lint
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3733771Z ##[group]Run actions/checkout@v6
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3734842Z with:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3735578Z   repository: Zluo003/donebot-api
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3741769Z   token: ***
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3742572Z   ssh-strict: true
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3743357Z   ssh-user: git
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3744117Z   persist-credentials: true
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3744940Z   clean: true
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3745732Z   sparse-checkout-cone-mode: true
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3746636Z   fetch-depth: 1
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3747384Z   fetch-tags: false
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3748164Z   show-progress: true
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3749076Z   lfs: false
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3749827Z   submodules: false
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3750638Z   set-safe-directory: true
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3751500Z   allow-unsafe-pr-checkout: false
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:23.3752586Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:27.9771911Z Syncing repository: Zluo003/donebot-api
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:27.9773225Z ##[group]Getting Git version info
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:27.9773638Z Working directory is '/home/runner/work/donebot-api/donebot-api'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:27.9774189Z [command]/usr/bin/git version
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1452146Z git version 2.56.0
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1467709Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1479427Z Temporarily overriding HOME='/home/runner/work/_temp/eac59781-e237-4c3e-977d-b2c8765d484e' before making global git config changes
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1480101Z Adding repository directory to the temporary git global config as a safe directory
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1483481Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/donebot-api/donebot-api
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1541409Z Deleting the contents of '/home/runner/work/donebot-api/donebot-api'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1543949Z ##[group]Determining repository object format
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1544588Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1545116Z ##[group]Initializing the repository
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1548491Z [command]/usr/bin/git init /home/runner/work/donebot-api/donebot-api
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1689071Z hint: Using 'master' as the name for the initial branch. This default branch name
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1689708Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1690194Z hint: to use in all of your new repositories, which will suppress this warning,
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1690500Z hint: call:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1690682Z hint:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1690928Z hint: 	git config --global init.defaultBranch <name>
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1691178Z hint:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1691454Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1691842Z hint: 'development'. The just-created branch can be renamed via this command:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1692193Z hint:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1692384Z hint: 	git branch -m <name>
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1692594Z hint:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1692871Z hint: Disable this message with "git config set advice.defaultBranchName false"
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1712050Z Initialized empty Git repository in /home/runner/work/donebot-api/donebot-api/.git/
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1719296Z [command]/usr/bin/git remote add origin https://github.com/Zluo003/donebot-api
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1753563Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1754010Z ##[group]Disabling automatic garbage collection
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1756310Z [command]/usr/bin/git config --local gc.auto 0
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1777001Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1777387Z ##[group]Setting up auth
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1777811Z Removing SSH command configuration
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1781365Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.1808836Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4087124Z Removing HTTP extra header
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4092139Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4117815Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4261970Z Removing includeIf entries pointing to credentials config files
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4265692Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4288818Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4435353Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4462291Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/donebot-api/donebot-api/.git.path /home/runner/work/_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4484155Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/donebot-api/donebot-api/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4506016Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4529057Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4547801Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4548307Z ##[group]Fetching the repository
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:28.4553946Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +a3de4edccb3b0d3641f0f1ace3a0e0307dd94b1a:refs/remotes/origin/main
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.1928087Z From https://github.com/Zluo003/donebot-api
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.1928818Z  * [new ref]         a3de4edccb3b0d3641f0f1ace3a0e0307dd94b1a -> origin/main
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.1937757Z [command]/usr/bin/git branch --list --remote origin/main
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.1958461Z   origin/main
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.1964011Z [command]/usr/bin/git rev-parse refs/remotes/origin/main
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.1981650Z a3de4edccb3b0d3641f0f1ace3a0e0307dd94b1a
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.1983781Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.1984161Z ##[group]Determining the checkout info
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.1984990Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.1988433Z [command]/usr/bin/git sparse-checkout disable
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.2033753Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.2053784Z ##[group]Checking out the ref
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.2057315Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4587615Z Switched to a new branch 'main'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4596702Z branch 'main' set up to track 'origin/main'.
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4605603Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4649575Z [command]/usr/bin/git log -1 --format=%H
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4664608Z a3de4edccb3b0d3641f0f1ace3a0e0307dd94b1a
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4861664Z ##[group]Run actions/setup-go@v6
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4861864Z with:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4862019Z   go-version-file: backend/go.mod
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4862217Z   check-latest: false
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4862375Z   cache: true
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4862539Z   cache-dependency-path: backend/go.sum
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4864226Z   token: ***
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.4864380Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.6214369Z Setup go version spec 1.27.3
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:29.6223040Z Attempting to download 1.27.3...
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:30.4356859Z matching 1.27.3...
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:30.4376434Z Acquiring 1.27.3 from https://github.com/actions/go-versions/releases/download/1.27.3-39437817176/go-1.27.3-linux-x64.tar.gz
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:31.2109651Z Extracting Go...
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:31.2218048Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/dc884c8e-4396-4785-85d1-933b20c1dd1a -f /home/runner/work/_temp/38df5732-177b-4c17-b10b-323594a17da4
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:32.9646996Z Successfully extracted go to /home/runner/work/_temp/dc884c8e-4396-4785-85d1-933b20c1dd1a
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:32.9647580Z Adding to the cache ...
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:35.6145222Z Successfully cached go to /opt/hostedtoolcache/go/1.27.3/x64
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:35.6145849Z Added go to the path
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:35.6147375Z Successfully set up Go version 1.27.3
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:35.6299203Z [command]/opt/hostedtoolcache/go/1.27.3/x64/bin/go env GOMODCACHE
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:35.6324578Z [command]/opt/hostedtoolcache/go/1.27.3/x64/bin/go env GOCACHE
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:35.6348410Z /home/runner/go/pkg/mod
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:35.6361664Z /home/runner/.cache/go-build
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:35.8955962Z Cache hit for: setup-go-Linux-x64-ubuntu24-go-1.27.3-e071debf6ad28c7b27b95fc114b48c301b72cd0d3e2964283bf5069c3eb9562c
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:37.3351359Z Received 0 of 300481651 (0.0%), 0.0 MBs/sec
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:38.3365023Z Received 67108864 of 300481651 (22.3%), 32.0 MBs/sec
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:39.3374012Z Received 201326592 of 300481651 (67.0%), 64.0 MBs/sec
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:39.9754748Z Received 300481651 of 300481651 (100.0%), 78.7 MBs/sec
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:39.9755250Z Cache Size: ~287 MB (300481651 B)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:39.9780852Z [command]/usr/bin/tar -xf /home/runner/work/_temp/07f832ac-130e-421d-aefa-d994a62dd93f/cache.tzst -P -C /home/runner/work/donebot-api/donebot-api --use-compress-program unzstd
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.8504414Z Cache restored successfully
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.8620917Z Cache restored from key: setup-go-Linux-x64-ubuntu24-go-1.27.3-e071debf6ad28c7b27b95fc114b48c301b72cd0d3e2964283bf5069c3eb9562c
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.8645608Z go version go1.27.3 linux/amd64
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.8645828Z 
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.8646167Z ##[group]go env
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9732716Z AR='ar'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9732936Z CC='gcc'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9733346Z CGO_CFLAGS='-O2 -g'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9733657Z CGO_CPPFLAGS=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9733829Z CGO_CXXFLAGS='-O2 -g'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9734021Z CGO_ENABLED='1'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9734247Z CGO_FFLAGS='-O2 -g'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9734414Z CGO_LDFLAGS='-O2 -g'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9734582Z CXX='g++'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9734725Z GCCGO='gccgo'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9734877Z GO111MODULE=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9735037Z GOAMD64='v1'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9735180Z GOARCH='amd64'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9735325Z GOAUTH='netrc'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9735525Z GOBIN='/home/runner/go/bin'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9735731Z GOCACHE='/home/runner/.cache/go-build'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9735931Z GOCACHEPROG=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9736081Z GODEBUG=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9736238Z GOENV='/home/runner/.config/go/env'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9736424Z GOEXE=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9736575Z GOEXPERIMENT=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9736730Z GOFIPS140='off'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9736878Z GOFLAGS=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9737374Z GOGCCFLAGS='-fPIC -m64 -pthread -Wl,--no-gc-sections -fmessage-length=0 -ffile-prefix-map=/tmp/go-build187921541=/tmp/go-build -gno-record-gcc-switches'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9737855Z GOHOSTARCH='amd64'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9738116Z GOHOSTOS='linux'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9738276Z GOINSECURE=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9738429Z GOMOD='/dev/null'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9738745Z GOMODCACHE='/home/runner/go/pkg/mod'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9738953Z GONOPROXY=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9739096Z GONOSUMDB=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9739237Z GOOS='linux'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9739383Z GOPACKAGESDRIVER=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9739603Z GOPATH='/home/runner/go'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9739774Z GOPRIVATE=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9739970Z GOPROXY='https://proxy.golang.org,direct'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9740204Z GOROOT='/opt/hostedtoolcache/go/1.27.3/x64'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9740426Z GOSUMDB='sum.golang.org'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9740597Z GOTELEMETRY='local'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9740793Z GOTELEMETRYDIR='/home/runner/.config/go/telemetry'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9741015Z GOTMPDIR=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9741168Z GOTOOLCHAIN='local'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9741403Z GOTOOLDIR='/opt/hostedtoolcache/go/1.27.3/x64/pkg/tool/linux_amd64'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9741652Z GOVCS=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9741803Z GOVERSION='go1.27.3'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9741956Z GOWORK=''
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9742115Z PKG_CONFIG='pkg-config'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9742219Z 
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9742515Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9918516Z ##[group]Run go version | grep -q 'go1.27.3'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9919225Z ^[[36;1mgo version | grep -q 'go1.27.3'^[[0m
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9946573Z shell: /usr/bin/bash -e {0}
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9946799Z env:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9946951Z   GOTOOLCHAIN: local
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9947116Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0090855Z ##[group]Run golangci/golangci-lint-action@v9
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0091087Z with:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0091239Z   version: v2.14.0
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0091417Z   args: --timeout=30m
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0091590Z   working-directory: backend
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0091789Z   install-mode: binary
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0091964Z   install-only: false
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0093632Z   github-token: ***
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0093838Z   verify: true
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0093999Z   only-new-issues: false
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0094169Z   skip-cache: false
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0094339Z   skip-save-cache: false
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0094520Z   cache-invalidation-interval: 7
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0094713Z   problem-matchers: false
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0094880Z env:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0095021Z   GOTOOLCHAIN: local
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.0095189Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.1096674Z ##[group]Restore cache
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.1099331Z Checking for go.mod: backend/go.mod
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:41.3727654Z Cache hit for: golangci-lint.cache-Linux-backend-2965-721858c41fcf5c6839bc4c32e515bc28492f55f3
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.7377166Z Received 0 of 1368837 (0.0%), 0.0 MBs/sec
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.8665684Z Received 1368837 of 1368837 (100.0%), 1.2 MBs/sec
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.8666064Z Cache Size: ~1 MB (1368837 B)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.8689230Z [command]/usr/bin/tar -xf /home/runner/work/_temp/290d226d-1e93-4bbb-a8b7-d27c32213b1b/cache.tzst -P -C /home/runner/work/donebot-api/donebot-api --use-compress-program unzstd
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.9536085Z Cache restored successfully
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.9540136Z Restored cache for golangci-lint from key 'golangci-lint.cache-Linux-backend-2965-721858c41fcf5c6839bc4c32e515bc28492f55f3' in 1844ms
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.9540983Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.9541388Z ##[group]Install
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.9542083Z Finding needed golangci-lint version...
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.9544558Z Installation mode: binary
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.9545549Z Installing golangci-lint binary v2.14.0...
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:42.9546388Z Downloading binary https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-linux-amd64.tar.gz ...
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:43.2518377Z [command]/usr/bin/tar xz --overwrite --warning=no-unknown-keyword --overwrite -C /home/runner -f /home/runner/work/_temp/0826bcdb-4e79-4a84-b98a-51a214c6eba2
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:43.4875714Z Installed golangci-lint into /home/runner/golangci-lint-2.14.0-linux-amd64/golangci-lint in 533ms
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:43.4880076Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:43.4883172Z ##[group]run golangci-lint
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:43.4886900Z Running [/home/runner/golangci-lint-2.14.0-linux-amd64/golangci-lint config path] in [/home/runner/work/donebot-api/donebot-api/backend] ...
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:43.5476626Z Running [/home/runner/golangci-lint-2.14.0-linux-amd64/golangci-lint config verify] in [/home/runner/work/donebot-api/donebot-api/backend] ...
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:43.6149192Z Running [/home/runner/golangci-lint-2.14.0-linux-amd64/golangci-lint run --path-mode=abs --timeout=30m] in [/home/runner/work/donebot-api/donebot-api/backend] ...
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3156856Z ##[error]/home/runner/work/donebot-api/donebot-api/backend/internal/repository/password_reset_code_cache_test.go:29:11: Error return value is not checked (errcheck)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3164329Z 	cache := emailCache.(service.PasswordResetCodeCache)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3164732Z 	         ^
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3165929Z ##[error]/home/runner/work/donebot-api/donebot-api/backend/internal/repository/password_reset_code_cache_test.go:82:11: Error return value is not checked (errcheck)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3167283Z 	cache := emailCache.(service.PasswordResetCodeCache)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3167618Z 	         ^
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3168408Z ##[error]/home/runner/work/donebot-api/donebot-api/backend/internal/repository/password_reset_code_cache_test.go:137:13: Error return value is not checked (errcheck)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3169807Z 			cache := emailCache.(service.PasswordResetCodeCache)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3170139Z 			         ^
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3171534Z ##[error]/home/runner/work/donebot-api/donebot-api/backend/internal/handler/auth_handler.go:406:3: SA4006: this value of user is never used (staticcheck)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3172648Z 		user, err = h.userService.GetByID(c.Request.Context(), session.UserID)
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3172993Z 		^
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3173177Z 4 issues:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3173360Z * errcheck: 3
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3173591Z * staticcheck: 1
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3173714Z 
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3181833Z ##[error]issues found
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3182551Z Ran golangci-lint in 217697ms
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3182910Z ##[endgroup]
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3271468Z Post job cleanup.
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.6774909Z Cache hit occurred on the primary key golangci-lint.cache-Linux-backend-2965-721858c41fcf5c6839bc4c32e515bc28492f55f3, not saving cache.
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.6882532Z Post job cleanup.
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.7544018Z [command]/usr/bin/git version
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.7580528Z git version 2.56.0
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.7613537Z Temporarily overriding HOME='/home/runner/work/_temp/462b4e9f-f857-4ac7-a974-552cc4b7755f' before making global git config changes
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.7614729Z Adding repository directory to the temporary git global config as a safe directory
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.7617999Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/donebot-api/donebot-api
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.7647471Z Removing SSH command configuration
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.7652384Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.7682973Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.7848172Z Removing HTTP extra header
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.7853400Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.7876091Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8028018Z Removing includeIf entries pointing to credentials config files
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8033177Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8058421Z includeif.gitdir:/home/runner/work/donebot-api/donebot-api/.git.path
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8059161Z includeif.gitdir:/home/runner/work/donebot-api/donebot-api/.git/worktrees/*.path
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8059661Z includeif.gitdir:/github/workspace/.git.path
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8060068Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8067412Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/donebot-api/donebot-api/.git.path
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8083819Z /home/runner/work/_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8093523Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/donebot-api/donebot-api/.git.path /home/runner/work/_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8120895Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/donebot-api/donebot-api/.git/worktrees/*.path
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8138440Z /home/runner/work/_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8148564Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/donebot-api/donebot-api/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8178229Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8193168Z /github/runner_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8198904Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8221140Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8236691Z /github/runner_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8242640Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8264775Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8421322Z Removing credentials config '/home/runner/work/_temp/git-credentials-3a60c588-aa41-4917-a52c-5b1b0e5ee54e.config'
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.8536762Z Cleaning up orphan processes

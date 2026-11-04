@@ -1,0 +1,7 @@
+cwd: backend
+command: /tmp/donebot-release-tools-bin/golangci-lint-2.14.0-darwin-arm64/golangci-lint run --timeout=30m
+version: golangci-lint 2.14.0; Go1.27.3 darwin/arm64
+
+0 issues.
+
+exit_code: 0

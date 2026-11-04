@@ -1,0 +1,513 @@
+cwd: backend
+command: go test -p 1 -tags=unit ./internal/service ./internal/repository ./internal/handler ./internal/server/routes -run 'Test(PasswordRecovery|PasswordResetCodeCache|UserPasswordReset|RedactAuditBody|ConsumePasswordResetToken|EmailCache|Auth.*|Totp.*|.*PasswordReset.*|AuthRateLimit.*|Login2FA.*|.*PendingOAuth.*2FA.*|NotificationEmail.*|SMTP.*)' -count=1 -v
+go: go1.27.3 darwin/arm64
+
+2026/11/04 20:45:07 Timezone initialized: UTC (UTC offset: +00:00)
+=== RUN   TestAuthServiceVerifyCaptchaDispatchesAliyun
+--- PASS: TestAuthServiceVerifyCaptchaDispatchesAliyun (0.00s)
+=== RUN   TestAuthServiceVerifyCaptchaRejectsProviderConflict
+--- PASS: TestAuthServiceVerifyCaptchaRejectsProviderConflict (0.00s)
+=== RUN   TestAuthServiceVerifyCaptchaRequiredModeWithAliyun
+--- PASS: TestAuthServiceVerifyCaptchaRequiredModeWithAliyun (0.00s)
+=== RUN   TestAuthServiceVerifyActionCaptchaIfEnabledDispatchesAliyun
+--- PASS: TestAuthServiceVerifyActionCaptchaIfEnabledDispatchesAliyun (0.00s)
+=== RUN   TestAuthServiceVerifyActionCaptchaIfEnabledSkipsWhenOnlyTurnstile
+--- PASS: TestAuthServiceVerifyActionCaptchaIfEnabledSkipsWhenOnlyTurnstile (0.00s)
+=== RUN   TestRedactAuditBody_JSONRedactsSecrets
+--- PASS: TestRedactAuditBody_JSONRedactsSecrets (0.00s)
+=== RUN   TestRedactAuditBody_BareSessionKeyRedacted
+--- PASS: TestRedactAuditBody_BareSessionKeyRedacted (0.00s)
+=== RUN   TestRedactAuditBody_AuthoritativeTablesSynced
+--- PASS: TestRedactAuditBody_AuthoritativeTablesSynced (0.00s)
+=== RUN   TestRedactAuditBody_NonJSONOmitted
+--- PASS: TestRedactAuditBody_NonJSONOmitted (0.00s)
+=== RUN   TestRedactAuditBody_Empty
+--- PASS: TestRedactAuditBody_Empty (0.00s)
+=== RUN   TestRedactAuditBodyPasswordRecoveryCodes
+--- PASS: TestRedactAuditBodyPasswordRecoveryCodes (0.00s)
+=== RUN   TestAuthCacheInvalidationWorker_FirstPassSchedulesSafetyPass
+--- PASS: TestAuthCacheInvalidationWorker_FirstPassSchedulesSafetyPass (0.00s)
+=== RUN   TestAuthCacheInvalidationWorker_SecondPassCleansEvent
+--- PASS: TestAuthCacheInvalidationWorker_SecondPassCleansEvent (0.00s)
+=== RUN   TestAuthCacheInvalidationWorker_RetriesRedisAndPublishFailures
+=== RUN   TestAuthCacheInvalidationWorker_RetriesRedisAndPublishFailures/redis_down
+2026/11/04 20:45:07 WARN auth cache invalidation outbox processing failed error="redis unavailable"
+=== RUN   TestAuthCacheInvalidationWorker_RetriesRedisAndPublishFailures/publish_failure_after_delete
+2026/11/04 20:45:07 WARN auth cache invalidation outbox processing failed error="publish failed"
+--- PASS: TestAuthCacheInvalidationWorker_RetriesRedisAndPublishFailures (0.00s)
+    --- PASS: TestAuthCacheInvalidationWorker_RetriesRedisAndPublishFailures/redis_down (0.00s)
+    --- PASS: TestAuthCacheInvalidationWorker_RetriesRedisAndPublishFailures/publish_failure_after_delete (0.00s)
+=== RUN   TestAuthCacheInvalidationWorker_RedisSlowIsTimedOut
+2026/11/04 20:45:09 WARN auth cache invalidation outbox processing failed error="context deadline exceeded"
+--- PASS: TestAuthCacheInvalidationWorker_RedisSlowIsTimedOut (2.00s)
+=== RUN   TestAuthCacheInvalidationWorker_BoundedBatchAndHealth
+--- PASS: TestAuthCacheInvalidationWorker_BoundedBatchAndHealth (0.00s)
+=== RUN   TestAuthCacheInvalidationWorker_ProcessesClaimedBatchConcurrently
+--- PASS: TestAuthCacheInvalidationWorker_ProcessesClaimedBatchConcurrently (0.20s)
+=== RUN   TestAuthCacheInvalidationWorker_LifecycleIsManagedAndIdempotent
+--- PASS: TestAuthCacheInvalidationWorker_LifecycleIsManagedAndIdempotent (0.00s)
+=== RUN   TestAuthInvalidationRetryDelayIsBoundedAndJittered
+--- PASS: TestAuthInvalidationRetryDelayIsBoundedAndJittered (0.00s)
+=== RUN   TestAuthCacheInvalidationSubscriber_RetriesInitialFailureAndStops
+2026/11/04 20:45:09 WARN failed to start auth cache invalidation subscriber; retrying error="redis starting" retry_in=1s
+--- PASS: TestAuthCacheInvalidationSubscriber_RetriesInitialFailureAndStops (1.00s)
+=== RUN   TestAuthCacheInvalidationSubscriber_ReconnectsAfterRuntimeDisconnect
+2026/11/04 20:45:10 WARN failed to start auth cache invalidation subscriber; retrying error="connection dropped" retry_in=1s
+--- PASS: TestAuthCacheInvalidationSubscriber_ReconnectsAfterRuntimeDisconnect (1.00s)
+=== RUN   TestAuthPendingIdentityService_CreatePendingSessionStoresSeparatedState
+--- PASS: TestAuthPendingIdentityService_CreatePendingSessionStoresSeparatedState (0.01s)
+=== RUN   TestAuthPendingIdentityService_CompletionCodeIsBrowserBoundAndOneTime
+--- PASS: TestAuthPendingIdentityService_CompletionCodeIsBrowserBoundAndOneTime (0.01s)
+=== RUN   TestAuthPendingIdentityService_CompletionCodeExpires
+--- PASS: TestAuthPendingIdentityService_CompletionCodeExpires (0.01s)
+=== RUN   TestAuthPendingIdentityService_UpsertAdoptionDecision
+--- PASS: TestAuthPendingIdentityService_UpsertAdoptionDecision (0.01s)
+=== RUN   TestAuthPendingIdentityService_UpsertAdoptionDecision_ReassignsExistingIdentityReference
+--- PASS: TestAuthPendingIdentityService_UpsertAdoptionDecision_ReassignsExistingIdentityReference (0.00s)
+=== RUN   TestAuthPendingIdentityService_UpsertAdoptionDecision_IsIdempotentUnderConcurrency
+--- PASS: TestAuthPendingIdentityService_UpsertAdoptionDecision_IsIdempotentUnderConcurrency (0.11s)
+=== RUN   TestAuthPendingIdentityService_UpsertAdoptionDecision_ClearsLegacyNullSessionReference
+    auth_pending_identity_service_test.go:365: legacy NULL pending_auth_session_id rows only exist in production PostgreSQL history; sqlite unit schema rejects NULL
+--- SKIP: TestAuthPendingIdentityService_UpsertAdoptionDecision_ClearsLegacyNullSessionReference (0.00s)
+=== RUN   TestAuthPendingIdentityService_ConsumeBrowserSession
+--- PASS: TestAuthPendingIdentityService_ConsumeBrowserSession (0.01s)
+=== RUN   TestAuthPendingIdentityService_ConsumeBrowserSessionRejectsStaleLoadedSessionReplay
+--- PASS: TestAuthPendingIdentityService_ConsumeBrowserSessionRejectsStaleLoadedSessionReplay (0.00s)
+=== RUN   TestAuthPendingIdentityService_ConsumeBrowserSessionScrubsLegacyCompletionTokens
+--- PASS: TestAuthPendingIdentityService_ConsumeBrowserSessionScrubsLegacyCompletionTokens (0.00s)
+=== RUN   TestAuthService_Register_InvitationCodeSingleUseUnderConcurrency
+2026/11/04 20:45:11 [Auth] Rejected registration: invitation code INV-RACE-001 already claimed (user_id=2 err=error: code=409 reason="REDEEM_CODE_USED" message="redeem code already used" metadata=map[])
+2026/11/04 20:45:11 [Auth] Rejected registration: invitation code INV-RACE-001 already claimed (user_id=3 err=error: code=409 reason="REDEEM_CODE_USED" message="redeem code already used" metadata=map[])
+2026/11/04 20:45:11 [Auth] Rejected registration: invitation code INV-RACE-001 already claimed (user_id=4 err=error: code=409 reason="REDEEM_CODE_USED" message="redeem code already used" metadata=map[])
+2026/11/04 20:45:11 [Auth] Rejected registration: invitation code INV-RACE-001 already claimed (user_id=5 err=error: code=409 reason="REDEEM_CODE_USED" message="redeem code already used" metadata=map[])
+2026/11/04 20:45:11 [Auth] Rejected registration: invitation code INV-RACE-001 already claimed (user_id=6 err=error: code=409 reason="REDEEM_CODE_USED" message="redeem code already used" metadata=map[])
+2026/11/04 20:45:11 [Auth] Rejected registration: invitation code INV-RACE-001 already claimed (user_id=7 err=error: code=409 reason="REDEEM_CODE_USED" message="redeem code already used" metadata=map[])
+2026/11/04 20:45:11 [Auth] Rejected registration: invitation code INV-RACE-001 already claimed (user_id=8 err=error: code=409 reason="REDEEM_CODE_USED" message="redeem code already used" metadata=map[])
+--- PASS: TestAuthService_Register_InvitationCodeSingleUseUnderConcurrency (0.06s)
+=== RUN   TestAuthService_Register_InvitationCodeRejectedWhenAlreadyUsed
+2026/11/04 20:45:11 [Auth] Invitation code invalid: type=invitation, status=used
+--- PASS: TestAuthService_Register_InvitationCodeRejectedWhenAlreadyUsed (0.00s)
+=== RUN   TestAuthService_Register_InvitationCodeMissingWhenEnabled
+--- PASS: TestAuthService_Register_InvitationCodeMissingWhenEnabled (0.00s)
+=== RUN   TestAuthService_Register_Disabled
+--- PASS: TestAuthService_Register_Disabled (0.00s)
+=== RUN   TestAuthService_Register_DisabledByDefault
+--- PASS: TestAuthService_Register_DisabledByDefault (0.00s)
+=== RUN   TestAuthService_Register_SnapshotsPlatformQuotaDefaults
+--- PASS: TestAuthService_Register_SnapshotsPlatformQuotaDefaults (0.05s)
+=== RUN   TestAuthService_Register_NoDefaultQuotasSkipsSnapshot
+--- PASS: TestAuthService_Register_NoDefaultQuotasSkipsSnapshot (0.05s)
+=== RUN   TestAuthService_Register_DoesNotSnapshotOnDisabled
+--- PASS: TestAuthService_Register_DoesNotSnapshotOnDisabled (0.00s)
+=== RUN   TestAuthService_Register_EmailVerifyEnabledButServiceNotConfigured
+2026/11/04 20:45:11 [Auth] Email verification enabled but email service not configured, rejecting registration
+--- PASS: TestAuthService_Register_EmailVerifyEnabledButServiceNotConfigured (0.00s)
+=== RUN   TestAuthService_Register_EmailVerifyRequired
+--- PASS: TestAuthService_Register_EmailVerifyRequired (0.00s)
+=== RUN   TestAuthService_Register_EmailVerifyInvalid
+--- PASS: TestAuthService_Register_EmailVerifyInvalid (0.00s)
+=== RUN   TestAuthService_Register_EmailExists
+--- PASS: TestAuthService_Register_EmailExists (0.00s)
+=== RUN   TestAuthService_Register_AliasDuplicateRejected
+--- PASS: TestAuthService_Register_AliasDuplicateRejected (0.00s)
+=== RUN   TestAuthService_Register_UsesAliasGuardedCreate
+--- PASS: TestAuthService_Register_UsesAliasGuardedCreate (0.05s)
+=== RUN   TestAuthService_Register_CheckEmailError
+2026/11/04 20:45:12 [Auth] Database error checking email exists: db down
+--- PASS: TestAuthService_Register_CheckEmailError (0.00s)
+=== RUN   TestAuthService_Register_ReservedEmail
+--- PASS: TestAuthService_Register_ReservedEmail (0.00s)
+=== RUN   TestAuthService_Register_EmailSuffixNotAllowed
+--- PASS: TestAuthService_Register_EmailSuffixNotAllowed (0.00s)
+=== RUN   TestAuthService_Register_NonWhitelistDomainAllowsFirstAccount
+--- PASS: TestAuthService_Register_NonWhitelistDomainAllowsFirstAccount (0.05s)
+=== RUN   TestAuthService_Register_NonWhitelistDomainRejectsSecondAccount
+--- PASS: TestAuthService_Register_NonWhitelistDomainRejectsSecondAccount (0.00s)
+=== RUN   TestAuthService_Register_NonWhitelistDomainRejectedWhenQuotaDisabledByDefault
+--- PASS: TestAuthService_Register_NonWhitelistDomainRejectedWhenQuotaDisabledByDefault (0.00s)
+=== RUN   TestAuthService_Register_NonWhitelistDomainRejectedWhenQuotaExplicitlyDisabled
+--- PASS: TestAuthService_Register_NonWhitelistDomainRejectedWhenQuotaExplicitlyDisabled (0.00s)
+=== RUN   TestAuthService_Register_WhitelistDomainAllowedWhenQuotaDisabled
+--- PASS: TestAuthService_Register_WhitelistDomainAllowedWhenQuotaDisabled (0.05s)
+=== RUN   TestAuthService_SendVerifyCode_NonWhitelistDomainRejectedWhenQuotaDisabled
+--- PASS: TestAuthService_SendVerifyCode_NonWhitelistDomainRejectedWhenQuotaDisabled (0.00s)
+=== RUN   TestAuthService_SendVerifyCodeAsync_NonWhitelistDomainRejectedWhenQuotaDisabled
+2026/11/04 20:45:12 [Auth] SendVerifyCodeAsync called for email: user@custom.example
+--- PASS: TestAuthService_SendVerifyCodeAsync_NonWhitelistDomainRejectedWhenQuotaDisabled (0.00s)
+=== RUN   TestAuthService_Register_EmptyWhitelistAllowsAllDomains
+--- PASS: TestAuthService_Register_EmptyWhitelistAllowsAllDomains (0.05s)
+=== RUN   TestAuthService_Register_EmailSuffixAllowed
+--- PASS: TestAuthService_Register_EmailSuffixAllowed (0.05s)
+=== RUN   TestAuthService_SendVerifyCode_EmailSuffixNotAllowed
+--- PASS: TestAuthService_SendVerifyCode_EmailSuffixNotAllowed (0.00s)
+=== RUN   TestAuthService_SendVerifyCode_NonWhitelistDomainLimit
+--- PASS: TestAuthService_SendVerifyCode_NonWhitelistDomainLimit (0.00s)
+=== RUN   TestAuthService_SendVerifyCodeAsync_NonWhitelistDomainLimit
+2026/11/04 20:45:12 [Auth] SendVerifyCodeAsync called for email: user@custom.example
+--- PASS: TestAuthService_SendVerifyCodeAsync_NonWhitelistDomainLimit (0.00s)
+=== RUN   TestAuthService_Register_CreateError
+2026/11/04 20:45:12 [Auth] Database error creating user: create failed
+--- PASS: TestAuthService_Register_CreateError (0.06s)
+=== RUN   TestAuthService_Register_CreateEmailExistsRace
+--- PASS: TestAuthService_Register_CreateEmailExistsRace (0.05s)
+=== RUN   TestAuthService_Register_Success
+--- PASS: TestAuthService_Register_Success (0.10s)
+=== RUN   TestAuthService_ValidateToken_ExpiredReturnsClaimsWithError
+--- PASS: TestAuthService_ValidateToken_ExpiredReturnsClaimsWithError (0.00s)
+=== RUN   TestAuthService_RefreshToken_ExpiredTokenNoPanic
+--- PASS: TestAuthService_RefreshToken_ExpiredTokenNoPanic (0.00s)
+=== RUN   TestAuthService_GetAccessTokenExpiresIn_FallbackToExpireHour
+--- PASS: TestAuthService_GetAccessTokenExpiresIn_FallbackToExpireHour (0.00s)
+=== RUN   TestAuthService_GetAccessTokenExpiresIn_MinutesHasPriority
+--- PASS: TestAuthService_GetAccessTokenExpiresIn_MinutesHasPriority (0.00s)
+=== RUN   TestAuthService_GenerateToken_UsesExpireHourWhenMinutesZero
+--- PASS: TestAuthService_GenerateToken_UsesExpireHourWhenMinutesZero (0.00s)
+=== RUN   TestAuthService_GenerateToken_UsesMinutesWhenConfigured
+--- PASS: TestAuthService_GenerateToken_UsesMinutesWhenConfigured (0.00s)
+=== RUN   TestAuthService_Register_AssignsDefaultSubscriptions
+--- PASS: TestAuthService_Register_AssignsDefaultSubscriptions (0.05s)
+=== RUN   TestAuthService_Register_UsesEmailAuthSourceDefaultsWhenGrantEnabled
+--- PASS: TestAuthService_Register_UsesEmailAuthSourceDefaultsWhenGrantEnabled (0.05s)
+=== RUN   TestAuthService_Register_GrantOnSignupFalseFallsBackToGlobalDefaults
+--- PASS: TestAuthService_Register_GrantOnSignupFalseFallsBackToGlobalDefaults (0.05s)
+=== RUN   TestAuthService_Register_GrantOnSignupMergesSourceOverridesWithGlobalDefaults
+--- PASS: TestAuthService_Register_GrantOnSignupMergesSourceOverridesWithGlobalDefaults (0.07s)
+=== RUN   TestAuthService_LoginOrRegisterOAuthWithTokenPair_UsesLinuxDoAuthSourceDefaultsOnSignup
+--- PASS: TestAuthService_LoginOrRegisterOAuthWithTokenPair_UsesLinuxDoAuthSourceDefaultsOnSignup (0.07s)
+=== RUN   TestAuthService_LoginOrRegisterOAuthWithTokenPair_ExistingUserDoesNotGrantAgain
+--- PASS: TestAuthService_LoginOrRegisterOAuthWithTokenPair_ExistingUserDoesNotGrantAgain (0.00s)
+=== RUN   TestAuthService_VerifyTurnstileForRegister_SkipWhenEmailVerifyCodeProvided
+2026/11/04 20:45:12 [Auth] Email verify flow detected, skip duplicate captcha check on register
+--- PASS: TestAuthService_VerifyTurnstileForRegister_SkipWhenEmailVerifyCodeProvided (0.00s)
+=== RUN   TestAuthService_VerifyTurnstileForRegister_RequireWhenVerifyCodeMissing
+2026/11/04 20:45:12 [Turnstile] Token is empty
+--- PASS: TestAuthService_VerifyTurnstileForRegister_RequireWhenVerifyCodeMissing (0.00s)
+=== RUN   TestAuthService_VerifyTurnstileForRegister_NoSkipWhenEmailVerifyDisabled
+2026/11/04 20:45:12 [Turnstile] Verifying token for IP: 127.0.0.1
+2026/11/04 20:45:12 [Turnstile] Verification successful
+--- PASS: TestAuthService_VerifyTurnstileForRegister_NoSkipWhenEmailVerifyDisabled (0.00s)
+=== RUN   TestBuildPasswordResetEmailBody_EscapesSiteName
+=== RUN   TestBuildPasswordResetEmailBody_EscapesSiteName/escapes_html_tags_in_site_name
+=== RUN   TestBuildPasswordResetEmailBody_EscapesSiteName/escapes_html_entities
+=== RUN   TestBuildPasswordResetEmailBody_EscapesSiteName/normal_site_name_and_url_unchanged
+=== RUN   TestBuildPasswordResetEmailBody_EscapesSiteName/escapes_ampersand_in_reset_url
+--- PASS: TestBuildPasswordResetEmailBody_EscapesSiteName (0.00s)
+    --- PASS: TestBuildPasswordResetEmailBody_EscapesSiteName/escapes_html_tags_in_site_name (0.00s)
+    --- PASS: TestBuildPasswordResetEmailBody_EscapesSiteName/escapes_html_entities (0.00s)
+    --- PASS: TestBuildPasswordResetEmailBody_EscapesSiteName/normal_site_name_and_url_unchanged (0.00s)
+    --- PASS: TestBuildPasswordResetEmailBody_EscapesSiteName/escapes_ampersand_in_reset_url (0.00s)
+=== RUN   TestConsumePasswordResetToken_ComparesHashNotPlaintext
+--- PASS: TestConsumePasswordResetToken_ComparesHashNotPlaintext (0.00s)
+=== RUN   TestSMTPConnectionImplicitTLS
+--- PASS: TestSMTPConnectionImplicitTLS (0.00s)
+=== RUN   TestSMTPConnectionStartTLSFallbackWhenTLSEnabled
+--- PASS: TestSMTPConnectionStartTLSFallbackWhenTLSEnabled (0.00s)
+=== RUN   TestSMTPConnectionMandatoryStartTLSRefusesPlaintext
+--- PASS: TestSMTPConnectionMandatoryStartTLSRefusesPlaintext (0.00s)
+=== RUN   TestSMTPConnectionOpportunisticStartTLSWhenTLSDisabled
+--- PASS: TestSMTPConnectionOpportunisticStartTLSWhenTLSDisabled (0.00s)
+=== RUN   TestSMTPConnectionPlainWhenNoStartTLS
+--- PASS: TestSMTPConnectionPlainWhenNoStartTLS (0.00s)
+=== RUN   TestNotificationEmailPreviewEscapesHTMLAndSanitizesSubject
+--- PASS: TestNotificationEmailPreviewEscapesHTMLAndSanitizesSubject (0.00s)
+=== RUN   TestNotificationEmailTemplateOverrideAndRestore
+--- PASS: TestNotificationEmailTemplateOverrideAndRestore (0.00s)
+=== RUN   TestNotificationEmailTemplateRejectsUnsupportedPlaceholder
+--- PASS: TestNotificationEmailTemplateRejectsUnsupportedPlaceholder (0.00s)
+=== RUN   TestNotificationEmailAuthTemplatesAreListedAndPreviewable
+--- PASS: TestNotificationEmailAuthTemplatesAreListedAndPreviewable (0.00s)
+=== RUN   TestNotificationEmailAdditionalEventsAreListedAndPreviewable
+--- PASS: TestNotificationEmailAdditionalEventsAreListedAndPreviewable (0.00s)
+=== RUN   TestNotificationEmailRawHTMLVariablesAreTrustedOnlyForHTMLPlaceholders
+--- PASS: TestNotificationEmailRawHTMLVariablesAreTrustedOnlyForHTMLPlaceholders (0.00s)
+=== RUN   TestNotificationEmailFallbackClassification
+--- PASS: TestNotificationEmailFallbackClassification (0.00s)
+=== RUN   TestNotificationEmailUnsubscribeOnlyAllowsOptionalEvents
+--- PASS: TestNotificationEmailUnsubscribeOnlyAllowsOptionalEvents (0.00s)
+=== RUN   TestNotificationEmailLocaleMemoryNormalizesAcceptLanguage
+--- PASS: TestNotificationEmailLocaleMemoryNormalizesAcceptLanguage (0.00s)
+=== RUN   TestNotificationEmailDeliveryKeyUsesShortStableHash
+--- PASS: TestNotificationEmailDeliveryKeyUsesShortStableHash (0.00s)
+=== RUN   TestNotificationEmailPreferenceKeyUsesShortStableHashAndReadsLegacyKey
+--- PASS: TestNotificationEmailPreferenceKeyUsesShortStableHashAndReadsLegacyKey (0.00s)
+=== RUN   TestNotificationEmailSendDeduplicatesSubscriptionExpiryReminder
+--- PASS: TestNotificationEmailSendDeduplicatesSubscriptionExpiryReminder (0.00s)
+=== RUN   TestNotificationEmailSendRespectsLegacyDeliveryKey
+--- PASS: TestNotificationEmailSendRespectsLegacyDeliveryKey (0.00s)
+=== RUN   TestNotificationEmailMemorySettingRepoSatisfiesInterface
+--- PASS: TestNotificationEmailMemorySettingRepoSatisfiesInterface (0.00s)
+=== RUN   TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts
+=== RUN   TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/existing
+=== RUN   TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/missing
+=== RUN   TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/inactive
+=== RUN   TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/database_failure
+--- PASS: TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts (0.00s)
+    --- PASS: TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/existing (0.00s)
+    --- PASS: TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/missing (0.00s)
+    --- PASS: TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/inactive (0.00s)
+    --- PASS: TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/database_failure (0.00s)
+=== RUN   TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown
+=== RUN   TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown/reserve
+=== RUN   TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown/store
+2026/11/04 20:45:12 WARN password recovery mail queue unavailable recipient_hash=b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514
+--- PASS: TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown (0.00s)
+    --- PASS: TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown/reserve (0.00s)
+    --- PASS: TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown/store (0.00s)
+=== RUN   TestPasswordRecoveryCodeSuccessRevokesSessionsAndPreservesAccount
+--- PASS: TestPasswordRecoveryCodeSuccessRevokesSessionsAndPreservesAccount (0.15s)
+=== RUN   TestPasswordRecoveryCodeCannotReuseRegistrationCodeOrChangedPassword
+--- PASS: TestPasswordRecoveryCodeCannotReuseRegistrationCodeOrChangedPassword (0.00s)
+=== RUN   TestPasswordRecoveryCodeDatabaseFailureConsumesAndRequiresNewCode
+--- PASS: TestPasswordRecoveryCodeDatabaseFailureConsumesAndRequiresNewCode (0.08s)
+=== RUN   TestPasswordRecoveryCodeCASDoesNotOverwriteConcurrentChange
+--- PASS: TestPasswordRecoveryCodeCASDoesNotOverwriteConcurrentChange (0.07s)
+=== RUN   TestPasswordRecoveryLegacyTokenRemainsCompatibleAndClearsCode
+--- PASS: TestPasswordRecoveryLegacyTokenRemainsCompatibleAndClearsCode (0.14s)
+=== RUN   TestPasswordRecoveryLegacyTokenSnapshotPrecedesConsume
+--- PASS: TestPasswordRecoveryLegacyTokenSnapshotPrecedesConsume (0.07s)
+=== RUN   TestPasswordRecoveryCodeMailSkipsStaleGenerationAndExpires
+--- PASS: TestPasswordRecoveryCodeMailSkipsStaleGenerationAndExpires (0.00s)
+=== RUN   TestPasswordRecoveryCodeMailFailureRemovesOnlyOwnGeneration
+--- PASS: TestPasswordRecoveryCodeMailFailureRemovesOnlyOwnGeneration (0.00s)
+=== RUN   TestPasswordRecoveryCodeTemplateIsIndependentAndContainsNoLink
+--- PASS: TestPasswordRecoveryCodeTemplateIsIndependentAndContainsNoLink (0.00s)
+=== RUN   TestPasswordRecoveryCodeHMACBindsPurposeIdentityGenerationAndPassword
+--- PASS: TestPasswordRecoveryCodeHMACBindsPurposeIdentityGenerationAndPassword (0.00s)
+=== RUN   TestPasswordRecoveryRegistrationCodeCannotResetPassword
+--- PASS: TestPasswordRecoveryRegistrationCodeCannotResetPassword (0.00s)
+=== RUN   TestPasswordRecoveryCodeVerificationInfrastructureFailures
+=== RUN   TestPasswordRecoveryCodeVerificationInfrastructureFailures/user_read
+=== RUN   TestPasswordRecoveryCodeVerificationInfrastructureFailures/code_read
+=== RUN   TestPasswordRecoveryCodeVerificationInfrastructureFailures/code_consume
+--- PASS: TestPasswordRecoveryCodeVerificationInfrastructureFailures (0.00s)
+    --- PASS: TestPasswordRecoveryCodeVerificationInfrastructureFailures/user_read (0.00s)
+    --- PASS: TestPasswordRecoveryCodeVerificationInfrastructureFailures/code_read (0.00s)
+    --- PASS: TestPasswordRecoveryCodeVerificationInfrastructureFailures/code_consume (0.00s)
+=== RUN   TestPasswordRecoveryCodeMailUsesExistingSMTP
+--- PASS: TestPasswordRecoveryCodeMailUsesExistingSMTP (0.00s)
+=== RUN   TestPasswordRecoveryLegacyInvalidTokenDoesNotEnumerateAccountState
+=== RUN   TestPasswordRecoveryLegacyInvalidTokenDoesNotEnumerateAccountState/active
+=== RUN   TestPasswordRecoveryLegacyInvalidTokenDoesNotEnumerateAccountState/inactive
+=== RUN   TestPasswordRecoveryLegacyInvalidTokenDoesNotEnumerateAccountState/missing
+=== RUN   TestPasswordRecoveryLegacyInvalidTokenDoesNotEnumerateAccountState/database_failure
+--- PASS: TestPasswordRecoveryLegacyInvalidTokenDoesNotEnumerateAccountState (0.00s)
+    --- PASS: TestPasswordRecoveryLegacyInvalidTokenDoesNotEnumerateAccountState/active (0.00s)
+    --- PASS: TestPasswordRecoveryLegacyInvalidTokenDoesNotEnumerateAccountState/inactive (0.00s)
+    --- PASS: TestPasswordRecoveryLegacyInvalidTokenDoesNotEnumerateAccountState/missing (0.00s)
+    --- PASS: TestPasswordRecoveryLegacyInvalidTokenDoesNotEnumerateAccountState/database_failure (0.00s)
+=== RUN   TestTotpDisableAdminUsesPasswordEvenWithEmailVerifyEnabled
+--- PASS: TestTotpDisableAdminUsesPasswordEvenWithEmailVerifyEnabled (0.21s)
+=== RUN   TestTotpDisableRegularUserStillRequiresEmailCode
+--- PASS: TestTotpDisableRegularUserStillRequiresEmailCode (0.07s)
+=== RUN   TestAuthServiceBindEmailIdentity_UpdatesEmailAndAppliesFirstBindDefaults
+--- PASS: TestAuthServiceBindEmailIdentity_UpdatesEmailAndAppliesFirstBindDefaults (0.16s)
+=== RUN   TestAuthServiceBindEmailIdentity_RejectsExistingEmailOnAnotherUser
+--- PASS: TestAuthServiceBindEmailIdentity_RejectsExistingEmailOnAnotherUser (0.01s)
+=== RUN   TestAuthServiceBindEmailIdentity_RejectsAliasOfExistingEmailOnAnotherUser
+--- PASS: TestAuthServiceBindEmailIdentity_RejectsAliasOfExistingEmailOnAnotherUser (0.01s)
+=== RUN   TestAuthServiceBindEmailIdentity_AllowsOnlyOneConcurrentAliasVariant
+--- PASS: TestAuthServiceBindEmailIdentity_AllowsOnlyOneConcurrentAliasVariant (0.06s)
+=== RUN   TestAuthServiceBindEmailIdentity_RejectsNewAliasWhenAnotherUserSharesCurrentUserInbox
+--- PASS: TestAuthServiceBindEmailIdentity_RejectsNewAliasWhenAnotherUserSharesCurrentUserInbox (0.16s)
+=== RUN   TestAuthServiceBindEmailIdentity_RollsBackWhenFirstBindDefaultsFail
+--- PASS: TestAuthServiceBindEmailIdentity_RollsBackWhenFirstBindDefaultsFail (0.06s)
+=== RUN   TestAuthServiceBindEmailIdentity_RejectsReservedEmail
+--- PASS: TestAuthServiceBindEmailIdentity_RejectsReservedEmail (0.01s)
+=== RUN   TestAuthServiceBindEmailIdentity_ReplacesBoundEmailAndSkipsFirstBindDefaults
+--- PASS: TestAuthServiceBindEmailIdentity_ReplacesBoundEmailAndSkipsFirstBindDefaults (0.21s)
+=== RUN   TestAuthServiceBindEmailIdentity_RejectsWrongCurrentPasswordForBoundEmail
+--- PASS: TestAuthServiceBindEmailIdentity_RejectsWrongCurrentPasswordForBoundEmail (0.22s)
+=== RUN   TestAuthServiceBindEmailIdentity_RevokesExistingAccessAndRefreshTokens
+2026/11/04 20:45:14 [Auth] Refresh token not found, possible reuse attack
+--- PASS: TestAuthServiceBindEmailIdentity_RevokesExistingAccessAndRefreshTokens (0.14s)
+=== RUN   TestAuthServiceEmailIdentityBinding_RejectsEmailOutsideRegistrationSuffixWhitelist
+--- PASS: TestAuthServiceEmailIdentityBinding_RejectsEmailOutsideRegistrationSuffixWhitelist (0.01s)
+=== RUN   TestAuthServiceBindEmailIdentity_AllowsEmailInsideRegistrationSuffixWhitelist
+--- PASS: TestAuthServiceBindEmailIdentity_AllowsEmailInsideRegistrationSuffixWhitelist (0.07s)
+=== RUN   TestAuthServiceBindEmailIdentity_RegistrationSuffixWhitelistWildcard
+=== RUN   TestAuthServiceBindEmailIdentity_RegistrationSuffixWhitelistWildcard/allows_wildcard_suffix
+=== RUN   TestAuthServiceBindEmailIdentity_RegistrationSuffixWhitelistWildcard/rejects_outside_wildcard_suffix
+--- PASS: TestAuthServiceBindEmailIdentity_RegistrationSuffixWhitelistWildcard (0.07s)
+    --- PASS: TestAuthServiceBindEmailIdentity_RegistrationSuffixWhitelistWildcard/allows_wildcard_suffix (0.07s)
+    --- PASS: TestAuthServiceBindEmailIdentity_RegistrationSuffixWhitelistWildcard/rejects_outside_wildcard_suffix (0.01s)
+=== RUN   TestAuthServiceBindEmailIdentity_AllowsAnyEmailWhenRegistrationSuffixWhitelistEmpty
+--- PASS: TestAuthServiceBindEmailIdentity_AllowsAnyEmailWhenRegistrationSuffixWhitelistEmpty (0.06s)
+=== RUN   TestAuthServiceRegisterDualWritesEmailIdentity
+--- PASS: TestAuthServiceRegisterDualWritesEmailIdentity (0.06s)
+=== RUN   TestAuthServiceLoginDefersLastLoginTouchUntilRecordSuccessfulLogin
+--- PASS: TestAuthServiceLoginDefersLastLoginTouchUntilRecordSuccessfulLogin (0.11s)
+=== RUN   TestAuthServiceRecordSuccessfulLoginBackfillsEmailIdentity
+--- PASS: TestAuthServiceRecordSuccessfulLoginBackfillsEmailIdentity (0.06s)
+=== RUN   TestAuthServiceLogin_DoesNotApplyEmailFirstBindDefaultsWhenBackfillingLegacyEmailIdentity
+--- PASS: TestAuthServiceLogin_DoesNotApplyEmailFirstBindDefaultsWhenBackfillingLegacyEmailIdentity (0.16s)
+=== RUN   TestAuthServiceLogin_DoesNotApplyMergedEmailFirstBindDefaultsWhenBackfillingLegacyEmailIdentity
+--- PASS: TestAuthServiceLogin_DoesNotApplyMergedEmailFirstBindDefaultsWhenBackfillingLegacyEmailIdentity (0.12s)
+=== RUN   TestAuthServiceLogin_DoesNotApplyEmailFirstBindDefaultsWhenIdentityAlreadyExists
+--- PASS: TestAuthServiceLogin_DoesNotApplyEmailFirstBindDefaultsWhenIdentityAlreadyExists (0.11s)
+=== RUN   TestAuthServiceLogin_DoesNotRetryEmailFirstBindDefaultsForBackfilledEmailIdentity
+--- PASS: TestAuthServiceLogin_DoesNotRetryEmailFirstBindDefaultsForBackfilledEmailIdentity (0.19s)
+PASS
+ok  	github.com/Wei-Shaw/sub2api/internal/service	9.994s
+=== RUN   TestAuthCacheInvalidationOutboxRepository_ClaimUsesLeaseAndSkipLocked
+--- PASS: TestAuthCacheInvalidationOutboxRepository_ClaimUsesLeaseAndSkipLocked (0.00s)
+=== RUN   TestAuthCacheInvalidationOutboxRepository_ClaimIsBoundedByDefault
+--- PASS: TestAuthCacheInvalidationOutboxRepository_ClaimIsBoundedByDefault (0.00s)
+=== RUN   TestAuthCacheInvalidationOutboxRepository_ClaimOwnershipTransitions
+--- PASS: TestAuthCacheInvalidationOutboxRepository_ClaimOwnershipTransitions (0.00s)
+=== RUN   TestAuthCacheInvalidationOutboxRepository_RejectsLostClaim
+--- PASS: TestAuthCacheInvalidationOutboxRepository_RejectsLostClaim (0.00s)
+=== RUN   TestAuthCacheInvalidationOutboxRepository_StatsExposeDurableLagAndFailures
+--- PASS: TestAuthCacheInvalidationOutboxRepository_StatsExposeDurableLagAndFailures (0.00s)
+=== RUN   TestAuthCacheInvalidationMigration_SecurityCoverageAndNoPlaintextPayload
+--- PASS: TestAuthCacheInvalidationMigration_SecurityCoverageAndNoPlaintextPayload (0.00s)
+=== RUN   TestEmailCache_ConcurrentWrongCodesCannotExceedAttemptCap
+--- PASS: TestEmailCache_ConcurrentWrongCodesCannotExceedAttemptCap (0.01s)
+=== RUN   TestEmailCache_AttemptsResetOnNewCodeAndTTLFollowsCode
+--- PASS: TestEmailCache_AttemptsResetOnNewCodeAndTTLFollowsCode (0.00s)
+=== RUN   TestEmailCache_PasswordResetTokenHashedAndSingleUse
+--- PASS: TestEmailCache_PasswordResetTokenHashedAndSingleUse (0.00s)
+=== RUN   TestEmailCache_ConsumePasswordResetTokenMismatchKeepsToken
+--- PASS: TestEmailCache_ConsumePasswordResetTokenMismatchKeepsToken (0.00s)
+=== RUN   TestPasswordResetCodeCacheResendAndGenerationFences
+--- PASS: TestPasswordResetCodeCacheResendAndGenerationFences (0.00s)
+=== RUN   TestPasswordResetCodeCacheConcurrentReservationsAndConsumption
+--- PASS: TestPasswordResetCodeCacheConcurrentReservationsAndConsumption (0.01s)
+=== RUN   TestPasswordResetCodeCacheAttemptLimitAndExpiry
+=== RUN   TestPasswordResetCodeCacheAttemptLimitAndExpiry/correct_on_fifth_false
+=== RUN   TestPasswordResetCodeCacheAttemptLimitAndExpiry/correct_on_fifth_true
+--- PASS: TestPasswordResetCodeCacheAttemptLimitAndExpiry (0.01s)
+    --- PASS: TestPasswordResetCodeCacheAttemptLimitAndExpiry/correct_on_fifth_false (0.00s)
+    --- PASS: TestPasswordResetCodeCacheAttemptLimitAndExpiry/correct_on_fifth_true (0.00s)
+=== RUN   TestPasswordResetCodeCacheConcurrentWrongGuessesStopAtFive
+--- PASS: TestPasswordResetCodeCacheConcurrentWrongGuessesStopAtFive (0.01s)
+=== RUN   TestPasswordResetCodeCacheUnconsumedCodeExpires
+--- PASS: TestPasswordResetCodeCacheUnconsumedCodeExpires (0.00s)
+=== RUN   TestPasswordResetCodeCacheNamespacesStayIndependent
+--- PASS: TestPasswordResetCodeCacheNamespacesStayIndependent (0.00s)
+=== RUN   TestPasswordResetCodeCacheFailsClosedOnRedisAndCorruption
+--- PASS: TestPasswordResetCodeCacheFailsClosedOnRedisAndCorruption (0.00s)
+=== RUN   TestUserPasswordResetCompareAndSwapPreservesOtherAccountChanges
+--- PASS: TestUserPasswordResetCompareAndSwapPreservesOtherAccountChanges (0.01s)
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/email
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/password
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/inactive
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/deleted
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/missing
+--- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount (0.03s)
+    --- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/email (0.01s)
+    --- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/password (0.00s)
+    --- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/inactive (0.01s)
+    --- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/deleted (0.00s)
+    --- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/missing (0.00s)
+=== RUN   TestUserPasswordResetCompareAndSwapReportsDatabaseFailure
+--- PASS: TestUserPasswordResetCompareAndSwapReportsDatabaseFailure (0.00s)
+PASS
+ok  	github.com/Wei-Shaw/sub2api/internal/repository	0.971s
+=== RUN   TestAuthRequestsBindTencentCaptchaProof
+=== RUN   TestAuthRequestsBindTencentCaptchaProof/登录
+=== RUN   TestAuthRequestsBindTencentCaptchaProof/注册
+=== RUN   TestAuthRequestsBindTencentCaptchaProof/发送邮箱验证码
+=== RUN   TestAuthRequestsBindTencentCaptchaProof/忘记密码
+=== RUN   TestAuthRequestsBindTencentCaptchaProof/OAuth启动
+=== RUN   TestAuthRequestsBindTencentCaptchaProof/Passkey登录
+=== RUN   TestAuthRequestsBindTencentCaptchaProof/OAuth待处理账号发送邮箱验证码
+=== RUN   TestAuthRequestsBindTencentCaptchaProof/OAuth待处理账号创建
+--- PASS: TestAuthRequestsBindTencentCaptchaProof (0.00s)
+    --- PASS: TestAuthRequestsBindTencentCaptchaProof/登录 (0.00s)
+    --- PASS: TestAuthRequestsBindTencentCaptchaProof/注册 (0.00s)
+    --- PASS: TestAuthRequestsBindTencentCaptchaProof/发送邮箱验证码 (0.00s)
+    --- PASS: TestAuthRequestsBindTencentCaptchaProof/忘记密码 (0.00s)
+    --- PASS: TestAuthRequestsBindTencentCaptchaProof/OAuth启动 (0.00s)
+    --- PASS: TestAuthRequestsBindTencentCaptchaProof/Passkey登录 (0.00s)
+    --- PASS: TestAuthRequestsBindTencentCaptchaProof/OAuth待处理账号发送邮箱验证码 (0.00s)
+    --- PASS: TestAuthRequestsBindTencentCaptchaProof/OAuth待处理账号创建 (0.00s)
+=== RUN   TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields
+--- PASS: TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields (0.00s)
+=== RUN   TestLogin2FACompletesPendingOAuthBindAndConsumesSession
+--- PASS: TestLogin2FACompletesPendingOAuthBindAndConsumesSession (0.06s)
+=== RUN   TestPasswordRecoveryHandlerCodeRequestDoesNotRequireFrontendURL
+2026/11/05 04:45:34 [EmailQueue] Started 1 workers
+2026/11/05 04:45:34 [EmailQueue] Worker 0 password recovery mail failed for b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514
+2026/11/05 04:45:34 [EmailQueue] Worker 0 stopping
+2026/11/05 04:45:34 [EmailQueue] All workers stopped
+--- PASS: TestPasswordRecoveryHandlerCodeRequestDoesNotRequireFrontendURL (0.00s)
+=== RUN   TestPasswordRecoveryHandlerOldRequestRetainsLinkProtocol
+2026/11/05 04:45:34 [EmailQueue] Started 1 workers
+2026/11/05 04:45:34 ERROR frontend_url not configured in settings or config; cannot build password reset link
+2026/11/05 04:45:34 [EmailQueue] Enqueued password reset task for user@example.com
+2026/11/05 04:45:34 [Auth] Password reset email enqueued for: user@example.com
+2026/11/05 04:45:34 [EmailQueue] Worker 0 failed to send password reset to user@example.com: send email: error: code=503 reason="EMAIL_NOT_CONFIGURED" message="email service not configured" metadata=map[]
+2026/11/05 04:45:34 [EmailQueue] Worker 0 stopping
+2026/11/05 04:45:34 [EmailQueue] All workers stopped
+--- PASS: TestPasswordRecoveryHandlerOldRequestRetainsLinkProtocol (0.00s)
+=== RUN   TestPasswordRecoveryHandlerRejectsDeliveryAndCredentialAmbiguity
+2026/11/05 04:45:34 [EmailQueue] Started 1 workers
+2026/11/05 04:45:34 [EmailQueue] Worker 0 stopping
+2026/11/05 04:45:34 [EmailQueue] All workers stopped
+--- PASS: TestPasswordRecoveryHandlerRejectsDeliveryAndCredentialAmbiguity (0.00s)
+=== RUN   TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage
+=== RUN   TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage/code
+2026/11/05 04:45:34 [EmailQueue] Started 1 workers
+2026/11/05 04:45:34 [EmailQueue] Worker 0 stopping
+2026/11/05 04:45:34 [EmailQueue] All workers stopped
+=== RUN   TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage/token
+2026/11/05 04:45:34 [EmailQueue] Started 1 workers
+2026/11/05 04:45:34 [EmailQueue] Worker 0 stopping
+2026/11/05 04:45:34 [EmailQueue] All workers stopped
+--- PASS: TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage (0.20s)
+    --- PASS: TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage/code (0.10s)
+    --- PASS: TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage/token (0.10s)
+=== RUN   TestPasswordRecoveryHandlerRedisFailureIsUnavailable
+2026/11/05 04:45:34 [EmailQueue] Started 1 workers
+redis: 2026/11/05 04:45:34 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:56829: connect: connection refused
+redis: 2026/11/05 04:45:35 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:56829: connect: connection refused
+redis: 2026/11/05 04:45:35 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:56829: connect: connection refused
+redis: 2026/11/05 04:45:35 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:56829: connect: connection refused
+2026/11/05 04:45:35 [ERROR] POST /api/v1/auth/fixture
+  Error: error: code=*** reason="SERVICE_UNAVAILABLE" message="service temporarily unavailable" metadata=map[]
+2026/11/05 04:45:35 [EmailQueue] Worker 0 stopping
+2026/11/05 04:45:35 [EmailQueue] All workers stopped
+--- PASS: TestPasswordRecoveryHandlerRedisFailureIsUnavailable (1.71s)
+=== RUN   TestPasswordRecoveryInvalidatesPendingTwoFactorLogin
+2026/11/05 04:45:35 [EmailQueue] Started 1 workers
+2026/11/05 04:45:36 [EmailQueue] Worker 0 stopping
+2026/11/05 04:45:36 [EmailQueue] All workers stopped
+--- PASS: TestPasswordRecoveryInvalidatesPendingTwoFactorLogin (0.05s)
+=== RUN   TestPasswordRecoveryPasswordLoginTwoFactorRegression
+--- PASS: TestPasswordRecoveryPasswordLoginTwoFactorRegression (0.10s)
+=== RUN   TestAuthHandlerRevokeAllSessionsInvalidatesAccessTokens
+--- PASS: TestAuthHandlerRevokeAllSessionsInvalidatesAccessTokens (0.00s)
+PASS
+ok  	github.com/Wei-Shaw/sub2api/internal/handler	3.003s
+=== RUN   TestAuthRoutesRateLimitFailCloseWhenRedisUnavailable
+redis: 2026/11/05 04:45:41 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:41 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:41 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:42 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+2026/11/05 04:45:42 [RateLimit] redis error: key=rate_limit:auth-register mode=fail-close err=dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:42 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:43 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:43 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:44 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+2026/11/05 04:45:44 [RateLimit] redis error: key=rate_limit:auth-login mode=fail-close err=dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:44 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:45 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:45 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:45 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+2026/11/05 04:45:45 [RateLimit] redis error: key=rate_limit:auth-login-2fa mode=fail-close err=dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:46 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:46 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:47 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:47 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+2026/11/05 04:45:47 [RateLimit] redis error: key=rate_limit:auth-send-verify-code mode=fail-close err=dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:48 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:48 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:48 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+redis: 2026/11/05 04:45:49 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:1: connect: connection refused
+2026/11/05 04:45:49 [RateLimit] redis error: key=rate_limit:oauth-pending-send-verify-code mode=fail-close err=dial tcp 127.0.0.1:1: connect: connection refused
+--- PASS: TestAuthRoutesRateLimitFailCloseWhenRedisUnavailable (8.65s)
+PASS
+ok  	github.com/Wei-Shaw/sub2api/internal/server/routes	9.542s
+
+exit_code: 0
