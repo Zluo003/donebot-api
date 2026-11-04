@@ -170,27 +170,30 @@ func TestDoneBotPublicCatalogMediaFixtureProtocolsMatchProductionDescriptors(t *
 	require.Equal(t, 4, count)
 }
 
-func TestDoneBotPublicCatalogMediaFeaturesRemainAuthoritative(t *testing.T) {
-	s, group := doneBotReasoningValidationFixture(PlatformOpenAI, "")
-	group.ModelAllowlist = GroupModelAllowlist{}
-	_, _, accounts := doneBotMediaCatalogFixture()
-	accounts[0].GroupIDs = []int64{group.ID}
-	s.admin.accounts = doneBotCatalogAccountsStub{accounts: accounts}
-	price := 1.25
-	s.admin.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{group.ID}, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"music", "speech"}, BillingMode: BillingModePerRequest, PerRequestPrice: &price}}}}}
-	inputs, err := s.loadCatalog(t.Context(), group.ID)
-	require.NoError(t, err)
-	for _, row := range inputs.rows {
-		require.NotEqual(t, "audio", row.Kind)
-	}
-	s.installs.cfg.DoneBot.Features.Audio = true
-	inputs, err = s.loadCatalog(t.Context(), group.ID)
-	require.NoError(t, err)
-	count := 0
-	for _, row := range inputs.rows {
-		if row.Kind == "audio" {
-			count++
+func TestDoneBotPublicCatalogMediaIgnoresLegacyFeatureSwitches(t *testing.T) {
+	s, owner, group, _ := doneBotMediaValidationFixture(t)
+	for _, enabled := range []bool{false, true} {
+		s.installs.cfg.DoneBot.Features.Audio = enabled
+		s.installs.cfg.DoneBot.Features.Video = enabled
+		catalog, err := s.Models(t.Context(), owner.UserID, owner.InstallationID)
+		require.NoError(t, err)
+		require.Len(t, catalog.Models, 4)
+		media := map[string][]string{}
+		for _, model := range catalog.Models {
+			media[model.ID] = model.MediaTypes
 		}
+		require.Equal(t, map[string][]string{"image": {"image"}, "music": {"music"}, "speech": {"audio"}, "video": {"video"}}, media)
 	}
-	require.Equal(t, 2, count)
+	s.installs.cfg.DoneBot.Features.Audio = false
+	s.installs.cfg.DoneBot.Features.Video = false
+	group.ModelAllowlist = GroupModelAllowlist{Enabled: true, Models: []string{"image"}}
+	catalog, err := s.Models(t.Context(), owner.UserID, owner.InstallationID)
+	require.NoError(t, err)
+	require.Len(t, catalog.Models, 1)
+	require.Equal(t, "image", catalog.Models[0].ID)
+	group.ModelAllowlist.Enabled = false
+	s.admin.channels = doneBotCatalogChannelsStub{}
+	catalog, err = s.Models(t.Context(), owner.UserID, owner.InstallationID)
+	require.NoError(t, err)
+	require.Empty(t, catalog.Models)
 }

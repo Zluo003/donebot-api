@@ -46,25 +46,22 @@ The container image for this repository is `ghcr.io/zluo003/donebot-api`. Image 
 
 ## Enable DoneBot mode
 
-This repository's deployment templates enable DoneBot mode by default. For existing installations, merge this block into the running instance's `config.yaml`, or set the corresponding environment variables (`DONEBOT_ENABLED`, `DONEBOT_GROUP_NAME`, `DONEBOT_AUTO_CREATE_GROUP`, `DONEBOT_FEATURES_VIDEO`, `DONEBOT_FEATURES_AUDIO`):
+This repository's deployment templates enable DoneBot mode by default. For existing installations, merge this block into the running instance's `config.yaml`, or set the corresponding environment variables (`DONEBOT_ENABLED`, `DONEBOT_GROUP_NAME`, `DONEBOT_AUTO_CREATE_GROUP`):
 
 ```yaml
 donebot:
   enabled: true
   group_name: DoneBot
   auto_create_group: true
-  features:
-    video: false
-    audio: false
 ```
 
 For Docker, edit the generated `.env`; for binary installation, edit `/etc/sub2api/environment`. Set `ASSET_STORAGE_PUBLIC_BASE_URL=https://your-gateway-domain` before using local assets and async images, and proxy `/assets/*` to the gateway. Restart the service after changes. You can also mount a full Docker configuration at `/app/data/config.yaml`. See [the configuration example](deploy/config.example.yaml) and [deployment/acceptance notes](docs/donebot/验收记录.md) for storage and async image settings.
 
 Manage upload and shared generated output storage in DoneBot → Storage; see [storage settings](docs/donebot/存储管理说明.md) for capacity, retention and local/S3 policies.
 
-After startup, configure and enable upstream accounts, bind them to the DoneBot group and enable the permitted models. Synchronize the DoneBot catalog, set each LLM multiplier or media sale price, then save model switches and prices together. Audio/video configuration stays available while runtime features are disabled; see [model pricing](docs/donebot/模型定价说明.md). A signed-in user claims an installation through `POST /api/v1/donebot/installations/claim`; the returned credential belongs to that user and installation. It is returned only on first claim. Model requests use this installation credential, and administrators can revoke installations without exposing their credentials.
+After startup, configure and enable upstream accounts, bind them to the DoneBot group and enable the permitted models. Synchronize the DoneBot catalog, set each LLM multiplier or media sale price, then save model switches and prices together. Images, video, music and speech use the configured account capabilities and individual model permissions without separate video/audio runtime switches; see [model pricing](docs/donebot/模型定价说明.md). A signed-in user claims an installation through `POST /api/v1/donebot/installations/claim`; the returned credential belongs to that user and installation. It is returned only on first claim. Model requests use this installation credential, and administrators can revoke installations without exposing their credentials.
 
-For Seedance, enable `donebot.features.video` / `DONEBOT_FEATURES_VIDEO=true`, add a video account with upstream URL `https://api.newtoken.club`, and configure the permitted models and resolutions. Follow [the Seedance integration guide](docs/donebot/Seedance-接入说明.md) for native endpoints, `asset://`/public URL materials, official resolution limits and per-second sale prices. For APIMart, use the dedicated account panel with `https://api.apimart.ai`; enable `DONEBOT_FEATURES_AUDIO=true` for Suno/TTS. Native endpoints and local pricing are documented in [the APIMart guide](docs/donebot/APIMart-接入说明.md). Administrators can use the sidebar version badge to update official binary releases online.
+For Seedance, add a video account with upstream URL `https://api.newtoken.club`, and configure the permitted models and resolutions. Follow [the Seedance integration guide](docs/donebot/Seedance-接入说明.md) for native endpoints, `asset://`/public URL materials, official resolution limits and per-second sale prices. For APIMart, use the dedicated account panel with `https://api.apimart.ai` and enable the Suno/TTS models after configuring prices. Native endpoints and local pricing are documented in [the APIMart guide](docs/donebot/APIMart-接入说明.md). Administrators can use the sidebar version badge to update official binary releases online.
 
 ## Build from source
 

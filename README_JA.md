@@ -41,25 +41,22 @@ docker compose logs -f sub2api
 
 ## DoneBot モード
 
-このリポジトリのデプロイテンプレートは DoneBot モードを標準で有効にします。既存の環境では `config.yaml` に次の設定を追加するか、対応する環境変数 `DONEBOT_ENABLED`、`DONEBOT_GROUP_NAME`、`DONEBOT_AUTO_CREATE_GROUP`、`DONEBOT_FEATURES_VIDEO`、`DONEBOT_FEATURES_AUDIO` を設定してください。
+このリポジトリのデプロイテンプレートは DoneBot モードを標準で有効にします。既存の環境では `config.yaml` に次の設定を追加するか、対応する環境変数 `DONEBOT_ENABLED`、`DONEBOT_GROUP_NAME`、`DONEBOT_AUTO_CREATE_GROUP` を設定してください。
 
 ```yaml
 donebot:
   enabled: true
   group_name: DoneBot
   auto_create_group: true
-  features:
-    video: false
-    audio: false
 ```
 
 Docker では生成された `.env`、バイナリインストールでは `/etc/sub2api/environment` を編集します。ローカル素材と非同期画像を使う前に `ASSET_STORAGE_PUBLIC_BASE_URL=https://ゲートウェイの公開ドメイン` を設定し、`/assets/*` をゲートウェイへプロキシしてください。変更後は再起動します。Docker では設定全体を `/app/data/config.yaml` にマウントすることもできます。詳細は[設定例](deploy/config.example.yaml)と[導入記録](docs/donebot/验收记录.md)を参照してください。
 
 DoneBot → ストレージでアップロード素材と生成結果の共有ポリシーを管理します。容量、保存期間、ローカル/S3 の設定は[ストレージガイド](docs/donebot/存储管理说明.md)を参照してください。
 
-上流アカウントを有効にして DoneBot グループに紐づけ、許可モデルを設定します。DoneBot で同期し、LLM のモデル別倍率またはメディア販売単価とモデルの有効状態を一度に保存します。音声・動画の実行機能が無効でも設定画面は使用できます。[価格ガイド](docs/donebot/模型定价说明.md)を参照してください。ログイン済みユーザーは `POST /api/v1/donebot/installations/claim` から端末の認証情報を取得します。認証情報は初回のみ返され、そのユーザーと端末に紐づきます。
+上流アカウントを有効にして DoneBot グループに紐づけ、許可モデルを設定します。DoneBot で同期し、LLM のモデル別倍率またはメディア販売単価とモデルの有効状態を一度に保存します。画像・動画・音楽・音声合成はアカウントの能力とモデルごとの有効状態に従い、別の動画・音声実行スイッチは不要です。[価格ガイド](docs/donebot/模型定价说明.md)を参照してください。ログイン済みユーザーは `POST /api/v1/donebot/installations/claim` から端末の認証情報を取得します。認証情報は初回のみ返され、そのユーザーと端末に紐づきます。
 
-Seedance を使う場合は `DONEBOT_FEATURES_VIDEO=true` を設定し、動画アカウントの上流 URL を `https://api.newtoken.club` にします。公式解像度、`asset://` / 公開 URL 素材、編集・延長と秒単価については [Seedance ガイド](docs/donebot/Seedance-接入说明.md)を参照してください。APIMart の上流 URL は `https://api.apimart.ai` です。Suno / TTS は `DONEBOT_FEATURES_AUDIO=true` で有効化します。[APIMart ガイド](docs/donebot/APIMart-接入说明.md)を参照してください。管理者はサイドバーのバージョン表示から正式バイナリをオンライン更新できます。
+Seedance を使う場合は動画アカウントの上流 URL を `https://api.newtoken.club` にします。公式解像度、`asset://` / 公開 URL 素材、編集・延長と秒単価については [Seedance ガイド](docs/donebot/Seedance-接入说明.md)を参照してください。APIMart の上流 URL は `https://api.apimart.ai` です。Suno / TTS は価格を設定してモデルを有効にすると利用できます。[APIMart ガイド](docs/donebot/APIMart-接入说明.md)を参照してください。管理者はサイドバーのバージョン表示から正式バイナリをオンライン更新できます。
 
 ## ソースからビルド
 

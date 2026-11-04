@@ -50,6 +50,20 @@ func TestLoadDoneBotFromYAMLAndEnv(t *testing.T) {
 	require.True(t, cfg.DoneBot.Features.Audio)
 }
 
+func TestLoadDoneBotAcceptsDisabledLegacyMediaSwitches(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	configFile := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configFile, []byte("donebot:\n  enabled: true\n  features:\n    video: true\n    audio: true\n"), 0600))
+	t.Setenv("CONFIG_FILE", configFile)
+	t.Setenv("DONEBOT_FEATURES_VIDEO", "false")
+	t.Setenv("DONEBOT_FEATURES_AUDIO", "false")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.DoneBot.Enabled)
+	require.False(t, cfg.DoneBot.Features.Video)
+	require.False(t, cfg.DoneBot.Features.Audio)
+}
+
 func TestLoadDoneBotEnabledFromEnv(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("DONEBOT_ENABLED", "true")

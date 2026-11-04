@@ -165,9 +165,6 @@ func (s *DoneBotCatalogService) loadCatalog(ctx context.Context, groupID int64) 
 	if err != nil {
 		return nil, err
 	}
-	rows = slices.DeleteFunc(rows, func(row DoneBotModel) bool {
-		return row.Kind == "audio" && !s.installs.cfg.DoneBot.Features.Audio || row.Kind == "video" && !s.installs.cfg.DoneBot.Features.Video
-	})
 	accounts, err := s.admin.accounts.ListByGroup(ctx, groupID)
 	if err != nil {
 		return nil, err

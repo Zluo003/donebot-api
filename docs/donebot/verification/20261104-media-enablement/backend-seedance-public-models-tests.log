@@ -1,0 +1,25 @@
+2026/11/04 12:57:58 Timezone initialized: UTC (UTC offset: +00:00)
+=== RUN   TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling
+=== RUN   TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling/seedance-2-0
+2026/11/04 12:57:58 [OpenAI WS Mode][openai_ws_mode=true] bootstrap enabled=false oauth_enabled=false apikey_enabled=false force_http=false responses_websockets_v2=false responses_websockets=false payload_log_sample_rate=0.000 event_flush_batch_size=0 event_flush_interval_ms=0 prewarm_cooldown_ms=0 retry_backoff_initial_ms=0 retry_backoff_max_ms=0 retry_jitter_ratio=0.000 retry_total_budget_ms=0 ws_read_limit_bytes=16777216
+=== RUN   TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling/seedance-2-0-fast
+2026/11/04 12:57:58 [OpenAI WS Mode][openai_ws_mode=true] bootstrap enabled=false oauth_enabled=false apikey_enabled=false force_http=false responses_websockets_v2=false responses_websockets=false payload_log_sample_rate=0.000 event_flush_batch_size=0 event_flush_interval_ms=0 prewarm_cooldown_ms=0 retry_backoff_initial_ms=0 retry_backoff_max_ms=0 retry_jitter_ratio=0.000 retry_total_budget_ms=0 ws_read_limit_bytes=16777216
+=== RUN   TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling/seedance-2-0-mini
+2026/11/04 12:57:58 [OpenAI WS Mode][openai_ws_mode=true] bootstrap enabled=false oauth_enabled=false apikey_enabled=false force_http=false responses_websockets_v2=false responses_websockets=false payload_log_sample_rate=0.000 event_flush_batch_size=0 event_flush_interval_ms=0 prewarm_cooldown_ms=0 retry_backoff_initial_ms=0 retry_backoff_max_ms=0 retry_jitter_ratio=0.000 retry_total_budget_ms=0 ws_read_limit_bytes=16777216
+=== RUN   TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling/seedance-2-5
+2026/11/04 12:57:58 [OpenAI WS Mode][openai_ws_mode=true] bootstrap enabled=false oauth_enabled=false apikey_enabled=false force_http=false responses_websockets_v2=false responses_websockets=false payload_log_sample_rate=0.000 event_flush_batch_size=0 event_flush_interval_ms=0 prewarm_cooldown_ms=0 retry_backoff_initial_ms=0 retry_backoff_max_ms=0 retry_jitter_ratio=0.000 retry_total_budget_ms=0 ws_read_limit_bytes=16777216
+--- PASS: TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling (0.01s)
+    --- PASS: TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling/seedance-2-0 (0.01s)
+    --- PASS: TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling/seedance-2-0-fast (0.00s)
+    --- PASS: TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling/seedance-2-0-mini (0.00s)
+    --- PASS: TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling/seedance-2-5 (0.00s)
+=== RUN   TestSeedanceCustomMappingsKeepPublicTariffAcrossDurableSettlement
+=== RUN   TestSeedanceCustomMappingsKeepPublicTariffAcrossDurableSettlement/response_model=doubao-seedance-2-5-260628
+2026/11/04 12:57:58 [OpenAI WS Mode][openai_ws_mode=true] bootstrap enabled=false oauth_enabled=false apikey_enabled=false force_http=false responses_websockets_v2=false responses_websockets=false payload_log_sample_rate=0.000 event_flush_batch_size=0 event_flush_interval_ms=0 prewarm_cooldown_ms=0 retry_backoff_initial_ms=0 retry_backoff_max_ms=0 retry_jitter_ratio=0.000 retry_total_budget_ms=0 ws_read_limit_bytes=16777216
+=== RUN   TestSeedanceCustomMappingsKeepPublicTariffAcrossDurableSettlement/response_model=
+2026/11/04 12:57:58 [OpenAI WS Mode][openai_ws_mode=true] bootstrap enabled=false oauth_enabled=false apikey_enabled=false force_http=false responses_websockets_v2=false responses_websockets=false payload_log_sample_rate=0.000 event_flush_batch_size=0 event_flush_interval_ms=0 prewarm_cooldown_ms=0 retry_backoff_initial_ms=0 retry_backoff_max_ms=0 retry_jitter_ratio=0.000 retry_total_budget_ms=0 ws_read_limit_bytes=16777216
+--- PASS: TestSeedanceCustomMappingsKeepPublicTariffAcrossDurableSettlement (0.00s)
+    --- PASS: TestSeedanceCustomMappingsKeepPublicTariffAcrossDurableSettlement/response_model=doubao-seedance-2-5-260628 (0.00s)
+    --- PASS: TestSeedanceCustomMappingsKeepPublicTariffAcrossDurableSettlement/response_model= (0.00s)
+PASS
+ok  	github.com/Wei-Shaw/sub2api/internal/service	2.666s

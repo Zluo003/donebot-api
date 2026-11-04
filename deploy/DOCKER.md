@@ -14,7 +14,7 @@ docker compose up -d
 docker compose logs -f sub2api
 ```
 
-The preparation script downloads this repository's Compose and environment templates and generates local credentials. It writes `COMPOSE_FILE=docker-compose.local.yml` into `.env`, so plain `docker compose` commands keep PostgreSQL, Redis and application data in `./postgres_data`, `./data` and `./redis_data`. The templates enable DoneBot mode, PostgreSQL and Redis persistence, and local asset storage. Configure an upstream-reachable public gateway URL and proxy `/assets/*` before using asynchronous images. Set `DONEBOT_FEATURES_VIDEO=true` for Seedance; audio remains disabled by default.
+The preparation script downloads this repository's Compose and environment templates and generates local credentials. It writes `COMPOSE_FILE=docker-compose.local.yml` into `.env`, so plain `docker compose` commands keep PostgreSQL, Redis and application data in `./postgres_data`, `./data` and `./redis_data`. The templates enable DoneBot mode, PostgreSQL and Redis persistence, and local asset storage. Configure an upstream-reachable public gateway URL and proxy `/assets/*` before using asynchronous images. Configure media accounts, prices and enabled models in DoneBot; video and audio have no separate runtime switches.
 
 When using the named-volume `docker-compose.yml`, pass `-f docker-compose.yml` explicitly. For an external PostgreSQL/Redis deployment, use `docker-compose.standalone.yml` and supply `DATABASE_HOST`, `DATABASE_PASSWORD` and `REDIS_HOST`. The complete environment reference and operations guide are in [deploy/README.md](README.md).
 

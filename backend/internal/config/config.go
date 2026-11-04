@@ -132,7 +132,8 @@ type DoneBotConfig struct {
 	CatalogCurrency string `mapstructure:"catalog_currency"`
 }
 
-// DoneBotFeaturesConfig reserves switches for future media support.
+// DoneBotFeaturesConfig accepts legacy media switches for config compatibility.
+// Deprecated: model permissions, channel availability and pricing govern media access.
 type DoneBotFeaturesConfig struct {
 	Video bool `mapstructure:"video"`
 	Audio bool `mapstructure:"audio"`

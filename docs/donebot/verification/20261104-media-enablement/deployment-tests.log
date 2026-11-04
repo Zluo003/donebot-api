@@ -1,0 +1,12 @@
+$ sh deploy/tests/docker-compose-donebot-env-test.sh
+DoneBot Compose defaults, legacy env isolation, sh/systemd and YAML deployment checks passed
+exit_code=0
+
+$ bash -n deploy/install.sh deploy/docker-deploy.sh
+exit_code=0
+
+$ sh -n deploy/tests/docker-compose-donebot-env-test.sh
+exit_code=0
+
+$ git diff --check
+exit_code=0

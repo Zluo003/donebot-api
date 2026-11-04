@@ -6,17 +6,16 @@ The binary, systemd unit, existing storage paths and Compose service remain name
 
 ## DoneBot Defaults
 
-The supplied Compose templates and systemd installer enable DoneBot mode and its aggregate group. Users receive installation credentials through the DoneBot flow; ordinary user API key management is hidden. Video and audio remain disabled by default.
+The supplied Compose templates and systemd installer enable DoneBot mode and its aggregate group. Users receive installation credentials through the DoneBot flow; ordinary user API key management is hidden. Images, video, music and speech are available through configured accounts and enabled models without separate video/audio runtime switches.
 
 For Compose, review `.env` before starting. Set `ASSET_STORAGE_PUBLIC_BASE_URL=https://gateway.example.com` to an address upstream providers can reach and proxy `/assets/*` to the gateway before using asynchronous image generation. Local assets persist under the application data volume. An empty public URL allows the gateway to start, while asynchronous image result storage remains unavailable. Use a stable `JWT_SECRET` to preserve signed asset links across restarts.
 
-Set `DONEBOT_FEATURES_VIDEO=true` to enable [Seedance video tasks](../docs/donebot/Seedance-接入说明.md). Add the NewToken account from the dedicated video account panel, configure its model mappings and official specifications, then set per-second prices and model permissions in DoneBot. Audio/video management stays available while the runtime feature is disabled.
+For [Seedance video tasks](../docs/donebot/Seedance-接入说明.md), add the NewToken account from the dedicated video account panel, configure its model mappings and official specifications, then set per-second prices and enable the models in DoneBot. For music and speech, add an [APIMart account](../docs/donebot/APIMart-接入说明.md) and configure its model prices and permissions. Existing `DONEBOT_FEATURES_VIDEO` / `DONEBOT_FEATURES_AUDIO` values and `donebot.features` settings are ignored; upgrading does not require removing old `false` values.
 
 Binary installations can override the service defaults in `/etc/sub2api/environment` (plain `KEY=value`, without `export`):
 
 ```ini
 ASSET_STORAGE_PUBLIC_BASE_URL=https://gateway.example.com
-DONEBOT_FEATURES_VIDEO=true
 ```
 
 After editing this file, run `sudo systemctl restart sub2api`. Existing installations that keep an older unit must update it or explicitly set `DONEBOT_ENABLED=true` and the storage bootstrap settings they need in their service environment. `ASSET_STORAGE_DRIVER` selects the initial upload backend; `IMAGE_STORAGE_ENABLED` and complete legacy `image_storage` S3 settings initialize the generated output policy before any policy is saved. Uploads and generated outputs may use different drivers, buckets and prefixes. Manage both policies under **DoneBot → Storage**; saved policies take precedence over these bootstrap values. Environment values override `config.yaml` bootstrap settings. See [storage settings](../docs/donebot/存储管理说明.md) for local/S3 setup and the [deployment notes](../docs/donebot/验收记录.md).

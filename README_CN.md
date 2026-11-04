@@ -46,25 +46,22 @@ docker compose logs -f sub2api
 
 ## 启用 DoneBot 模式
 
-本仓库部署模板默认启用 DoneBot 模式。已有部署可将以下配置合并进运行实例的 `config.yaml`，也可使用对应环境变量 `DONEBOT_ENABLED`、`DONEBOT_GROUP_NAME`、`DONEBOT_AUTO_CREATE_GROUP`、`DONEBOT_FEATURES_VIDEO`、`DONEBOT_FEATURES_AUDIO`：
+本仓库部署模板默认启用 DoneBot 模式。已有部署可将以下配置合并进运行实例的 `config.yaml`，也可使用对应环境变量 `DONEBOT_ENABLED`、`DONEBOT_GROUP_NAME`、`DONEBOT_AUTO_CREATE_GROUP`：
 
 ```yaml
 donebot:
   enabled: true
   group_name: DoneBot
   auto_create_group: true
-  features:
-    video: false
-    audio: false
 ```
 
 Docker 修改生成的 `.env`，二进制安装修改 `/etc/sub2api/environment`。使用本地资产与异步图片前，填写 `ASSET_STORAGE_PUBLIC_BASE_URL=https://网关公网域名`，并将 `/assets/*` 反代至网关；修改后重启服务。Docker 也可将完整配置挂载至 `/app/data/config.yaml`。资产存储、图片异步任务配置见[完整配置示例](deploy/config.example.yaml)和[部署/验收记录](docs/donebot/验收记录.md)。
 
 在 DoneBot → 存储中管理上传素材与共享生成产物策略，可配置本地/S3、总容量、保留时长及清理阈值，见[存储管理说明](docs/donebot/存储管理说明.md)。
 
-启动后添加并启用上游账号，绑定 DoneBot 分组并开启账号允许的模型。在 DoneBot 管理页同步目录，配置每模型 LLM 倍率或媒体售价，开关与定价一次保存。音频、视频未启用时仍可提前配置，详见[模型定价说明](docs/donebot/模型定价说明.md)。登录用户通过 `POST /api/v1/donebot/installations/claim` 领取当前安装的凭据；凭据绑定本人，仅首次领取返回明文。模型调用使用安装凭据，管理员可以吊销安装，不展示明文凭据。
+启动后添加并启用上游账号，绑定 DoneBot 分组并开启账号允许的模型。在 DoneBot 管理页同步目录，配置每模型 LLM 倍率或媒体售价，开关与定价一次保存。图片、视频、音乐和 TTS 按账号能力与每模型启用状态开放，无需额外的视频或音频总开关，详见[模型定价说明](docs/donebot/模型定价说明.md)。登录用户通过 `POST /api/v1/donebot/installations/claim` 领取当前安装的凭据；凭据绑定本人，仅首次领取返回明文。模型调用使用安装凭据，管理员可以吊销安装，不展示明文凭据。
 
-使用 Seedance 时开启 `donebot.features.video` / `DONEBOT_FEATURES_VIDEO=true`，在账号管理点击“添加视频账号”，上游地址使用 `https://api.newtoken.club`，配置允许模型与分辨率。原生端点、`asset://` / 公网 URL 素材、官方分辨率和按秒售价见 [Seedance 接入说明](docs/donebot/Seedance-接入说明.md)。使用 APIMart 时通过专用面板添加账号，上游地址为 `https://api.apimart.ai`；Suno / TTS 需启用 `DONEBOT_FEATURES_AUDIO=true`，原生接口与本地定价见 [APIMart 接入说明](docs/donebot/APIMart-接入说明.md)。管理员点击侧栏版本标记可在线升级正式二进制版本。
+使用 Seedance 时在账号管理点击“添加视频账号”，上游地址使用 `https://api.newtoken.club`，配置允许模型与分辨率。原生端点、`asset://` / 公网 URL 素材、官方分辨率和按秒售价见 [Seedance 接入说明](docs/donebot/Seedance-接入说明.md)。使用 APIMart 时通过专用面板添加账号，上游地址为 `https://api.apimart.ai`；Suno / TTS 配置有效价格并启用模型后即可调用，原生接口与本地定价见 [APIMart 接入说明](docs/donebot/APIMart-接入说明.md)。管理员点击侧栏版本标记可在线升级正式二进制版本。
 
 ## 源码构建
 

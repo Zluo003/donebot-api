@@ -16,11 +16,6 @@ donebot:
   # Existing DoneBot balances and prices are already CNY. No currency conversion.
   # DONEBOT_CATALOG_CURRENCY only accepts CNY; fractional fen retain micro-yuan precision.
   catalog_currency: "CNY"
-  features:
-    # Runtime request gates; audio/video admin tabs remain visible for configuration.
-    # 实际调用开关；音频/视频管理标签始终显示，可提前配置账号、模型与价格。
-    video: false
-    audio: false
 
 # =============================================================================
 # Server Configuration

@@ -19,7 +19,7 @@
 1. 账号管理点击“添加 APIMart 账号”，填写名称、供应商密钥，选择图片 / Suno / TTS 模型并绑定 DoneBot 聚合分组。专用面板支持编辑；修改时留空密钥表示保留原值。
 2. 在 DoneBot 图片或音频页为每个模型设置最终售价，价格单位见下节与[模型定价说明](模型定价说明.md)。价格写入既有分组模型价格卡，优先于渠道默认价。
 3. 同步模型后按需开关；未配置可用价格的模型不能启用。已有渠道默认价格仍可作为未覆盖模型的价格来源。
-4. 使用 Suno / TTS 时，在 `.env` 或 `/etc/sub2api/environment` 设置 `DONEBOT_FEATURES_AUDIO=true` 并重启。音频默认关闭；关闭时音频接口和管理页不可用。图片不依赖音频开关。
+4. Suno / TTS 配置账号、有效价格并启用模型后即可调用，无需音频总开关或修改部署环境。旧 `DONEBOT_FEATURES_AUDIO=false` 配置不再限制调用。
 
 账号内部仍是现有 `openai` / `apikey`，通过 `openai_capabilities` 明确启用 `apimart_images`、`apimart_suno`、`apimart_tts`。普通 OpenAI 账号不会自动取得这些能力。模型清单与别名沿用 `credentials.model_mapping`。
 

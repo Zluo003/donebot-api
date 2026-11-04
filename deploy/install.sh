@@ -748,12 +748,10 @@ Environment=SERVER_PORT=${SERVER_PORT}
 Environment=DONEBOT_ENABLED=true
 Environment=DONEBOT_GROUP_NAME=DoneBot
 Environment=DONEBOT_AUTO_CREATE_GROUP=true
-Environment=DONEBOT_FEATURES_VIDEO=false
-Environment=DONEBOT_FEATURES_AUDIO=false
 Environment=ASSET_STORAGE_DRIVER=local
 Environment=IMAGE_STORAGE_DRIVER=local
 Environment=IMAGE_STORAGE_ENABLED=true
-# Optional operator overrides (e.g. public assets URL or video feature).
+# Optional operator overrides (e.g. public assets URL).
 EnvironmentFile=-/etc/sub2api/environment
 
 [Install]

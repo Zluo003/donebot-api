@@ -1,5 +1,7 @@
 # Staging acceptance, 2026-11-04
 
+> Historical deployment evidence. A later 2026-11-04 change removed the independent video/audio runtime switches. The switch-based rollback instructions below apply only to the recorded old binary. On current versions, disable the relevant models in DoneBot before rolling back; old environment values do not restrict current media calls. The original request IDs and deployed-source evidence are preserved.
+
 Environment: https://test.donebot.cn. Deployed source: `7670599`; image: `donebot-api:v3-7670599`. The gateway container was healthy after the restart acceptance. This evidence update does not change the deployed binary.
 
 `staging-media-native.json` contains the full safe request/receipt records, including failed attempts. It stores no credential or signed media URL. Native Responses and Gemini SSE, Chat tool calls, CNY receipt settlement, requested high / effective low, and a real image generation succeeded. The image cost was 25 CNY cents (¥0.25). Replaying its exact operation after restarting the gateway returned `Idempotency-Replayed: true` and the original receipt `d9f62422-d526-4a42-878b-460aec576f92`; the replay request ID was `a82085c0-62ac-428d-9607-c3b0f5ae8b0d`.

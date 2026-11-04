@@ -13,7 +13,6 @@ func doneBotMediaValidationFixture(t *testing.T) (*DoneBotCatalogService, DoneBo
 	t.Helper()
 	installs, _, _ := newDoneBotServiceTest()
 	installs.cfg.DoneBot.CatalogCurrency = "CNY"
-	installs.cfg.DoneBot.Features.Audio, installs.cfg.DoneBot.Features.Video = true, true
 	claim, err := installs.Claim(t.Context(), 42, DoneBotClaimRequest{InstallationID: "9c6048be-395d-4d9b-bc00-a7c7b508fa55", InstallName: "media-validation-fixture"})
 	require.NoError(t, err)
 	group := &Group{ID: 9, Status: StatusActive, Platform: PlatformComposite, RateMultiplier: 1}
@@ -48,9 +47,7 @@ func TestDoneBotMediaValidationUsesLiveCatalogAndOwner(t *testing.T) {
 	group.ModelAllowlist = GroupModelAllowlist{Enabled: true, Models: []string{"image"}}
 	require.ErrorIs(t, s.ValidateMedia(ctx, owner, "speech", "speech", parameters), ErrDoneBotMediaInvalid)
 	group.ModelAllowlist.Enabled = false
-	s.installs.cfg.DoneBot.Features.Audio = false
-	require.ErrorIs(t, s.ValidateMedia(ctx, owner, "speech", "speech", parameters), ErrDoneBotMediaInvalid)
-	s.installs.cfg.DoneBot.Features.Audio = true
+	require.NoError(t, s.ValidateMedia(ctx, owner, "speech", "speech", parameters))
 	wrongOwner := owner
 	wrongOwner.APIKeyID++
 	require.ErrorIs(t, s.ValidateMedia(ctx, wrongOwner, "speech", "speech", parameters), ErrDoneBotMediaInvalid)

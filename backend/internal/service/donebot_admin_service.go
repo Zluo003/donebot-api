@@ -576,7 +576,7 @@ func (s *DoneBotAdminService) Overview(ctx context.Context) (map[string]any, err
 			enabled++
 		}
 	}
-	return map[string]any{"group": map[string]any{"id": g.ID, "name": g.Name, "platform": g.Platform}, "user_count": len(users), "install_count": installs, "model_count": enabled, "today_usage": stats, "features": map[string]bool{"audio": s.installs.cfg.DoneBot.Features.Audio, "video": s.installs.cfg.DoneBot.Features.Video}, "asset_storage": map[string]any{"driver": s.installs.cfg.AssetStorage.Driver, "public_base_url_configured": strings.TrimSpace(s.installs.cfg.AssetStorage.PublicBaseURL) != ""}}, nil
+	return map[string]any{"group": map[string]any{"id": g.ID, "name": g.Name, "platform": g.Platform}, "user_count": len(users), "install_count": installs, "model_count": enabled, "today_usage": stats, "features": map[string]bool{"audio": true, "video": true}, "asset_storage": map[string]any{"driver": s.installs.cfg.AssetStorage.Driver, "public_base_url_configured": strings.TrimSpace(s.installs.cfg.AssetStorage.PublicBaseURL) != ""}}, nil
 }
 
 func (s *DoneBotAdminService) requireModality(kind string) error {

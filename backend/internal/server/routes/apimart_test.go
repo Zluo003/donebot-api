@@ -10,26 +10,21 @@ import (
 	"testing"
 )
 
-func TestAPIMartNativeRoutesAndAudioFeatureGate(t *testing.T) {
-	for _, p := range []string{"/v1/tasks/task-1", "/v1/music/tasks/task-1", "/v1/music/generations", "/v1/audio/speech"} {
-		method := http.MethodPost
-		if strings.Contains(p, "/tasks/") {
-			method = http.MethodGet
+func TestAPIMartNativeRoutesIgnoreLegacyAudioSwitch(t *testing.T) {
+	for _, doneBotEnabled := range []bool{false, true} {
+		cfg := &config.Config{
+			DoneBot: config.DoneBotConfig{Enabled: doneBotEnabled},
+			Gateway: config.GatewayConfig{MaxBodySize: 1024 * 1024},
 		}
-		w := httptest.NewRecorder()
-		newGatewayRoutesTestRouter(service.PlatformOpenAI).ServeHTTP(w, httptest.NewRequest(method, p, strings.NewReader(`{"model":"suno","version":"v6","prompt":"rain"}`)))
-		require.NotEqual(t, http.StatusNotFound, w.Code, p)
-	}
-	cfg := &config.Config{}
-	cfg.DoneBot.Enabled = true
-	for _, p := range []string{"/v1/music/generations", "/v1/audio/speech", "/v1/music/tasks/task-1"} {
-		method := http.MethodPost
-		if strings.Contains(p, "/tasks/") {
-			method = http.MethodGet
+		router := newGatewayRoutesTestRouterWithConfig(cfg, service.PlatformOpenAI)
+		for _, p := range []string{"/v1/tasks/task-1", "/v1/music/tasks/task-1", "/v1/music/generations", "/v1/audio/speech"} {
+			method := http.MethodPost
+			if strings.Contains(p, "/tasks/") {
+				method = http.MethodGet
+			}
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(method, p, strings.NewReader(`{"model":"suno","version":"v6","prompt":"rain"}`)))
+			require.NotEqual(t, http.StatusNotFound, w.Code, p)
 		}
-		w := httptest.NewRecorder()
-		newGatewayRoutesTestRouterWithConfig(cfg, service.PlatformOpenAI).ServeHTTP(w, httptest.NewRequest(method, p, strings.NewReader(`{}`)))
-		require.Equal(t, http.StatusNotFound, w.Code, p)
-		require.Contains(t, w.Body.String(), "Media endpoint is not enabled")
 	}
 }

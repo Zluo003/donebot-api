@@ -23,8 +23,6 @@
             @click="active = tab.id"
           >{{ tab.label }}</button>
         </div>
-        <p v-if="active === 'audio' && overview?.features?.audio === false" class="text-sm text-amber-600">音频调用未启用，可先配置模型与价格。</p>
-        <p v-if="active === 'video' && overview?.features?.video === false" class="text-sm text-amber-600">视频调用未启用，可先配置模型与价格。</p>
         <LlmModelsPanel v-if="active === 'llm'" />
         <ImageModelsPanel v-else-if="active === 'images'" />
         <AudioModelsPanel v-else-if="active === 'audio'" />

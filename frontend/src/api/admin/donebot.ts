@@ -32,7 +32,7 @@ export interface PricingInput {
 export interface ModelConfigurationInput { models: (ModelToggle & { pricing?: ModelSalePricing })[] }
 export interface AdminImageTask { task_id: string; status: string; http_status?: number; user_id: number; install: { id: number; name: string }; created_at: number; completed_at?: number; expires_at: number }
 export interface Install { id: number; name: string; user_id: number; api_key_id: number; status: string; last_seen_at?: string; created_at: string }
-export interface Overview { features?: { audio: boolean; video: boolean }; asset_storage?: { driver: string; public_base_url_configured: boolean }; group: { id: number; name: string; platform: string }; user_count: number; model_count: number; install_count: number; today_usage: { total_requests: number; total_actual_cost: number } }
+export interface Overview { asset_storage?: { driver: string; public_base_url_configured: boolean }; group: { id: number; name: string; platform: string }; user_count: number; model_count: number; install_count: number; today_usage: { total_requests: number; total_actual_cost: number } }
 export interface StoragePolicyInput {
  enabled: boolean; driver: 'local' | 's3'; local_path: string; public_base_url: string
  max_storage_bytes: number; ttl_hours: number; cleanup_threshold_percent: number; max_file_bytes: number

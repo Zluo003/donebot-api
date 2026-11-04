@@ -22,26 +22,18 @@ describe('DoneBot admin page', () => {
   await tabs[4].trigger('click')
   expect(wrapper.findComponent({ name: 'StoragePanel' }).exists()).toBe(true)
  })
- it('allows audio and video configuration while their runtime features are disabled', async () => {
+ it.each([undefined, { audio: false, video: false }, { audio: true, video: true }])('shows media configuration without a separate runtime state (%j)', async features => {
   setActivePinia(createPinia())
-  vi.mocked(donebot.overview).mockResolvedValue({ features: { audio: false, video: false }, group: { id: 1, name: 'DoneBot', platform: 'composite' }, user_count: 1, model_count: 2, install_count: 1, today_usage: { total_requests: 0, total_actual_cost: 0 } })
+  const overview = { ...(features ? { features } : {}), group: { id: 1, name: 'DoneBot', platform: 'composite' }, user_count: 1, model_count: 2, install_count: 1, today_usage: { total_requests: 0, total_actual_cost: 0 } }
+  vi.mocked(donebot.overview).mockResolvedValue(overview)
   const wrapper = mount(DoneBotView, { global: { stubs } }); await flushPromises()
   const tabs = wrapper.findAll('[role=tab]')
   expect(tabs.map(t => t.text())).toEqual(['LLM', '图片', '音频', '视频', '存储', '联网工具'])
   await tabs[2].trigger('click')
   expect(wrapper.findComponent({ name: 'AudioModelsPanel' }).exists()).toBe(true)
-  expect(wrapper.text()).toContain('音频调用未启用，可先配置模型与价格')
+  expect(wrapper.text()).not.toContain('调用未启用')
   await tabs[3].trigger('click')
   expect(wrapper.findComponent({ name: 'VideoModelsPanel' }).exists()).toBe(true)
-  expect(wrapper.text()).toContain('视频调用未启用，可先配置模型与价格')
- })
- it('omits disabled-feature hints when runtime features are enabled', async () => {
-  setActivePinia(createPinia())
-  vi.mocked(donebot.overview).mockResolvedValue({ features: { audio: true, video: true }, group: { id: 1, name: 'DoneBot', platform: 'composite' }, user_count: 1, model_count: 2, install_count: 1, today_usage: { total_requests: 0, total_actual_cost: 0 } })
-  const wrapper = mount(DoneBotView, { global: { stubs } }); await flushPromises()
-  await wrapper.findAll('[role=tab]')[2].trigger('click')
-  expect(wrapper.text()).not.toContain('调用未启用')
-  await wrapper.findAll('[role=tab]')[3].trigger('click')
   expect(wrapper.text()).not.toContain('调用未启用')
  })
  it('opens the web tools settings from a direct admin tab link', async () => {

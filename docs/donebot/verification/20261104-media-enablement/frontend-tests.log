@@ -1,0 +1,23 @@
+$ pnpm exec vitest run src/components/admin/donebot/__tests__ src/api/admin/__tests__/donebot.spec.ts
+
+ RUN  v2.1.9 /Users/zluo/Dev/donebot-api/frontend
+
+ ✓ src/api/admin/__tests__/donebot.spec.ts (4 tests) 7ms
+ ✓ src/components/admin/donebot/__tests__/ImageTaskLookup.spec.ts (1 test) 33ms
+Browserslist: browsers data (caniuse-lite) is 11 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+ ✓ src/components/admin/donebot/__tests__/LlmModelsPanel.spec.ts (1 test) 52ms
+ ✓ src/components/admin/donebot/__tests__/AudioModelsPanel.spec.ts (2 tests) 77ms
+ ✓ src/components/admin/donebot/__tests__/WebToolsPanel.spec.ts (6 tests) 105ms
+ ✓ src/components/admin/donebot/__tests__/ModelPricingPanel.spec.ts (15 tests) 240ms
+ ✓ src/components/admin/donebot/__tests__/StoragePanel.spec.ts (10 tests) 419ms
+ ✓ src/components/admin/donebot/__tests__/DoneBotView.spec.ts (5 tests) 75ms
+
+ Test Files  8 passed (8)
+      Tests  44 passed (44)
+   Start at  20:55:25
+   Duration  6.03s (transform 2.41s, setup 1.30s, collect 17.21s, tests 1.01s, environment 11.39s, prepare 1.32s)
+
+
+exit_code=0
