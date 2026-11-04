@@ -1,0 +1,146 @@
+{
+  "at": "2026-11-04T05:10:50.287Z",
+  "source": "real staging",
+  "origin": "https://test.donebot.cn",
+  "transport": "SSH loopback forward",
+  "protocol": "anthropic.messages",
+  "validation": "upstream capability qualification; in-memory tool flag override",
+  "capability_override": true,
+  "requests": [
+    {
+      "path": "/anthropic/v1/messages",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "b03cdfe6-d2d3-4262-b72c-b6fd2b437272",
+      "receipt_id": "da9d3e50-7c1b-42c6-a9d3-fa660330c485"
+    },
+    {
+      "path": "/anthropic/v1/messages",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "7a763d70-932e-4b89-b274-f42edd7beb42",
+      "receipt_id": "2b43f340-69ee-42a2-a579-40a399ea9541"
+    },
+    {
+      "path": "/anthropic/v1/messages",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "024d6c98-e71d-4aec-af0d-10a10e5099d7",
+      "receipt_id": "818396b2-f86b-4ea9-9179-e9c125d9bde7"
+    }
+  ],
+  "receipts": [
+    {
+      "receipt_id": "da9d3e50-7c1b-42c6-a9d3-fa660330c485",
+      "request_id": "client:da9d3e50-7c1b-42c6-a9d3-fa660330c485",
+      "installation_id": "3e218fd9-b5e7-4e9c-86de-f09eb737df1a",
+      "status": "completed",
+      "model": "claude-opus-5-5",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.2965,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    },
+    {
+      "receipt_id": "2b43f340-69ee-42a2-a579-40a399ea9541",
+      "request_id": "client:2b43f340-69ee-42a2-a579-40a399ea9541",
+      "installation_id": "3e218fd9-b5e7-4e9c-86de-f09eb737df1a",
+      "status": "completed",
+      "model": "claude-opus-5-5",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.03278,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    },
+    {
+      "receipt_id": "818396b2-f86b-4ea9-9179-e9c125d9bde7",
+      "request_id": "client:818396b2-f86b-4ea9-9179-e9c125d9bde7",
+      "installation_id": "3e218fd9-b5e7-4e9c-86de-f09eb737df1a",
+      "status": "completed",
+      "model": "claude-opus-5-5",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.10106,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    }
+  ],
+  "model": "claude-opus-5-5",
+  "catalog_scope_id": "dbs_25992b6ba99a362eff34ea2612c74aa1",
+  "catalog_version": "dbv_d937d678608493612eed2c0f692664cffa9fec015451cb3d753d202fca1f9fd1",
+  "catalog_tool_calling": false,
+  "ok": false,
+  "usage": {
+    "input": 94,
+    "output": 41
+  },
+  "tool_execution_count": 1,
+  "assistant_text": "donebot-tool-54e8a8d1-b256-44c1-8cbc-082c8f5a71a4",
+  "expected_nonce": "donebot-tool-54e8a8d1-b256-44c1-8cbc-082c8f5a71a4",
+  "errors": [
+    "Stopped because the tool call “audit_read_nonce” failed. The bot's reply isn't proof the work was done; the failed step shows the error."
+  ],
+  "mcp_received_credential": false,
+  "error": {
+    "code": "ERR_ASSERTION",
+    "status": null,
+    "message": "Tool turn failed\n\nfalse !== true\n"
+  },
+  "installation_revoked": true,
+  "keychain_items_deleted": true,
+  "credentials_on_disk": false,
+  "records": [
+    {
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "request_id": "f5a2f3b9-aa23-4d97-b7ad-15a61cd8d4fe"
+    },
+    {
+      "path": "/api/v1/donebot/installations/claim",
+      "status": 200,
+      "request_id": "13cef079-f9fb-4266-b028-4906a8131ed5"
+    },
+    {
+      "path": "/api/v1/donebot/models",
+      "status": 200,
+      "request_id": "0545f625-54d6-46f1-92ac-a2473761832d"
+    },
+    {
+      "path": "/api/v1/donebot/account",
+      "status": 200,
+      "request_id": "4387635f-4490-49a3-a529-b284ebe1d86f"
+    },
+    {
+      "path": "/v1/models",
+      "status": 200,
+      "request_id": "ef7b0cc5-03a3-41e6-95f0-8399a70339d4"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/da9d3e50-7c1b-42c6-a9d3-fa660330c485",
+      "status": 200,
+      "request_id": "9b880b89-10c3-4529-a624-6155b6350bc0"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/2b43f340-69ee-42a2-a579-40a399ea9541",
+      "status": 200,
+      "request_id": "8789870a-2d02-4e62-9a2b-a250306de525"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/818396b2-f86b-4ea9-9179-e9c125d9bde7",
+      "status": 200,
+      "request_id": "2ff9b1b9-4604-4e7f-a5af-32c75f432c06"
+    },
+    {
+      "path": "/api/v1/donebot/installations/3e218fd9-b5e7-4e9c-86de-f09eb737df1a",
+      "status": 204,
+      "request_id": "67ec1054-4dfc-4d09-a216-f2c1e0642837"
+    },
+    {
+      "path": "/api/v1/auth/logout",
+      "status": 200,
+      "request_id": "03670b2b-6462-47a3-be70-26dfc5dfc222"
+    }
+  ]
+}

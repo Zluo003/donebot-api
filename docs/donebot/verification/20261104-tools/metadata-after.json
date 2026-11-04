@@ -1,0 +1,42 @@
+{
+  "key": "donebot.model_capabilities.v3",
+  "metadata": {
+    "gpt-6-astra": {
+      "tool_calling": true
+    },
+    "gpt-6.1-sol": {
+      "tool_calling": true
+    },
+    "gpt-6.1-terra": {
+      "reasoning": {
+        "levels": [
+          "low",
+          "high"
+        ],
+        "control": "effort",
+        "supported": true,
+        "native_field": "reasoning.effort"
+      },
+      "tool_calling": true
+    },
+    "deepseek-flash": {
+      "tool_calling": true
+    },
+    "gemini-4-argon": {
+      "tool_calling": true
+    },
+    "claude-opus-5-5": {
+      "tool_calling": true
+    },
+    "claude-fable-5-1": {
+      "tool_calling": true
+    },
+    "gemini-3.8-flash": {
+      "tool_calling": true
+    },
+    "claude-sonnet-5-5": {
+      "tool_calling": true
+    }
+  },
+  "updated_at": "2026-11-04T13:45:13.408754+08:00"
+}

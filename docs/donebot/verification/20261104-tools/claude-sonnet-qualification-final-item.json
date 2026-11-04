@@ -1,0 +1,296 @@
+{
+  "at": "2026-11-04T05:44:11.340Z",
+  "source": "real staging",
+  "origin": "https://test.donebot.cn",
+  "transport": "SSH loopback forward",
+  "protocol": "anthropic.messages",
+  "validation": "upstream capability qualification; in-memory tool flag override",
+  "capability_override": true,
+  "requests": [
+    {
+      "path": "/anthropic/v1/messages",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "72ae654c-5ece-4ad5-8974-0205a6116ec4",
+      "receipt_id": "594139bf-55eb-47bb-9ded-673684da7baa",
+      "sent_tools": [
+        {
+          "name": "audit_read_nonce",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "_noargs": {
+                "type": "string",
+                "enum": [
+                  ""
+                ]
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "ask_user",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "questions": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "question": {
+                      "type": "string",
+                      "description": "The question to show the person."
+                    },
+                    "header": {
+                      "type": "string",
+                      "description": "A short label for the question's tab."
+                    },
+                    "multiSelect": {
+                      "type": "boolean",
+                      "description": "Whether several options may be picked."
+                    },
+                    "options": {
+                      "type": "array",
+                      "maxItems": 12,
+                      "description": "Suggested answers; the person may always write their own.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "question"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "questions"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "upstream_tool_inputs": [
+        {
+          "id": "toolu_01G6krPAOOwDU1yUXr5kpvBR",
+          "name": "audit_read_nonce",
+          "initial_input_shape": {},
+          "initial_input": {},
+          "delta_input": {
+            "_noargs": ""
+          },
+          "delta_input_shape": {
+            "_noargs": "string"
+          }
+        }
+      ]
+    },
+    {
+      "path": "/anthropic/v1/messages",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "9627802b-581a-4463-9521-aea2b0957d99",
+      "receipt_id": "4dd78a49-b452-4ba9-89df-85a98e2cf788",
+      "sent_tools": [
+        {
+          "name": "audit_read_nonce",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "_noargs": {
+                "type": "string",
+                "enum": [
+                  ""
+                ]
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "ask_user",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "questions": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "question": {
+                      "type": "string",
+                      "description": "The question to show the person."
+                    },
+                    "header": {
+                      "type": "string",
+                      "description": "A short label for the question's tab."
+                    },
+                    "multiSelect": {
+                      "type": "boolean",
+                      "description": "Whether several options may be picked."
+                    },
+                    "options": {
+                      "type": "array",
+                      "maxItems": 12,
+                      "description": "Suggested answers; the person may always write their own.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "question"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "questions"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  ],
+  "receipts": [
+    {
+      "receipt_id": "594139bf-55eb-47bb-9ded-673684da7baa",
+      "request_id": "client:594139bf-55eb-47bb-9ded-673684da7baa",
+      "installation_id": "dccf7647-f1d5-4209-a9fe-094dead6f10e",
+      "status": "completed",
+      "model": "claude-sonnet-5-5",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.2574,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    },
+    {
+      "receipt_id": "4dd78a49-b452-4ba9-89df-85a98e2cf788",
+      "request_id": "client:4dd78a49-b452-4ba9-89df-85a98e2cf788",
+      "installation_id": "dccf7647-f1d5-4209-a9fe-094dead6f10e",
+      "status": "completed",
+      "model": "claude-sonnet-5-5",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.2358,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    }
+  ],
+  "model": "claude-sonnet-5-5",
+  "catalog_scope_id": "dbs_20bee743fa4efe0f95a39ca9e230e7cb",
+  "catalog_version": "dbv_eb8bbbb627fdfb7230fc53a366928d83361569114c1d325ca3bc473d47361783",
+  "catalog_tool_calling": false,
+  "ok": true,
+  "turn_ok": true,
+  "usage": {
+    "input": 2011,
+    "output": 91
+  },
+  "tool_execution_count": 1,
+  "tool_events": [
+    {
+      "type": "item.started",
+      "id": "toolu_01G6krPAOOwDU1yUXr5kpvBR",
+      "title": "audit_read_nonce"
+    },
+    {
+      "type": "item.completed",
+      "id": "toolu_01G6krPAOOwDU1yUXr5kpvBR",
+      "ok": true,
+      "output": "{\n  \"ok\": true,\n  \"result\": \"donebot-tool-8c588720-0114-4d53-ae72-56e041d37507\"\n}"
+    }
+  ],
+  "assistant_text": "I'll read the nonce with the audit tool.\n\ndonebot-tool-8c588720-0114-4d53-ae72-56e041d37507",
+  "final_assistant_text": "donebot-tool-8c588720-0114-4d53-ae72-56e041d37507",
+  "expected_nonce": "donebot-tool-8c588720-0114-4d53-ae72-56e041d37507",
+  "errors": [],
+  "mcp_received_credential": false,
+  "installation_revoked": true,
+  "keychain_items_deleted": true,
+  "credentials_on_disk": false,
+  "records": [
+    {
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "request_id": "77e5b28c-5211-4b56-ba03-e7ebe34a69a7"
+    },
+    {
+      "path": "/api/v1/donebot/installations/claim",
+      "status": 200,
+      "request_id": "d73f0bf5-7b37-4d1c-9e16-ae530442a117"
+    },
+    {
+      "path": "/api/v1/donebot/models",
+      "status": 200,
+      "request_id": "4a10903d-92e8-4c98-95ff-0a46ec512184"
+    },
+    {
+      "path": "/api/v1/donebot/account",
+      "status": 200,
+      "request_id": "e2b3a717-91ba-42c2-a86c-f0f030432d0f"
+    },
+    {
+      "path": "/v1/models",
+      "status": 200,
+      "request_id": "628e2c65-ed73-4973-9f1e-56c92bd6f177"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/594139bf-55eb-47bb-9ded-673684da7baa",
+      "status": 200,
+      "request_id": "6c3cc6c5-8db1-42f8-9df8-b6f4b8e4a317"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/4dd78a49-b452-4ba9-89df-85a98e2cf788",
+      "status": 200,
+      "request_id": "7f9e1823-b341-46cd-9b2e-bab00d5db993"
+    },
+    {
+      "path": "/api/v1/donebot/installations/dccf7647-f1d5-4209-a9fe-094dead6f10e",
+      "status": 204,
+      "request_id": "7baed1ea-5bee-44b5-af1b-38d8db1bc929"
+    },
+    {
+      "path": "/api/v1/auth/logout",
+      "status": 200,
+      "request_id": "6f7729cf-6d40-4753-97b0-018ed965bfcf"
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "date": "2026-11-04",
+  "source": "read-only SSH inspection of staging Docker logs, SQL usage records, metadata setting and unauthenticated health requests",
+  "mutations_performed": false,
+  "deepseek_first_attempt": {
+    "client_started_at": "2026-11-04T05:01:17.481Z",
+    "client_failed_at": "2026-11-04T05:01:35.801Z",
+    "client_error": "upstream HTTP 502: DoneBot 本机连接暂不可用。",
+    "gateway_request_found": false,
+    "search_window": ["2026-11-04T05:01:00Z", "2026-11-04T05:05:10Z"]
+  },
+  "deepseek_second_attempt": {
+    "model": "deepseek-flash",
+    "request_id": "c1d18993-8307-4d6a-9da9-484f29794dad",
+    "client_request_id": "d73e4c4c-bbcc-430e-ae28-625e74dc8e2c",
+    "usage_request_id": "client:d73e4c4c-bbcc-430e-ae28-625e74dc8e2c",
+    "path": "/v1/chat/completions",
+    "request_bytes": 133451,
+    "gateway_check_started_at": "2026-11-04T05:01:50.539Z",
+    "gateway_completed_at": "2026-11-04T05:01:52.639Z",
+    "status_code": 200,
+    "http_latency_ms": 2476,
+    "upstream_duration_ms": 2085,
+    "first_token_ms": 396,
+    "input_tokens": 32235,
+    "output_tokens": 141,
+    "client_first_reasoning_delta_at": "2026-11-04T05:01:53.085Z",
+    "client_failed_at": "2026-11-04T05:02:41.528Z",
+    "client_error": "terminated"
+  },
+  "claude_avatar_attempt": {
+    "model": "claude-opus-5-5",
+    "request_id": "406658ec-58d2-49a1-8d8f-7ac862af5f34",
+    "client_request_id": "b9579607-81aa-4c41-98f8-263d6fb0db34",
+    "path": "/v1/messages",
+    "gateway_check_started_at": "2026-11-04T05:04:02.893Z",
+    "gateway_completed_at": "2026-11-04T05:04:24.852Z",
+    "status_code": 200,
+    "http_latency_ms": 21996,
+    "input_tokens": 46,
+    "output_tokens": 1487
+  },
+  "public_health_from_mac": {
+    "status_code": 200,
+    "dns_ms": 10,
+    "tcp_ms": 559,
+    "tls_ms": 2228,
+    "first_response_ms": 17634,
+    "total_ms": 17634
+  },
+  "public_health_from_staging_host": {
+    "status_code": 200,
+    "dns_ms": 211.236,
+    "tcp_ms": 483.416,
+    "tls_ms": 806.754,
+    "total_ms": 6173.89
+  },
+  "cloudflared_log_result": "No entries found in service journal for the inspected failure window; no tunnel configuration changes performed",
+  "interpretation": "DeepSeek requests include tools in the client native transcript. The second request generated 141 output tokens and completed at the gateway before the client reported stream termination. This evidence identifies a transport truncation symptom but does not by itself establish which network hop caused it. Claude and Gemini tool metadata entries are absent, so the public catalog defaults their tool_calling capability to false."
+}

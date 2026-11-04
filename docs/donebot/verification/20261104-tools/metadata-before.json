@@ -1,0 +1,17 @@
+{
+  "gpt-6.1-terra": {
+    "reasoning": {
+      "levels": [
+        "low",
+        "high"
+      ],
+      "control": "effort",
+      "supported": true,
+      "native_field": "reasoning.effort"
+    },
+    "tool_calling": true
+  },
+  "deepseek-flash": {
+    "tool_calling": true
+  }
+}

@@ -1,0 +1,309 @@
+[
+  {
+    "label": "claude-qualification",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=anthropic.messages",
+      "--model=claude-opus-5-5",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 1,
+    "result_file": "claude-qualification.json",
+    "stderr_file": "claude-qualification.stderr.log",
+    "note": "Commands and exit codes transcribed from completed tool runs; not a new run"
+  },
+  {
+    "label": "gemini-qualification",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=gemini.generate_content",
+      "--model=gemini-3.8-flash",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "gemini-qualification.json",
+    "stderr_file": "gemini-qualification.stderr.log",
+    "note": "Commands and exit codes transcribed from completed tool runs; not a new run"
+  },
+  {
+    "label": "deepseek-tools",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=openai.chat_completions",
+      "--model=deepseek-flash"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "deepseek-tools.json",
+    "stderr_file": "deepseek-tools.stderr.log",
+    "note": "Commands and exit codes transcribed from completed tool runs; not a new run"
+  },
+  {
+    "label": "claude-qualification-retry",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=anthropic.messages",
+      "--model=claude-opus-5-5",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 1,
+    "result_file": "claude-qualification-retry.json",
+    "stderr_file": "claude-qualification-retry.stderr.log",
+    "note": "Commands and exit codes transcribed from completed tool runs; not a new run"
+  },
+  {
+    "label": "claude-qualification-input-observer",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=anthropic.messages",
+      "--model=claude-opus-5-5",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 1,
+    "result_file": "claude-qualification-input-observer.json",
+    "stderr_file": "claude-qualification-input-observer.stderr.log",
+    "note": "Commands and exit codes transcribed from completed tool runs; not a new run"
+  },
+  {
+    "label": "claude-qualification-after-fix",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=anthropic.messages",
+      "--model=claude-opus-5-5",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 1,
+    "result_file": "claude-qualification-after-fix.json",
+    "stderr_file": "claude-qualification-after-fix.stderr.log"
+  },
+  {
+    "label": "claude-after-fix-transport-retry",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=anthropic.messages",
+      "--model=claude-opus-5-5",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 1,
+    "result_file": "claude-after-fix-transport-retry.json",
+    "stderr_file": "claude-after-fix-transport-retry.stderr.log"
+  },
+  {
+    "label": "claude-qualification-fixed",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=anthropic.messages",
+      "--model=claude-opus-5-5",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "claude-qualification-fixed.json",
+    "stderr_file": "claude-qualification-fixed.stderr.log"
+  },
+  {
+    "label": "gpt-astra-qualification",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=openai.responses",
+      "--model=gpt-6-astra",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "gpt-astra-qualification.json",
+    "stderr_file": "gpt-astra-qualification.stderr.log"
+  },
+  {
+    "label": "gpt-sol-qualification",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=openai.responses",
+      "--model=gpt-6.1-sol",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "gpt-sol-qualification.json",
+    "stderr_file": "gpt-sol-qualification.stderr.log"
+  },
+  {
+    "label": "claude-sonnet-qualification",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=anthropic.messages",
+      "--model=claude-sonnet-5-5",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 1,
+    "result_file": "claude-sonnet-qualification.json",
+    "stderr_file": "claude-sonnet-qualification.stderr.log"
+  },
+  {
+    "label": "claude-fable-qualification",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=anthropic.messages",
+      "--model=claude-fable-5-1",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "claude-fable-qualification.json",
+    "stderr_file": "claude-fable-qualification.stderr.log"
+  },
+  {
+    "label": "gemini-argon-qualification",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=gemini.generate_content",
+      "--model=gemini-4-argon",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "gemini-argon-qualification.json",
+    "stderr_file": "gemini-argon-qualification.stderr.log"
+  },
+  {
+    "label": "gpt-terra-tools",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=openai.responses",
+      "--model=gpt-6.1-terra"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "gpt-terra-tools.json",
+    "stderr_file": "gpt-terra-tools.stderr.log"
+  },
+  {
+    "label": "claude-sonnet-qualification-final-item",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=anthropic.messages",
+      "--model=claude-sonnet-5-5",
+      "--probe-tool-capability"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "claude-sonnet-qualification-final-item.json",
+    "stderr_file": "claude-sonnet-qualification-final-item.stderr.log"
+  },
+  {
+    "label": "claude-catalog-tools",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=anthropic.messages",
+      "--model=claude-opus-5-5"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "claude-catalog-tools.json",
+    "stderr_file": "claude-catalog-tools.stderr.log"
+  },
+  {
+    "label": "gemini-catalog-tools",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=gemini.generate_content",
+      "--model=gemini-3.8-flash"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "gemini-catalog-tools.json",
+    "stderr_file": "gemini-catalog-tools.stderr.log"
+  },
+  {
+    "label": "deepseek-public-native-tools",
+    "command": [
+      "node",
+      "--experimental-strip-types",
+      "scripts/verify-donebot-tools-staging.mjs",
+      "--origin=https://test.donebot.cn",
+      "--transport-origin=http://127.0.0.1:62862",
+      "--protocol=openai.chat_completions",
+      "--model=deepseek-flash",
+      "--public-native"
+    ],
+    "stdin": "JSON test credentials supplied in memory; omitted from evidence",
+    "observed_exit_code": 0,
+    "result_file": "deepseek-public-native-tools.json",
+    "stderr_file": "deepseek-public-native-tools.stderr.log"
+  }
+]

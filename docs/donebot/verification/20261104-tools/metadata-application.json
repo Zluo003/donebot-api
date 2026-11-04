@@ -1,0 +1,13 @@
+{
+  "key": "donebot.model_capabilities.v3",
+  "applied_at": "2026-11-04T13:45:13.408754+08:00",
+  "command": "docker exec -i sub2api-postgres sh -c 'psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -v ON_ERROR_STOP=1' < metadata-apply.sql",
+  "observed_output": "BEGIN\nDO\nCOMMIT\n",
+  "readback": "independent SELECT value::json,updated_at from settings",
+  "changed_fields": [
+    "tool_calling"
+  ],
+  "new_model_count": 7,
+  "total_models": 9,
+  "prices_balances_reasoning": "preserved"
+}

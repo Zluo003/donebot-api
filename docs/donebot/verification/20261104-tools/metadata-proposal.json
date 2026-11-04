@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-11-04T05:11:27.435128+00:00",
+  "source": "read-only staging settings SQL snapshot",
+  "key": "donebot.model_capabilities.v3",
+  "state": "applied after all exact models passed real tool execution and continuation qualification",
+  "requirement": "All exact model IDs must pass real tool execution and result continuation before apply",
+  "changed_models": [
+    "gpt-6-astra",
+    "gpt-6.1-sol",
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-fable-5-1",
+    "gemini-3.8-flash",
+    "gemini-4-argon"
+  ],
+  "changed_fields": [
+    "tool_calling"
+  ],
+  "other_capabilities": "preserved",
+  "guard": "transaction + SELECT FOR UPDATE + jsonb compare-and-set"
+}

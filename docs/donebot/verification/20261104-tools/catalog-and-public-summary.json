@@ -1,0 +1,80 @@
+[
+  {
+    "model": "claude-opus-5-5",
+    "protocol": "anthropic.messages",
+    "transport": "SSH loopback forward",
+    "ok": true,
+    "capability_override": false,
+    "catalog_tool_calling": true,
+    "tool_execution_count": 1,
+    "errors": [],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false,
+    "requests": [
+      {
+        "request_id": "c9fb4c2b-f9c8-43a3-a010-9e18cca3596c",
+        "receipt_id": "764fc031-d098-4cb4-b3d9-7aeaf1e03eeb",
+        "status": 200
+      },
+      {
+        "request_id": "b1f267a6-ee0a-4747-9686-f891f1cad13c",
+        "receipt_id": "d1f0c5e4-3bc9-4e56-97ab-6a5902a08ada",
+        "status": 200
+      }
+    ],
+    "cost_cny": 0.008904
+  },
+  {
+    "model": "gemini-3.8-flash",
+    "protocol": "gemini.generate_content",
+    "transport": "SSH loopback forward",
+    "ok": true,
+    "capability_override": false,
+    "catalog_tool_calling": true,
+    "tool_execution_count": 1,
+    "errors": [],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false,
+    "requests": [
+      {
+        "request_id": "289765dd-1c60-4e72-a8ed-4e41c0aa01d6",
+        "receipt_id": "a824d56a-d054-4f61-918a-6eb8a1bacf8a",
+        "status": 200
+      },
+      {
+        "request_id": "4ae6b5a9-95c6-4e45-90ef-5ca6198ed7ea",
+        "receipt_id": "1ba3c621-2769-45e7-b3a8-28fbacfa31df",
+        "status": 200
+      }
+    ],
+    "cost_cny": 0.0006876
+  },
+  {
+    "model": "deepseek-flash",
+    "protocol": "openai.chat_completions",
+    "transport": "SSH account management; public HTTPS native inference",
+    "ok": true,
+    "capability_override": false,
+    "catalog_tool_calling": true,
+    "tool_execution_count": 1,
+    "errors": [],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false,
+    "requests": [
+      {
+        "request_id": "86ed3773-6838-4f81-967c-8c981d9877c0",
+        "receipt_id": "5a6bfe14-19c9-4bcd-8ea2-ff5eb6bf2bd0",
+        "status": 200
+      },
+      {
+        "request_id": "42aed857-c1a4-4815-8695-2c91b6bb67b7",
+        "receipt_id": "6542466b-8b99-4b18-84ed-eacb44f815c9",
+        "status": 200
+      }
+    ],
+    "cost_cny": 0.00131
+  }
+]

@@ -1,0 +1,130 @@
+{
+  "at": "2026-11-04T05:46:10.807Z",
+  "source": "real staging",
+  "origin": "https://test.donebot.cn",
+  "transport": "SSH loopback forward",
+  "protocol": "gemini.generate_content",
+  "validation": "catalog-driven tool execution and continuation",
+  "capability_override": false,
+  "requests": [
+    {
+      "path": "/gemini/v1beta/models/gemini-3.8-flash:streamGenerateContent",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "289765dd-1c60-4e72-a8ed-4e41c0aa01d6",
+      "receipt_id": "a824d56a-d054-4f61-918a-6eb8a1bacf8a"
+    },
+    {
+      "path": "/gemini/v1beta/models/gemini-3.8-flash:streamGenerateContent",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "4ae6b5a9-95c6-4e45-90ef-5ca6198ed7ea",
+      "receipt_id": "1ba3c621-2769-45e7-b3a8-28fbacfa31df"
+    }
+  ],
+  "receipts": [
+    {
+      "receipt_id": "a824d56a-d054-4f61-918a-6eb8a1bacf8a",
+      "request_id": "client:a824d56a-d054-4f61-918a-6eb8a1bacf8a",
+      "installation_id": "f3d3d34a-b41c-4ee0-a327-9f5d4b91a250",
+      "status": "completed",
+      "model": "gemini-3.8-flash",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.023625,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    },
+    {
+      "receipt_id": "1ba3c621-2769-45e7-b3a8-28fbacfa31df",
+      "request_id": "client:1ba3c621-2769-45e7-b3a8-28fbacfa31df",
+      "installation_id": "f3d3d34a-b41c-4ee0-a327-9f5d4b91a250",
+      "status": "completed",
+      "model": "gemini-3.8-flash",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.045135,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    }
+  ],
+  "model": "gemini-3.8-flash",
+  "catalog_scope_id": "dbs_769c42d5f3e0cd07c031e891efc9b5c6",
+  "catalog_version": "dbv_759eb176e333dd700ac038293b80c496a7994ae620219741af3643aee1e09f15",
+  "catalog_tool_calling": true,
+  "ok": true,
+  "turn_ok": true,
+  "usage": {
+    "input": 333,
+    "output": 239
+  },
+  "tool_execution_count": 1,
+  "tool_events": [
+    {
+      "type": "item.started",
+      "id": "call_416594",
+      "title": "audit_read_nonce"
+    },
+    {
+      "type": "item.completed",
+      "id": "call_416594",
+      "ok": true,
+      "output": "{\n  \"ok\": true,\n  \"result\": \"donebot-tool-f7f54227-218b-44e4-9506-208291bc799d\"\n}"
+    }
+  ],
+  "assistant_text": "donebot-tool-f7f54227-218b-44e4-9506-208291bc799d",
+  "final_assistant_text": "donebot-tool-f7f54227-218b-44e4-9506-208291bc799d",
+  "expected_nonce": "donebot-tool-f7f54227-218b-44e4-9506-208291bc799d",
+  "errors": [],
+  "mcp_received_credential": false,
+  "installation_revoked": true,
+  "keychain_items_deleted": true,
+  "credentials_on_disk": false,
+  "records": [
+    {
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "request_id": "e05af447-1dd4-4048-96dd-a1c30bfa9949"
+    },
+    {
+      "path": "/api/v1/donebot/installations/claim",
+      "status": 200,
+      "request_id": "6f2693dd-510b-4524-9ff7-19d85ba72f61"
+    },
+    {
+      "path": "/api/v1/donebot/models",
+      "status": 200,
+      "request_id": "591c8895-5466-4d5c-a685-cb0ec5e39a96"
+    },
+    {
+      "path": "/api/v1/donebot/account",
+      "status": 200,
+      "request_id": "cde3a375-fadd-4926-bb7f-6f3a476f7219"
+    },
+    {
+      "path": "/v1/models",
+      "status": 200,
+      "request_id": "6aa39121-39b7-467d-9c51-13e31809a605"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/a824d56a-d054-4f61-918a-6eb8a1bacf8a",
+      "status": 200,
+      "request_id": "11c71761-5c1c-42e6-879e-7b132d565301"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/1ba3c621-2769-45e7-b3a8-28fbacfa31df",
+      "status": 200,
+      "request_id": "030cae59-1c27-46e5-9607-b62af65938d3"
+    },
+    {
+      "path": "/api/v1/donebot/installations/f3d3d34a-b41c-4ee0-a327-9f5d4b91a250",
+      "status": 204,
+      "request_id": "77aab18c-d48d-44c2-a8ca-2e5694570d1c"
+    },
+    {
+      "path": "/api/v1/auth/logout",
+      "status": 200,
+      "request_id": "c738eee6-6f7e-4dd1-82ec-a7baa1db8023"
+    }
+  ]
+}

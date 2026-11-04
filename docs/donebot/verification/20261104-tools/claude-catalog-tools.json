@@ -1,0 +1,296 @@
+{
+  "at": "2026-11-04T05:46:10.807Z",
+  "source": "real staging",
+  "origin": "https://test.donebot.cn",
+  "transport": "SSH loopback forward",
+  "protocol": "anthropic.messages",
+  "validation": "catalog-driven tool execution and continuation",
+  "capability_override": false,
+  "requests": [
+    {
+      "path": "/anthropic/v1/messages",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "c9fb4c2b-f9c8-43a3-a010-9e18cca3596c",
+      "receipt_id": "764fc031-d098-4cb4-b3d9-7aeaf1e03eeb",
+      "sent_tools": [
+        {
+          "name": "audit_read_nonce",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "_noargs": {
+                "type": "string",
+                "enum": [
+                  ""
+                ]
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "ask_user",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "questions": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "question": {
+                      "type": "string",
+                      "description": "The question to show the person."
+                    },
+                    "header": {
+                      "type": "string",
+                      "description": "A short label for the question's tab."
+                    },
+                    "multiSelect": {
+                      "type": "boolean",
+                      "description": "Whether several options may be picked."
+                    },
+                    "options": {
+                      "type": "array",
+                      "maxItems": 12,
+                      "description": "Suggested answers; the person may always write their own.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "question"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "questions"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "upstream_tool_inputs": [
+        {
+          "id": "toolu_011HdM0viWrCJcstv7WfBFnW",
+          "name": "audit_read_nonce",
+          "initial_input_shape": {},
+          "initial_input": {},
+          "delta_input": {
+            "_noargs": ""
+          },
+          "delta_input_shape": {
+            "_noargs": "string"
+          }
+        }
+      ]
+    },
+    {
+      "path": "/anthropic/v1/messages",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "b1f267a6-ee0a-4747-9686-f891f1cad13c",
+      "receipt_id": "d1f0c5e4-3bc9-4e56-97ab-6a5902a08ada",
+      "sent_tools": [
+        {
+          "name": "audit_read_nonce",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "_noargs": {
+                "type": "string",
+                "enum": [
+                  ""
+                ]
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "ask_user",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "questions": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "question": {
+                      "type": "string",
+                      "description": "The question to show the person."
+                    },
+                    "header": {
+                      "type": "string",
+                      "description": "A short label for the question's tab."
+                    },
+                    "multiSelect": {
+                      "type": "boolean",
+                      "description": "Whether several options may be picked."
+                    },
+                    "options": {
+                      "type": "array",
+                      "maxItems": 12,
+                      "description": "Suggested answers; the person may always write their own.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "question"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "questions"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  ],
+  "receipts": [
+    {
+      "receipt_id": "764fc031-d098-4cb4-b3d9-7aeaf1e03eeb",
+      "request_id": "client:764fc031-d098-4cb4-b3d9-7aeaf1e03eeb",
+      "installation_id": "1347f987-afab-4963-a436-cd462269fd48",
+      "status": "completed",
+      "model": "claude-opus-5-5",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.4536,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    },
+    {
+      "receipt_id": "d1f0c5e4-3bc9-4e56-97ab-6a5902a08ada",
+      "request_id": "client:d1f0c5e4-3bc9-4e56-97ab-6a5902a08ada",
+      "installation_id": "1347f987-afab-4963-a436-cd462269fd48",
+      "status": "completed",
+      "model": "claude-opus-5-5",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.4368,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    }
+  ],
+  "model": "claude-opus-5-5",
+  "catalog_scope_id": "dbs_252e0ee69972285576e89fd1e638cac3",
+  "catalog_version": "dbv_aa4dd03f555d3a2a00b664afa69478240f0bc55f89b6ff37af12b822b104394b",
+  "catalog_tool_calling": true,
+  "ok": true,
+  "turn_ok": true,
+  "usage": {
+    "input": 1856,
+    "output": 74
+  },
+  "tool_execution_count": 1,
+  "tool_events": [
+    {
+      "type": "item.started",
+      "id": "toolu_011HdM0viWrCJcstv7WfBFnW",
+      "title": "audit_read_nonce"
+    },
+    {
+      "type": "item.completed",
+      "id": "toolu_011HdM0viWrCJcstv7WfBFnW",
+      "ok": true,
+      "output": "{\n  \"ok\": true,\n  \"result\": \"donebot-tool-58c0352d-bb57-40d7-bfa6-02b068c20966\"\n}"
+    }
+  ],
+  "assistant_text": "donebot-tool-58c0352d-bb57-40d7-bfa6-02b068c20966",
+  "final_assistant_text": "donebot-tool-58c0352d-bb57-40d7-bfa6-02b068c20966",
+  "expected_nonce": "donebot-tool-58c0352d-bb57-40d7-bfa6-02b068c20966",
+  "errors": [],
+  "mcp_received_credential": false,
+  "installation_revoked": true,
+  "keychain_items_deleted": true,
+  "credentials_on_disk": false,
+  "records": [
+    {
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "request_id": "5a9be9fc-13ed-4c5a-9c57-76a9e63a723a"
+    },
+    {
+      "path": "/api/v1/donebot/installations/claim",
+      "status": 200,
+      "request_id": "baf744fa-ec4c-4c2b-8eae-f4f55297e9bb"
+    },
+    {
+      "path": "/api/v1/donebot/models",
+      "status": 200,
+      "request_id": "251a40c4-4f80-432a-913c-073f9f54f16f"
+    },
+    {
+      "path": "/api/v1/donebot/account",
+      "status": 200,
+      "request_id": "62d70693-b485-46a1-85ca-e8baa5b74671"
+    },
+    {
+      "path": "/v1/models",
+      "status": 200,
+      "request_id": "3eb601ee-afce-4661-b860-0f672eeabbb9"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/764fc031-d098-4cb4-b3d9-7aeaf1e03eeb",
+      "status": 200,
+      "request_id": "ed9e8362-26da-4ae4-ab78-7949bb932551"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/d1f0c5e4-3bc9-4e56-97ab-6a5902a08ada",
+      "status": 200,
+      "request_id": "1f45a82f-1ba5-4482-9cc8-5a82b7fa29ad"
+    },
+    {
+      "path": "/api/v1/donebot/installations/1347f987-afab-4963-a436-cd462269fd48",
+      "status": 204,
+      "request_id": "6202ce37-cdf6-428f-bf71-a30fb7e782aa"
+    },
+    {
+      "path": "/api/v1/auth/logout",
+      "status": 200,
+      "request_id": "8b09ea24-4947-478a-81ed-1af80c041257"
+    }
+  ]
+}

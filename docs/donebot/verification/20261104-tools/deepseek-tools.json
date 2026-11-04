@@ -1,0 +1,115 @@
+{
+  "at": "2026-11-04T05:10:50.287Z",
+  "source": "real staging",
+  "origin": "https://test.donebot.cn",
+  "transport": "SSH loopback forward",
+  "protocol": "openai.chat_completions",
+  "validation": "catalog-driven tool execution and continuation",
+  "capability_override": false,
+  "requests": [
+    {
+      "path": "/openai/v1/chat/completions",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "a2aedc66-1e3a-4e25-8336-0be652f9ba80",
+      "receipt_id": "fd21a4ea-e71c-43e7-b844-926ab23232e6"
+    },
+    {
+      "path": "/openai/v1/chat/completions",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "c60fb020-178a-47a7-93c0-27e069565993",
+      "receipt_id": "bc9aa553-2629-4738-a859-2e02e5f1ee40"
+    }
+  ],
+  "receipts": [
+    {
+      "receipt_id": "fd21a4ea-e71c-43e7-b844-926ab23232e6",
+      "request_id": "client:fd21a4ea-e71c-43e7-b844-926ab23232e6",
+      "installation_id": "fcc8f555-e64b-4ec2-b86b-f908a4c4ac36",
+      "status": "completed",
+      "model": "deepseek-flash",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.1446,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    },
+    {
+      "receipt_id": "bc9aa553-2629-4738-a859-2e02e5f1ee40",
+      "request_id": "client:bc9aa553-2629-4738-a859-2e02e5f1ee40",
+      "installation_id": "fcc8f555-e64b-4ec2-b86b-f908a4c4ac36",
+      "status": "completed",
+      "model": "deepseek-flash",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.2028,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    }
+  ],
+  "model": "deepseek-flash",
+  "catalog_scope_id": "dbs_45fbbf74ddb77aca94a190043ad42040",
+  "catalog_version": "dbv_0c5d28800bea2e3ba522a941ded4a31cd26fc2782321163c736b159cba59e8a8",
+  "catalog_tool_calling": true,
+  "ok": true,
+  "usage": {
+    "input": 1321,
+    "output": 232
+  },
+  "tool_execution_count": 1,
+  "assistant_text": "donebot-tool-de4af5e2-6cd0-489c-aa4c-9ec369d2e106",
+  "expected_nonce": "donebot-tool-de4af5e2-6cd0-489c-aa4c-9ec369d2e106",
+  "errors": [],
+  "mcp_received_credential": false,
+  "installation_revoked": true,
+  "keychain_items_deleted": true,
+  "credentials_on_disk": false,
+  "records": [
+    {
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "request_id": "a3075d51-8656-4161-8f58-b40ba53bcebc"
+    },
+    {
+      "path": "/api/v1/donebot/installations/claim",
+      "status": 200,
+      "request_id": "31dac19b-c029-47c6-b9f2-050e86b6af69"
+    },
+    {
+      "path": "/api/v1/donebot/models",
+      "status": 200,
+      "request_id": "94e6a3f2-1618-4f89-bc24-64ef0bc86d52"
+    },
+    {
+      "path": "/api/v1/donebot/account",
+      "status": 200,
+      "request_id": "ec9bd777-4a05-4c61-96a6-5c3a61bcae3b"
+    },
+    {
+      "path": "/v1/models",
+      "status": 200,
+      "request_id": "8117ea38-610d-48b0-ad94-73cbcf445848"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/fd21a4ea-e71c-43e7-b844-926ab23232e6",
+      "status": 200,
+      "request_id": "6add0c9c-fa96-45f9-aa52-ba388f197c09"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/bc9aa553-2629-4738-a859-2e02e5f1ee40",
+      "status": 200,
+      "request_id": "47138e06-09d7-4a0a-b6a1-baee26a5f245"
+    },
+    {
+      "path": "/api/v1/donebot/installations/fcc8f555-e64b-4ec2-b86b-f908a4c4ac36",
+      "status": 204,
+      "request_id": "28a6aa27-edf0-485b-bbff-df05c7c4fd99"
+    },
+    {
+      "path": "/api/v1/auth/logout",
+      "status": 200,
+      "request_id": "266fc850-4bfa-4238-a8bc-f4044e3123d6"
+    }
+  ]
+}

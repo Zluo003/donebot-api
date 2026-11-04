@@ -1,0 +1,128 @@
+{
+  "at": "2026-11-04T05:42:21.960Z",
+  "source": "real staging",
+  "origin": "https://test.donebot.cn",
+  "transport": "SSH loopback forward",
+  "protocol": "gemini.generate_content",
+  "validation": "upstream capability qualification; in-memory tool flag override",
+  "capability_override": true,
+  "requests": [
+    {
+      "path": "/gemini/v1beta/models/gemini-4-argon:streamGenerateContent",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "77010ba9-f4aa-4ea5-8507-a7edf68a367a",
+      "receipt_id": "0d6cf2bf-0171-4719-99a7-64ed0b6b39bf"
+    },
+    {
+      "path": "/gemini/v1beta/models/gemini-4-argon:streamGenerateContent",
+      "sent_tool_count": 2,
+      "status": 200,
+      "request_id": "2ffa6326-efcd-4637-9730-07b893cb9610",
+      "receipt_id": "b04566dd-32b9-44a8-9975-6c36da702ed7"
+    }
+  ],
+  "receipts": [
+    {
+      "receipt_id": "0d6cf2bf-0171-4719-99a7-64ed0b6b39bf",
+      "request_id": "client:0d6cf2bf-0171-4719-99a7-64ed0b6b39bf",
+      "installation_id": "dad733ba-d185-4200-a92f-9a188663472a",
+      "status": "completed",
+      "model": "gemini-4-argon",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.05724,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    },
+    {
+      "receipt_id": "b04566dd-32b9-44a8-9975-6c36da702ed7",
+      "request_id": "client:b04566dd-32b9-44a8-9975-6c36da702ed7",
+      "installation_id": "dad733ba-d185-4200-a92f-9a188663472a",
+      "status": "completed",
+      "model": "gemini-4-argon",
+      "currency": "CNY",
+      "estimated_cents": null,
+      "actual_cents": 0.08124,
+      "requested_reasoning": null,
+      "effective_reasoning": null
+    }
+  ],
+  "model": "gemini-4-argon",
+  "catalog_scope_id": "dbs_59994422dad7bcf2f3f49d8cf7301d34",
+  "catalog_version": "dbv_ad5df7dc502bb047cc2757ed0846c13e9133b0e1ec9abe4d3365f63dd150128a",
+  "catalog_tool_calling": false,
+  "ok": true,
+  "usage": {
+    "input": 859,
+    "output": 59
+  },
+  "tool_execution_count": 1,
+  "tool_events": [
+    {
+      "type": "item.started",
+      "id": "call_394551",
+      "title": "audit_read_nonce"
+    },
+    {
+      "type": "item.completed",
+      "id": "call_394551",
+      "ok": true,
+      "output": "{\n  \"ok\": true,\n  \"result\": \"donebot-tool-46cbe2dd-14c5-421d-8e15-c4f6121f31fc\"\n}"
+    }
+  ],
+  "assistant_text": "donebot-tool-46cbe2dd-14c5-421d-8e15-c4f6121f31fc",
+  "expected_nonce": "donebot-tool-46cbe2dd-14c5-421d-8e15-c4f6121f31fc",
+  "errors": [],
+  "mcp_received_credential": false,
+  "installation_revoked": true,
+  "keychain_items_deleted": true,
+  "credentials_on_disk": false,
+  "records": [
+    {
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "request_id": "f9d366cd-5f19-4038-9cf4-d47c9c5c6860"
+    },
+    {
+      "path": "/api/v1/donebot/installations/claim",
+      "status": 200,
+      "request_id": "be88c643-25fd-45ce-8ac2-d854dd561363"
+    },
+    {
+      "path": "/api/v1/donebot/models",
+      "status": 200,
+      "request_id": "9883a425-c3f7-46aa-9c8a-8a9ce8b0d278"
+    },
+    {
+      "path": "/api/v1/donebot/account",
+      "status": 200,
+      "request_id": "3208ce05-8f05-4195-9013-b5335a02f76d"
+    },
+    {
+      "path": "/v1/models",
+      "status": 200,
+      "request_id": "b81b5097-6e5d-4979-b3fc-bf73bc836958"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/0d6cf2bf-0171-4719-99a7-64ed0b6b39bf",
+      "status": 200,
+      "request_id": "970c35d6-ace2-4a30-9f0d-8eca4316e9d8"
+    },
+    {
+      "path": "/api/v1/donebot/receipts/b04566dd-32b9-44a8-9975-6c36da702ed7",
+      "status": 200,
+      "request_id": "33adf619-7dc3-40f3-971a-86e750b8bb20"
+    },
+    {
+      "path": "/api/v1/donebot/installations/dad733ba-d185-4200-a92f-9a188663472a",
+      "status": 204,
+      "request_id": "d40ef2ff-1320-4cbd-b610-fef316c0364b"
+    },
+    {
+      "path": "/api/v1/auth/logout",
+      "status": 200,
+      "request_id": "3a6861e9-a4bf-415b-94a7-842d61887a40"
+    }
+  ]
+}

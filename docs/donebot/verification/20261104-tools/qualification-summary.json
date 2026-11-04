@@ -1,0 +1,218 @@
+[
+  {
+    "file": "deepseek-tools.json",
+    "model": "deepseek-flash",
+    "protocol": "openai.chat_completions",
+    "ok": true,
+    "capability_override": false,
+    "catalog_tool_calling": true,
+    "request_count": 2,
+    "tool_execution_count": 1,
+    "cost_cny": 0.0034740000000000005,
+    "requests": [
+      {
+        "request_id": "a2aedc66-1e3a-4e25-8336-0be652f9ba80",
+        "receipt_id": "fd21a4ea-e71c-43e7-b844-926ab23232e6"
+      },
+      {
+        "request_id": "c60fb020-178a-47a7-93c0-27e069565993",
+        "receipt_id": "bc9aa553-2629-4738-a859-2e02e5f1ee40"
+      }
+    ],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false
+  },
+  {
+    "file": "gpt-terra-tools.json",
+    "model": "gpt-6.1-terra",
+    "protocol": "openai.responses",
+    "ok": true,
+    "capability_override": false,
+    "catalog_tool_calling": true,
+    "request_count": 2,
+    "tool_execution_count": 1,
+    "cost_cny": 0.0002667,
+    "requests": [
+      {
+        "request_id": "69a8a91c-1071-492f-b939-1853458a24c7",
+        "receipt_id": "832e1299-8bea-468d-b623-a1fd6a6e91b7"
+      },
+      {
+        "request_id": "3917aaf8-9715-4f49-889b-4129f1d19b39",
+        "receipt_id": "8adb988b-7ee2-40b5-ad5b-02f5eb6aa477"
+      }
+    ],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false
+  },
+  {
+    "file": "gpt-astra-qualification.json",
+    "model": "gpt-6-astra",
+    "protocol": "openai.responses",
+    "ok": true,
+    "capability_override": true,
+    "catalog_tool_calling": false,
+    "request_count": 2,
+    "tool_execution_count": 1,
+    "cost_cny": 0.002688,
+    "requests": [
+      {
+        "request_id": "d1c687d2-411c-4704-be69-9a3921c9c3d5",
+        "receipt_id": "60272a22-e529-4f09-a931-ed48eb1a4ee4"
+      },
+      {
+        "request_id": "f732ac6b-b151-4063-8b82-95b9f9c652de",
+        "receipt_id": "0ffde1a2-56bc-48ab-a005-1a41542e9a3a"
+      }
+    ],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false
+  },
+  {
+    "file": "gpt-sol-qualification.json",
+    "model": "gpt-6.1-sol",
+    "protocol": "openai.responses",
+    "ok": true,
+    "capability_override": true,
+    "catalog_tool_calling": false,
+    "request_count": 2,
+    "tool_execution_count": 1,
+    "cost_cny": 0.0005418,
+    "requests": [
+      {
+        "request_id": "f6eb6f6d-f035-409a-95ab-ae41dea453a8",
+        "receipt_id": "5571245a-b334-4428-8b64-fd3bcbe05a51"
+      },
+      {
+        "request_id": "1be29473-5fc4-4fe2-b156-04463a945b14",
+        "receipt_id": "a0fc547e-69a5-456d-9468-a5e7836976e9"
+      }
+    ],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false
+  },
+  {
+    "file": "claude-qualification-fixed.json",
+    "model": "claude-opus-5-5",
+    "protocol": "anthropic.messages",
+    "ok": true,
+    "capability_override": true,
+    "catalog_tool_calling": false,
+    "request_count": 2,
+    "tool_execution_count": 1,
+    "cost_cny": 0.008952,
+    "requests": [
+      {
+        "request_id": "2516efa3-fbf3-4a6d-8c59-783a86cc49fa",
+        "receipt_id": "236b6fd9-fb45-4958-9b8d-6bbb8a4de110"
+      },
+      {
+        "request_id": "3328af00-d73d-4922-9025-be8cffa49a09",
+        "receipt_id": "06bd2347-b0de-494c-a440-768e0f040e81"
+      }
+    ],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false
+  },
+  {
+    "file": "claude-sonnet-qualification-final-item.json",
+    "model": "claude-sonnet-5-5",
+    "protocol": "anthropic.messages",
+    "ok": true,
+    "capability_override": true,
+    "catalog_tool_calling": false,
+    "request_count": 2,
+    "tool_execution_count": 1,
+    "cost_cny": 0.004932000000000001,
+    "requests": [
+      {
+        "request_id": "72ae654c-5ece-4ad5-8974-0205a6116ec4",
+        "receipt_id": "594139bf-55eb-47bb-9ded-673684da7baa"
+      },
+      {
+        "request_id": "9627802b-581a-4463-9521-aea2b0957d99",
+        "receipt_id": "4dd78a49-b452-4ba9-89df-85a98e2cf788"
+      }
+    ],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false
+  },
+  {
+    "file": "claude-fable-qualification.json",
+    "model": "claude-fable-5-1",
+    "protocol": "anthropic.messages",
+    "ok": true,
+    "capability_override": true,
+    "catalog_tool_calling": false,
+    "request_count": 2,
+    "tool_execution_count": 1,
+    "cost_cny": 0.022480000000000003,
+    "requests": [
+      {
+        "request_id": "0989234b-abac-4432-846d-02a1374c35c1",
+        "receipt_id": "2ea95536-17dd-4d5c-931b-e9fd237d4329"
+      },
+      {
+        "request_id": "505391b7-0f4d-4864-a67a-294ce3dd7148",
+        "receipt_id": "645e0185-1494-4083-93f3-2213da6d5192"
+      }
+    ],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false
+  },
+  {
+    "file": "gemini-qualification.json",
+    "model": "gemini-3.8-flash",
+    "protocol": "gemini.generate_content",
+    "ok": true,
+    "capability_override": true,
+    "catalog_tool_calling": false,
+    "request_count": 2,
+    "tool_execution_count": 1,
+    "cost_cny": 0.0054099000000000005,
+    "requests": [
+      {
+        "request_id": "6321d1ed-4488-4479-9097-4c81caa0631c",
+        "receipt_id": "9ac1460e-cb0d-49c4-bf0a-004fdb9afa6a"
+      },
+      {
+        "request_id": "4486fe6b-f6ce-4e33-bd2f-2efe9c61d099",
+        "receipt_id": "1d3c4688-389b-476b-9c50-92cacf15fe5a"
+      }
+    ],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false
+  },
+  {
+    "file": "gemini-argon-qualification.json",
+    "model": "gemini-4-argon",
+    "protocol": "gemini.generate_content",
+    "ok": true,
+    "capability_override": true,
+    "catalog_tool_calling": false,
+    "request_count": 2,
+    "tool_execution_count": 1,
+    "cost_cny": 0.0013847999999999998,
+    "requests": [
+      {
+        "request_id": "77010ba9-f4aa-4ea5-8507-a7edf68a367a",
+        "receipt_id": "0d6cf2bf-0171-4719-99a7-64ed0b6b39bf"
+      },
+      {
+        "request_id": "2ffa6326-efcd-4637-9730-07b893cb9610",
+        "receipt_id": "b04566dd-32b9-44a8-9975-6c36da702ed7"
+      }
+    ],
+    "installation_revoked": true,
+    "keychain_items_deleted": true,
+    "credentials_on_disk": false
+  }
+]
