@@ -1,0 +1,159 @@
+2026/11/04 06:59:40 Timezone initialized: UTC (UTC offset: +00:00)
+=== RUN   TestDoneBotCatalogIntersectsAvailableAndPricedModels
+--- PASS: TestDoneBotCatalogIntersectsAvailableAndPricedModels (0.00s)
+=== RUN   TestDoneBotCatalogRecognizesCustomSeedanceNamesAndOfficialSpec
+--- PASS: TestDoneBotCatalogRecognizesCustomSeedanceNamesAndOfficialSpec (0.00s)
+=== RUN   TestDoneBotCatalogRequiresActiveBoundChannelAndAccount
+--- PASS: TestDoneBotCatalogRequiresActiveBoundChannelAndAccount (0.00s)
+=== RUN   TestDoneBotCatalogOffersUnpricedModelsForConfiguration
+--- PASS: TestDoneBotCatalogOffersUnpricedModelsForConfiguration (0.00s)
+=== RUN   TestDoneBotCatalogAPIMartAudioAndImagePricing
+--- PASS: TestDoneBotCatalogAPIMartAudioAndImagePricing (0.00s)
+=== RUN   TestDoneBotCatalogOnlyUsesEnabledBoundExplicitAccountModels
+--- PASS: TestDoneBotCatalogOnlyUsesEnabledBoundExplicitAccountModels (0.00s)
+=== RUN   TestDoneBotCatalogCompositeRoutesNeedEnabledAccountEvidence
+--- PASS: TestDoneBotCatalogCompositeRoutesNeedEnabledAccountEvidence (0.00s)
+=== RUN   TestDoneBotCatalogRuntimeDefaultsAndCapabilitiesCannotExpandMappings
+--- PASS: TestDoneBotCatalogRuntimeDefaultsAndCapabilitiesCannotExpandMappings (0.00s)
+=== RUN   TestDoneBotCatalogTemporaryCooldownsDoNotHideConfiguredModels
+--- PASS: TestDoneBotCatalogTemporaryCooldownsDoNotHideConfiguredModels (0.00s)
+=== RUN   TestDoneBotCatalogWildcardOnlyAccountCanPriceExactCompositeRoute
+--- PASS: TestDoneBotCatalogWildcardOnlyAccountCanPriceExactCompositeRoute (0.00s)
+=== RUN   TestDoneBotPublicCatalogMediaParametersFollowNativeParsersAndTariffs
+--- PASS: TestDoneBotPublicCatalogMediaParametersFollowNativeParsersAndTariffs (0.00s)
+=== RUN   TestDoneBotPublicCatalogMediaUnknownChoicesAndMixedAdaptersStayHidden
+--- PASS: TestDoneBotPublicCatalogMediaUnknownChoicesAndMixedAdaptersStayHidden (0.00s)
+=== RUN   TestDoneBotPublicCatalogSeedanceParametersIntersectSpecAccountAndPrice
+--- PASS: TestDoneBotPublicCatalogSeedanceParametersIntersectSpecAccountAndPrice (0.00s)
+=== RUN   TestDoneBotPublicCatalogMediaMetadataOnlyNarrowsCapabilities
+--- PASS: TestDoneBotPublicCatalogMediaMetadataOnlyNarrowsCapabilities (0.00s)
+=== RUN   TestDoneBotPublicCatalogMediaMetadataRejectsUnsafeAdaptersAndMalformedChoices
+--- PASS: TestDoneBotPublicCatalogMediaMetadataRejectsUnsafeAdaptersAndMalformedChoices (0.00s)
+=== RUN   TestDoneBotPublicCatalogMediaFixtureProtocolsMatchProductionDescriptors
+--- PASS: TestDoneBotPublicCatalogMediaFixtureProtocolsMatchProductionDescriptors (0.00s)
+=== RUN   TestDoneBotPublicCatalogMediaFeaturesRemainAuthoritative
+--- PASS: TestDoneBotPublicCatalogMediaFeaturesRemainAuthoritative (0.00s)
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/native_chat_effort
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/body_model_fallback
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/omitted_defaults
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/level_unsupported
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/level_case
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/numeric_effort
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/null_effort
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/wrong_native_field
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/wrong_native_interface
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/unlisted_model
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/multiple_native_fields
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/unsupported_root_effort
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/duplicate_first_supported
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/duplicate_last_supported
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/duplicate_model
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/case_changed_root
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/case_changed_ancestor
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/case_changed_nested
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/escaped_unsupported_field
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/escaped_supported_field
+=== RUN   TestDoneBotPublicCatalogValidatesNativeReasoningRequests/invalid_JSON
+--- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/native_chat_effort (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/body_model_fallback (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/omitted_defaults (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/level_unsupported (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/level_case (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/numeric_effort (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/null_effort (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/wrong_native_field (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/wrong_native_interface (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/unlisted_model (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/multiple_native_fields (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/unsupported_root_effort (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/duplicate_first_supported (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/duplicate_last_supported (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/duplicate_model (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/case_changed_root (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/case_changed_ancestor (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/case_changed_nested (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/escaped_unsupported_field (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/escaped_supported_field (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesNativeReasoningRequests/invalid_JSON (0.00s)
+=== RUN   TestDoneBotPublicCatalogValidatesExplicitNativeBudgets
+=== RUN   TestDoneBotPublicCatalogValidatesExplicitNativeBudgets/anthropic.messages
+=== RUN   TestDoneBotPublicCatalogValidatesExplicitNativeBudgets/gemini.generate_content
+--- PASS: TestDoneBotPublicCatalogValidatesExplicitNativeBudgets (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesExplicitNativeBudgets/anthropic.messages (0.00s)
+    --- PASS: TestDoneBotPublicCatalogValidatesExplicitNativeBudgets/gemini.generate_content (0.00s)
+=== RUN   TestDoneBotPublicCatalogFiltersAndSanitizes
+--- PASS: TestDoneBotPublicCatalogFiltersAndSanitizes (0.00s)
+=== RUN   TestDoneBotPublicCatalogLLMToolsAlwaysEnabled
+=== RUN   TestDoneBotPublicCatalogLLMToolsAlwaysEnabled/#00
+=== RUN   TestDoneBotPublicCatalogLLMToolsAlwaysEnabled/{"gpt-test":{}}
+=== RUN   TestDoneBotPublicCatalogLLMToolsAlwaysEnabled/{"gpt-test":{"tool_calling":false}}
+=== RUN   TestDoneBotPublicCatalogLLMToolsAlwaysEnabled/{"gpt-test":{"tool_calling":true}}
+--- PASS: TestDoneBotPublicCatalogLLMToolsAlwaysEnabled (0.00s)
+    --- PASS: TestDoneBotPublicCatalogLLMToolsAlwaysEnabled/#00 (0.00s)
+    --- PASS: TestDoneBotPublicCatalogLLMToolsAlwaysEnabled/{"gpt-test":{}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogLLMToolsAlwaysEnabled/{"gpt-test":{"tool_calling":false}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogLLMToolsAlwaysEnabled/{"gpt-test":{"tool_calling":true}} (0.00s)
+=== RUN   TestDoneBotPublicCatalogInputModalitiesRequireExactMetadata
+--- PASS: TestDoneBotPublicCatalogInputModalitiesRequireExactMetadata (0.00s)
+=== RUN   TestDoneBotPublicCatalogStableScopeAndVersion
+--- PASS: TestDoneBotPublicCatalogStableScopeAndVersion (0.00s)
+=== RUN   TestDoneBotPublicCatalogNativeProtocolsNeedEvidence
+--- PASS: TestDoneBotPublicCatalogNativeProtocolsNeedEvidence (0.00s)
+=== RUN   TestDoneBotPublicCatalogExactRoutesPreserveNativeEndpoint
+--- PASS: TestDoneBotPublicCatalogExactRoutesPreserveNativeEndpoint (0.00s)
+=== RUN   TestDoneBotPublicCatalogRequiresNativeIntersectionAcrossCandidates
+--- PASS: TestDoneBotPublicCatalogRequiresNativeIntersectionAcrossCandidates (0.00s)
+=== RUN   TestDoneBotPublicCatalogFollowsRoutePrecedence
+--- PASS: TestDoneBotPublicCatalogFollowsRoutePrecedence (0.00s)
+=== RUN   TestDoneBotPublicCatalogOmitsAmbiguousPlatformOwnership
+--- PASS: TestDoneBotPublicCatalogOmitsAmbiguousPlatformOwnership (0.00s)
+=== RUN   TestDoneBotPublicCatalogMediaPricesUseCNYWithoutConversion
+--- PASS: TestDoneBotPublicCatalogMediaPricesUseCNYWithoutConversion (0.00s)
+=== RUN   TestDoneBotPublicCatalogReasoningUsesConfigAndGroupPolicy
+--- PASS: TestDoneBotPublicCatalogReasoningUsesConfigAndGroupPolicy (0.00s)
+=== RUN   TestDoneBotPublicCatalogReasoningByInterface
+--- PASS: TestDoneBotPublicCatalogReasoningByInterface (0.00s)
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/null
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"surprise":true}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":null}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":[]}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":["text","text"]}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":["Text"]}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":["text","file"]}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":["text",1]}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":{"image":true}}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":["text"],"input_modalities":["image"]}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":false,"levels":["low"]}}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"effort","levels":["low"],"default":"high","native_field":"reasoning_effort"}}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"effort","levels":["high","low"],"native_field":"reasoning_effort"}}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"effort","levels":["low"],"native_field":"authorization"}}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"effort","levels":["low"],"native_field":"reasoning_effort","mapping":{"low":{}}}}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"budget","levels":["low"],"native_field":"thinking.budget_tokens"}}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"by_interface":{"openai.responses":{"supported":true,"control":"effort","levels":["low"],"native_field":"reasoning_effort"}}}}
+=== RUN   TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"effort","levels":["low"],"native_field":"reasoning_effort"}}}_trailing
+--- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/null (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"surprise":true}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":null}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":[]}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":["text","text"]}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":["Text"]}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":["text","file"]}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":["text",1]}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":{"image":true}}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"input_modalities":["text"],"input_modalities":["image"]}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":false,"levels":["low"]}}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"effort","levels":["low"],"default":"high","native_field":"reasoning_effort"}}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"effort","levels":["high","low"],"native_field":"reasoning_effort"}}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"effort","levels":["low"],"native_field":"authorization"}}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"effort","levels":["low"],"native_field":"reasoning_effort","mapping":{"low":{}}}}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"budget","levels":["low"],"native_field":"thinking.budget_tokens"}}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"by_interface":{"openai.responses":{"supported":true,"control":"effort","levels":["low"],"native_field":"reasoning_effort"}}}} (0.00s)
+    --- PASS: TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata/{"m":{"reasoning":{"supported":true,"control":"effort","levels":["low"],"native_field":"reasoning_effort"}}}_trailing (0.00s)
+=== RUN   TestDoneBotPublicCatalogModelsValidatesInstallationAndCurrency
+--- PASS: TestDoneBotPublicCatalogModelsValidatesInstallationAndCurrency (0.00s)
+PASS
+ok  	github.com/Wei-Shaw/sub2api/internal/service	1.970s

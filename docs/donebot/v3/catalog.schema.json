@@ -283,6 +283,16 @@
             "tool_calling": {
               "type": "boolean"
             },
+            "input_modalities": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 4,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": ["text", "image", "audio", "video"]
+              }
+            },
             "context_window_tokens": {
               "type": [
                 "integer",

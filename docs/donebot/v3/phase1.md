@@ -21,7 +21,7 @@
 
 ## 推理能力与回执
 
-能力来自操作员设置 `donebot.model_capabilities.v3`，以精确公开模型 ID 为键，值为目录 `capabilities` 对象；未知信息保持不支持，不从模型名猜测。该配置尚无独立管理 UI，可通过现有设置存储维护。每个接口只接受白名单原生字段，具体结构和样例见本目录 schema/fixture。推理档位再应用分组上限、拒绝/降级映射，显式选择不支持的模型、协议、字段或档位返回 400。重复 JSON 键、歧义字段拒绝，原始请求体不被重序列化。
+能力来自操作员设置 `donebot.model_capabilities.v3`，以精确公开模型 ID 为键，值为目录 `capabilities` 对象。全部对话 LLM 的工具调用默认开启，旧的 `tool_calling:false` 也不会将其降为纯文本；媒体生成模型仍为 false。可选 `input_modalities` 是非空、不重复的 `text`、`image`、`audio`、`video` 数组，只按精确模型 ID 登记，未登记则省略并表示未知；它与输出 `media_types` 独立，不按模型名猜测。推理等其它未知能力保持不支持。该配置尚无独立管理 UI，可通过现有设置存储维护。每个接口只接受白名单原生字段，具体结构和样例见本目录 schema/fixture。推理档位再应用分组上限、拒绝/降级映射，显式选择不支持的模型、协议、字段或档位返回 400。重复 JSON 键、歧义字段拒绝，原始请求体不被重序列化。
 
 四类原生文本响应增加 `X-DoneBot-Receipt-ID`，值为服务端生成的 `X-Client-Request-ID`。SSE 不插帧、不改变顺序。回执只读取 `usage_logs.request_id=client:<UUID>` 的本用户、本安装 Key、本分组记录；返回实际 CNY 金额以及 `requested_reasoning` 和 `effective_reasoning`。文本预估金额未知为 null。此接口尚不表达媒体、失败或退款回执，不能把暂未结算的 404 当作生成失败。
 

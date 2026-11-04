@@ -52,8 +52,29 @@ type DoneBotCatalogCapabilities struct {
 	ContextWindowTokens int64                              `json:"context_window_tokens,omitempty"`
 	MaxOutputTokens     int64                              `json:"max_output_tokens,omitempty"`
 	ToolCalling         bool                               `json:"tool_calling"`
+	InputModalities     DoneBotInputModalities             `json:"input_modalities,omitempty"`
 	Reasoning           DoneBotCatalogReasoning            `json:"reasoning"`
 	ByInterface         map[string]DoneBotCatalogReasoning `json:"by_interface,omitempty"`
+}
+
+// DoneBotInputModalities describes declared request inputs, independently of output media types.
+type DoneBotInputModalities []string
+
+func (modalities *DoneBotInputModalities) UnmarshalJSON(raw []byte) error {
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return err
+	}
+	if len(values) == 0 || len(values) > 4 {
+		return fmt.Errorf("input modalities must declare one to four values")
+	}
+	for i, value := range values {
+		if !slices.Contains([]string{"text", "image", "audio", "video"}, value) || slices.Contains(values[:i], value) {
+			return fmt.Errorf("input modalities must be known and unique")
+		}
+	}
+	*modalities = values
+	return nil
 }
 
 type doneBotCatalogConfiguredCapabilities struct {
@@ -693,9 +714,9 @@ func doneBotAccountUsesNativeInterface(account *Account, model, kind, iface stri
 
 func doneBotPublicCapabilities(group *Group, model string, interfaces []string, configured DoneBotCatalogCapabilities) DoneBotCatalogCapabilities {
 	if !slices.ContainsFunc(interfaces, doneBotTextInterface) {
-		return DoneBotCatalogCapabilities{Reasoning: doneBotUnsupportedReasoning()}
+		return DoneBotCatalogCapabilities{InputModalities: slices.Clone(configured.InputModalities), Reasoning: doneBotUnsupportedReasoning()}
 	}
-	capability := DoneBotCatalogCapabilities{ContextWindowTokens: configured.ContextWindowTokens, MaxOutputTokens: configured.MaxOutputTokens, ToolCalling: configured.ToolCalling, Reasoning: doneBotUnsupportedReasoning()}
+	capability := DoneBotCatalogCapabilities{ContextWindowTokens: configured.ContextWindowTokens, MaxOutputTokens: configured.MaxOutputTokens, ToolCalling: true, InputModalities: slices.Clone(configured.InputModalities), Reasoning: doneBotUnsupportedReasoning()}
 	byInterface := map[string]DoneBotCatalogReasoning{}
 	for _, iface := range interfaces {
 		if !doneBotTextInterface(iface) {

@@ -11,6 +11,8 @@
 - `gateway_contract_version` 固定为 `3`。
 - 目录顶层为 `catalog_scope_id`、`catalog_version`、`defaults`、`models`。
 - 模型的 `platforms`、`interfaces` 位于顶层，`media_types` 区分文本与媒体。
+- 全部对话 LLM 默认提供工具调用，目录对文本模型返回 `capabilities.tool_calling:true`，不再因缺少元数据或旧的 `false` 值而降成纯文本。媒体生成模型仍为 `false`。机器人自身工具范围、电脑选择和审批规则继续生效；上游不支持工具时应明确报错，不能静默重试为纯文本。
+- 可选 `capabilities.input_modalities` 声明模型可接收的输入，允许非空、不重复的 `text`、`image`、`audio`、`video` 数组。它只取操作员为精确模型 ID 登记的能力，不按模型名推测，也不从输出 `media_types` 推导。未登记时省略字段，表示未知；不能当成已确认仅文本，更不能默认支持图片、视频或音频。登记能力还需当前客户端对应协议的编码器支持才可使用。
 - `capabilities.reasoning` 保留 `supported`、`control`、`levels`、`default`、`native_field` 与可选 `mapping`。未知默认值为 `null`。
 - 同模型多协议的字段不同时，使用 `capabilities.by_interface[interface]` 声明具体推理能力。不能安全概括时，顶层 reasoning 为不支持，客户端按当前协议读取 by_interface。
 - 不支持推理时：`supported:false`、`control:"none"`、`levels:[]`、`default:null`、`native_field:null`。不得显示或发送推理字段。

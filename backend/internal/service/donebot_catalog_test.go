@@ -32,6 +32,8 @@ func TestDoneBotPublicCatalogFiltersAndSanitizes(t *testing.T) {
 	require.Equal(t, "gpt-test", model.ID)
 	require.Equal(t, []string{"openai.chat_completions"}, model.Interfaces)
 	require.Equal(t, []string{"text"}, model.MediaTypes)
+	require.True(t, model.Capabilities.ToolCalling)
+	require.Nil(t, model.Capabilities.InputModalities)
 	require.Equal(t, "CNY", model.Pricing.Currency)
 	require.InDelta(t, 3, *model.Pricing.InputPerMillion, 1e-12)
 	require.InDelta(t, 12, *model.Pricing.OutputPerMillion, 1e-12)
@@ -41,6 +43,65 @@ func TestDoneBotPublicCatalogFiltersAndSanitizes(t *testing.T) {
 	require.NoError(t, err)
 	for _, forbidden := range []string{"api_key", "channel_id", "account_id", "group_id", "user_id", "model_mapping", "ETag"} {
 		require.NotContains(t, string(encoded), forbidden)
+	}
+}
+
+func TestDoneBotPublicCatalogLLMToolsAlwaysEnabled(t *testing.T) {
+	for _, metadata := range []string{"", `{"gpt-test":{}}`, `{"gpt-test":{"tool_calling":false}}`, `{"gpt-test":{"tool_calling":true}}`} {
+		t.Run(metadata, func(t *testing.T) {
+			g, rows, accounts := doneBotPublicCatalogFixture(t)
+			configured, err := parseDoneBotCatalogCapabilities(metadata)
+			require.NoError(t, err)
+			for _, protocol := range []struct{ platform, iface string }{
+				{PlatformOpenAI, "openai.chat_completions"},
+				{PlatformAnthropic, "anthropic.messages"},
+				{PlatformGemini, "gemini.generate_content"},
+			} {
+				accounts[0].Platform = protocol.platform
+				for i := range rows {
+					rows[i].Platform = protocol.platform
+				}
+				catalog, err := buildDoneBotPublicCatalog(g, 42, "one", rows, accounts, nil, configured)
+				require.NoError(t, err)
+				require.Len(t, catalog.Models, 1)
+				require.Equal(t, []string{protocol.iface}, catalog.Models[0].Interfaces)
+				require.True(t, catalog.Models[0].Capabilities.ToolCalling)
+			}
+			accounts[0].Platform = PlatformOpenAI
+			accounts[0].Extra = map[string]any{"openai_responses_supported": true}
+			for i := range rows {
+				rows[i].Platform = PlatformOpenAI
+			}
+			catalog, err := buildDoneBotPublicCatalog(g, 42, "one", rows, accounts, nil, configured)
+			require.NoError(t, err)
+			require.Len(t, catalog.Models, 1)
+			require.Equal(t, []string{"openai.responses"}, catalog.Models[0].Interfaces)
+			require.True(t, catalog.Models[0].Capabilities.ToolCalling)
+		})
+	}
+}
+
+func TestDoneBotPublicCatalogInputModalitiesRequireExactMetadata(t *testing.T) {
+	g, rows, accounts := doneBotPublicCatalogFixture(t)
+	configured, err := parseDoneBotCatalogCapabilities(`{"gpt-test":{"input_modalities":["text","image","audio","video"]},"gpt":{"input_modalities":["image"]}}`)
+	require.NoError(t, err)
+	catalog, err := buildDoneBotPublicCatalog(g, 42, "one", rows, accounts, nil, configured)
+	require.NoError(t, err)
+	require.Equal(t, DoneBotInputModalities{"text", "image", "audio", "video"}, catalog.Models[0].Capabilities.InputModalities)
+	require.Equal(t, []string{"text"}, catalog.Models[0].MediaTypes)
+	registeredVersion := catalog.CatalogVersion
+	configured, err = parseDoneBotCatalogCapabilities(`{"gpt":{"input_modalities":["image"]}}`)
+	require.NoError(t, err)
+	catalog, err = buildDoneBotPublicCatalog(g, 42, "one", rows, accounts, nil, configured)
+	require.NoError(t, err)
+	require.Nil(t, catalog.Models[0].Capabilities.InputModalities)
+	encoded, err := json.Marshal(catalog)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "input_modalities")
+	require.NotEqual(t, registeredVersion, catalog.CatalogVersion)
+	for _, id := range []string{"gpt-test", "vision-video-audio-model"} {
+		capability := doneBotPublicCapabilities(g, id, []string{"openai.responses"}, DoneBotCatalogCapabilities{})
+		require.Nil(t, capability.InputModalities)
 	}
 }
 
@@ -189,6 +250,7 @@ func TestDoneBotPublicCatalogMediaPricesUseCNYWithoutConversion(t *testing.T) {
 		require.NotContains(t, model.MediaTypes, "text")
 		require.Equal(t, "CNY", model.Pricing.Currency)
 		require.False(t, model.Capabilities.Reasoning.Supported)
+		require.False(t, model.Capabilities.ToolCalling)
 	}
 	require.Equal(t, imagePrice, byID["image"].Pricing.ImageSizes["1K"])
 	require.Equal(t, videoPrice, byID["video"].Pricing.Tiers["720p|standard"])
@@ -243,6 +305,14 @@ func TestDoneBotPublicCatalogRejectsInvalidCapabilityMetadata(t *testing.T) {
 	for _, input := range []string{
 		`null`,
 		`{"m":{"surprise":true}}`,
+		`{"m":{"input_modalities":null}}`,
+		`{"m":{"input_modalities":[]}}`,
+		`{"m":{"input_modalities":["text","text"]}}`,
+		`{"m":{"input_modalities":["Text"]}}`,
+		`{"m":{"input_modalities":["text","file"]}}`,
+		`{"m":{"input_modalities":["text",1]}}`,
+		`{"m":{"input_modalities":{"image":true}}}`,
+		`{"m":{"input_modalities":["text"],"input_modalities":["image"]}}`,
 		`{"m":{"reasoning":{"supported":false,"levels":["low"]}}}`,
 		`{"m":{"reasoning":{"supported":true,"control":"effort","levels":["low"],"default":"high","native_field":"reasoning_effort"}}}`,
 		`{"m":{"reasoning":{"supported":true,"control":"effort","levels":["high","low"],"native_field":"reasoning_effort"}}}`,

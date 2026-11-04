@@ -1,0 +1,29 @@
+✔ v3 schema accepts the fixture and rejects unsupported, mixed-currency and leaked-metadata catalogs (8.167625ms)
+✔ input modalities are optional exact declarations independent of generated media (5.713625ms)
+✔ media metadata uses exact adapter contracts and rejects URL, path, selector and adapter injection (6.547ms)
+✔ native media fixture matches APIMart task envelopes, Seedance content/status and binary speech (51.735791ms)
+✔ fixture login, claim-once, safe installation list and account summary (12.523625ms)
+✔ catalog scope authentication precedes ETag and versions change only on revision (14.979458ms)
+✔ chat: native non-stream response and tool result roundtrip (8.271625ms)
+✔ chat: native SSE events stay ordered, tool calls survive, receipts stay outside the stream (24.793166ms)
+✔ responses: native non-stream response and tool result roundtrip (8.096958ms)
+✔ responses: native SSE events stay ordered, tool calls survive, receipts stay outside the stream (35.428166ms)
+✔ messages: native non-stream response and tool result roundtrip (5.758416ms)
+✔ messages: native SSE events stay ordered, tool calls survive, receipts stay outside the stream (38.93075ms)
+✔ gemini: native non-stream response and tool result roundtrip (7.222208ms)
+✔ gemini: native SSE events stay ordered, tool calls survive, receipts stay outside the stream (14.465916ms)
+✔ reasoning uses each native field, omits unselected effort and reports requested/effective downgrade (30.44825ms)
+✔ key rotation invalidates old key immediately; ownership and revocation remain enforced (8.958875ms)
+✔ 402 never creates a task; 429 preserves retry hint without model fallback (3.500125ms)
+✔ fixture media idempotency and task journal survive a real poller process restart and key rotation without storing a key (121.626792ms)
+✔ fixture image/music tasks and synchronous speech keep native media routes separate from text (13.19275ms)
+✔ fixture surface binds only IPv4 loopback and refuses a non-loopback Host without CORS (3.271709ms)
+✔ text receipt scope is installation-bound and missing settlement returns 404 with Retry-After (5.900958ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 513.638917

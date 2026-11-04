@@ -106,6 +106,20 @@ test('v3 schema accepts the fixture and rejects unsupported, mixed-currency and 
   }
 });
 
+test('input modalities are optional exact declarations independent of generated media', () => {
+  const catalog = structuredClone(fixtureCatalog);
+  for (const model of catalog.models) delete model.capabilities.input_modalities;
+  validate(catalog, schema);
+  const model = catalog.models.find((item) => item.media_types.includes('text'));
+  model.capabilities.input_modalities = ['text', 'image', 'audio', 'video'];
+  validate(catalog, schema);
+  assert.deepEqual(model.media_types, ['text']);
+  for (const value of [null, [], ['image', 'image'], ['file'], ['Image'], ['text', 1], { image: true }]) {
+    model.capabilities.input_modalities = value;
+    assert.throws(() => validate(catalog, schema));
+  }
+});
+
 test('media metadata uses exact adapter contracts and rejects URL, path, selector and adapter injection', () => {
   for (const change of [
     (protocol) => { protocol.adapter = 'unrecognized'; },

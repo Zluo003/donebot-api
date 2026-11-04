@@ -32,7 +32,10 @@
           ],
           "default": null,
           "native_field": "reasoning_effort"
-        }
+        },
+        "input_modalities": [
+          "text"
+        ]
       },
       "pricing": {
         "currency": "CNY",
@@ -65,7 +68,11 @@
           ],
           "default": null,
           "native_field": "reasoning.effort"
-        }
+        },
+        "input_modalities": [
+          "text",
+          "image"
+        ]
       },
       "pricing": {
         "currency": "CNY",
@@ -97,7 +104,11 @@
           ],
           "default": null,
           "native_field": "output_config.effort"
-        }
+        },
+        "input_modalities": [
+          "text",
+          "image"
+        ]
       },
       "pricing": {
         "currency": "CNY",
@@ -132,7 +143,11 @@
             "low": 1024,
             "high": 4096
           }
-        }
+        },
+        "input_modalities": [
+          "text",
+          "image"
+        ]
       },
       "pricing": {
         "currency": "CNY",
@@ -160,7 +175,11 @@
           "levels": [],
           "default": null,
           "native_field": null
-        }
+        },
+        "input_modalities": [
+          "text",
+          "image"
+        ]
       },
       "pricing": {
         "currency": "CNY",
