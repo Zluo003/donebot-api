@@ -44,3 +44,31 @@
 - 消费验证码后数据库写入失败必须重新取码。
 - 当前 staging 公开设置关闭邮箱验证与忘记密码，因此没有冒充真实 staging 邮件改密已通过。公开只读记录另见 `logs/staging-public-baseline.json`。
 - 旧网页链接兼容；无需数据库迁移。使用 sh 安装器指定版本回退，保留 Redis、数据库、客户端数据及钥匙串。
+
+
+## v0.4.6 发布包核验
+
+- 发布页：<https://github.com/Zluo003/donebot-api/releases/tag/v0.4.6>
+- 完整发布工作流：<https://github.com/Zluo003/donebot-api/actions/runs/41875968089>
+- 精确源码提交：`caf01d5699e3280bc537939a756c08207b8002fc`。
+- 已下载核验 `sub2api_0.4.6_linux_amd64.tar.gz`、`sub2api_0.4.6_linux_arm64.tar.gz` 和 `checksums.txt`。两个服务器文件为权限 `0755` 的常规文件，分别为 ELF64 x86-64、AArch64；解压目录项没有绝对路径或 `..`。
+- amd64 SHA256：`aca753dcb2d34e515b6dbd330b82729a2c9228be7a9c317cb35f9a7d9d59275b`。
+- arm64 SHA256：`949f90c76c59c2ddc3c0fe22db224e98c241ce3cde42ab5be3b7883bc3a15f47`。
+- 哈希同时匹配随包 checksums 与 GitHub asset digest；完整命令和条目记录见 `logs/a0-release.log`。
+
+在已经使用 sh 安装器安装的 Linux 服务器，保存或取得当前官方 `deploy/install.sh` 后，使用 Bash 4+ 执行：
+
+```bash
+sudo bash ./install.sh upgrade --version v0.4.6
+```
+
+若需回退到本阶段前的稳定网关：
+
+```bash
+sudo bash ./install.sh rollback --version v0.4.5
+```
+
+以上仅记录可用命令，未对生产或测试服务器执行安装、升级、回退。不要清空数据库、Redis 或客户端凭据。
+
+
+发布状态说明：已核实 prepare、前端、amd64/arm64 构建，以及 release 中的发布、清理、Complete job 各步骤成功；正式 release 及全部安装资产均可下载。最后观察时 GitHub REST 的 release 作业汇总仍为 `in_progress`，run 汇总为 `queued`，`sync-version-file` 为 `queued`，虽然没有运行中的具体步骤；因此没有声明整个 workflow 最终绿色。main 的 VERSION 已是 0.4.6，远端 main 精确为 `caf01d5`。未因汇总状态滞后重复发布或部署。
