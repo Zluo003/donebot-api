@@ -170,7 +170,9 @@ func TestDoneBotMediaAcceptedReplayAndReceiptUseStableMoneyID(t *testing.T) {
 	result, err := s.Begin(context.Background(), input)
 	require.NoError(t, err)
 	estimate := json.Number("1.2345")
-	s.repo.(*doneBotMediaMemoryRepository).ops[result.Operation.ReceiptID].EstimatedCents = &estimate
+	repo, ok := s.repo.(*doneBotMediaMemoryRepository)
+	require.True(t, ok)
+	repo.ops[result.Operation.ReceiptID].EstimatedCents = &estimate
 	moneyID := StableGrokVideoBillingRequestID("seedance:task-1")
 	op, err := s.Complete(context.Background(), input.Owner, result.Operation.ReceiptID, DoneBotMediaCompletion{
 		Status: "accepted", TaskID: "task-1", TaskKey: "seedance:task-1", Provider: "seedance", UsageRequestID: moneyID,
@@ -293,7 +295,8 @@ func TestDoneBotMediaCompletionSurvivesRevocationButKeepsExactOwner(t *testing.T
 	s, input, _ := doneBotMediaFixture(t)
 	result, err := s.Begin(context.Background(), input)
 	require.NoError(t, err)
-	installRepo := s.installs.repo.(doneBotMediaInstallFake)
+	installRepo, ok := s.installs.repo.(doneBotMediaInstallFake)
+	require.True(t, ok)
 	installRepo.keys[input.Owner.APIKeyID].Status = StatusAPIKeyDisabled
 	installRepo.installs[result.Operation.Owner.InstallationID].Status = DoneBotInstallRevoked
 	op, err := s.Complete(context.Background(), input.Owner, result.Operation.ReceiptID, DoneBotMediaCompletion{Status: "accepted", TaskID: "task-after-revocation", HTTPStatus: 200, ContentType: "application/json", Body: []byte(`{"id":"task-after-revocation"}`)})

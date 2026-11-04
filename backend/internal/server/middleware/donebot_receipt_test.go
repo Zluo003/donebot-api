@@ -224,7 +224,7 @@ func TestDoneBotReceiptAndReasoningValidationStreamWithoutBufferingOrInsertedFra
 	require.NoError(t, err)
 	res, err := server.Client().Do(req)
 	require.NoError(t, err)
-	defer res.Body.Close()
+	defer func() { require.NoError(t, res.Body.Close()) }()
 	require.Equal(t, http.StatusOK, res.StatusCode)
 	require.Equal(t, res.Header.Get("X-Client-Request-ID"), res.Header.Get("X-DoneBot-Receipt-ID"))
 	require.NotEmpty(t, res.Header.Get("X-DoneBot-Receipt-ID"))

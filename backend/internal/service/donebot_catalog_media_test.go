@@ -59,7 +59,9 @@ func TestDoneBotPublicCatalogMediaParametersFollowNativeParsersAndTariffs(t *tes
 
 func TestDoneBotPublicCatalogMediaUnknownChoicesAndMixedAdaptersStayHidden(t *testing.T) {
 	group, rows, accounts := doneBotMediaCatalogFixture()
-	accounts[0].Credentials["model_mapping"].(map[string]any)["image"] = "gpt-image-1"
+	mapping, ok := accounts[0].Credentials["model_mapping"].(map[string]any)
+	require.True(t, ok)
+	mapping["image"] = "gpt-image-1"
 	catalog, err := buildDoneBotPublicCatalog(group, 42, "one", rows[:1], accounts, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, catalog.Models, 1)
@@ -85,7 +87,9 @@ func TestDoneBotPublicCatalogSeedanceParametersIntersectSpecAccountAndPrice(t *t
 	require.Equal(t, "seedance.videos.v1", media.Protocol.Adapter)
 	require.Equal(t, "/v1/videos/{task_id}/content", media.Protocol.Content.Path)
 	_, _, second := doneBotMediaCatalogFixture()
-	second[0].Credentials["model_mapping"].(map[string]any)["video"] = "doubao-seedance-2-0-fast-260128"
+	mapping, ok := second[0].Credentials["model_mapping"].(map[string]any)
+	require.True(t, ok)
+	mapping["video"] = "doubao-seedance-2-0-fast-260128"
 	media, err = doneBotPublicMediaParameters(group.ID, rows[3], append(accounts, second...), nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"720p"}, media.Resolutions)

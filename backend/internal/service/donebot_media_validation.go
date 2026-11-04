@@ -76,7 +76,8 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 	if known == nil || !reflect.DeepEqual(known, protocol) || path != "" && path != protocol.Submit.Path {
 		return ErrDoneBotMediaInvalid
 	}
-	mediaType, iface, adapters := "", "", []string{}
+	var mediaType, iface string
+	var adapters []string
 	switch kind {
 	case "image":
 		mediaType, iface, adapters = "image", "openai.images", []string{"openai.images.v1", "apimart.images.v1"}

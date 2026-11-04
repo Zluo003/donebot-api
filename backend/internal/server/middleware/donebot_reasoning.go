@@ -23,7 +23,7 @@ type DoneBotReasoningValidator interface {
 func DoneBotReasoningValidation(validator DoneBotReasoningValidator) gin.HandlerFunc {
 	if validator != nil {
 		value := reflect.ValueOf(validator)
-		if value.Kind() == reflect.Ptr && value.IsNil() {
+		if value.Kind() == reflect.Pointer && value.IsNil() {
 			validator = nil
 		}
 	}
