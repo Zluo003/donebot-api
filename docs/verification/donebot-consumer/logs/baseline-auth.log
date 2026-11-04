@@ -1,0 +1,8 @@
+cwd: backend
+command: go test -p 1 -tags=unit ./internal/service ./internal/repository ./internal/handler ./internal/server/routes -run Test(ConsumePasswordResetToken|EmailCache|Auth.*|Totp.*|.*PasswordReset.*|AuthRateLimit.*) -count=1
+ok  	github.com/Wei-Shaw/sub2api/internal/service	9.208s
+ok  	github.com/Wei-Shaw/sub2api/internal/repository	0.998s
+ok  	github.com/Wei-Shaw/sub2api/internal/handler	1.058s
+ok  	github.com/Wei-Shaw/sub2api/internal/server/routes	9.750s
+
+exit_code: 0
