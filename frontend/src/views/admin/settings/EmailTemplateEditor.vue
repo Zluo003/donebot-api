@@ -350,6 +350,11 @@ const eventDisplayMeta: Record<string, EventDisplayMeta> = {
     timing: "用户请求密码重置链接时发送。",
     categoryLabel: "认证安全",
   },
+  "auth.password_reset_code": {
+    label: "找回密码验证码",
+    timing: "用户在 DoneBot 客户端请求邮件验证码找回密码时发送，15 分钟内有效。",
+    categoryLabel: "认证安全",
+  },
   "notification_email.verify_code": {
     label: "通知邮箱验证码",
     timing: "用户添加并验证额外通知邮箱时发送。",
@@ -411,6 +416,11 @@ const eventDisplayMetaEn: Record<string, EventDisplayMeta> = {
   "auth.password_reset": {
     label: "Password Reset",
     timing: "Sent when a user requests a password reset link.",
+    categoryLabel: "Auth",
+  },
+  "auth.password_reset_code": {
+    label: "Password Recovery Code",
+    timing: "Sent when a DoneBot client requests an email recovery code. Valid for 15 minutes.",
     categoryLabel: "Auth",
   },
   "notification_email.verify_code": {

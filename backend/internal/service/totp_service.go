@@ -62,10 +62,11 @@ type TotpSetupSession struct {
 
 // TotpLoginSession represents a pending 2FA login session
 type TotpLoginSession struct {
-	UserID           int64
-	Email            string
-	TokenExpiry      time.Time
-	PendingOAuthBind *PendingOAuthBindLoginSession `json:"pending_oauth_bind,omitempty"`
+	UserID            int64
+	Email             string
+	TokenExpiry       time.Time
+	CredentialVersion *int64                        `json:"credential_version,omitempty"`
+	PendingOAuthBind  *PendingOAuthBindLoginSession `json:"pending_oauth_bind,omitempty"`
 }
 
 type PendingOAuthBindLoginSession struct {
@@ -370,14 +371,9 @@ func (s *TotpService) VerifyCode(ctx context.Context, userID int64, code string)
 		return infraerrors.InternalServer("TOTP_VERIFY_ERROR", "failed to verify totp code")
 	}
 
-	secretPrefix := "N/A"
-	if len(secret) >= 4 {
-		secretPrefix = secret[:4]
-	}
 	slog.Debug("totp_verify_decrypted",
 		"user_id", userID,
-		"secret_len", len(secret),
-		"secret_prefix", secretPrefix)
+		"secret_len", len(secret))
 
 	// Verify the code
 	valid := totp.Validate(code, secret)
@@ -385,7 +381,6 @@ func (s *TotpService) VerifyCode(ctx context.Context, userID int64, code string)
 		"user_id", userID,
 		"valid", valid,
 		"secret_len", len(secret),
-		"secret_prefix", secretPrefix,
 		"server_time", time.Now().UTC().Format(time.RFC3339))
 
 	if !valid {
@@ -421,8 +416,8 @@ func (s *TotpService) HasStepUpGrant(ctx context.Context, userID int64, sessionK
 }
 
 // CreateLoginSession creates a temporary login session for 2FA
-func (s *TotpService) CreateLoginSession(ctx context.Context, userID int64, email string) (string, error) {
-	return s.createLoginSession(ctx, userID, email, nil)
+func (s *TotpService) CreateLoginSession(ctx context.Context, userID int64, email string, credentialVersion ...int64) (string, error) {
+	return s.createLoginSession(ctx, userID, email, nil, credentialVersion...)
 }
 
 // CreatePendingOAuthBindLoginSession creates a temporary 2FA session that will
@@ -433,11 +428,12 @@ func (s *TotpService) CreatePendingOAuthBindLoginSession(
 	email string,
 	pendingSessionToken string,
 	browserSessionKey string,
+	credentialVersion ...int64,
 ) (string, error) {
 	return s.createLoginSession(ctx, userID, email, &PendingOAuthBindLoginSession{
 		PendingSessionToken: pendingSessionToken,
 		BrowserSessionKey:   browserSessionKey,
-	})
+	}, credentialVersion...)
 }
 
 func (s *TotpService) createLoginSession(
@@ -445,6 +441,7 @@ func (s *TotpService) createLoginSession(
 	userID int64,
 	email string,
 	pendingOAuthBind *PendingOAuthBindLoginSession,
+	credentialVersion ...int64,
 ) (string, error) {
 	// Generate a random temp token
 	tempToken, err := generateRandomToken(32)
@@ -458,12 +455,26 @@ func (s *TotpService) createLoginSession(
 		TokenExpiry:      time.Now().Add(totpLoginTTL),
 		PendingOAuthBind: pendingOAuthBind,
 	}
+	if len(credentialVersion) > 0 {
+		session.CredentialVersion = &credentialVersion[0]
+	} else {
+		user, err := s.userRepo.GetByID(ctx, userID)
+		if err != nil {
+			return "", err
+		}
+		version := resolvedTokenVersion(user)
+		session.CredentialVersion = &version
+	}
 
 	if err := s.cache.SetLoginSession(ctx, tempToken, session, totpLoginTTL); err != nil {
 		return "", fmt.Errorf("store login session: %w", err)
 	}
 
 	return tempToken, nil
+}
+
+func (s *TotpLoginSession) MatchesCredential(user *User) bool {
+	return user != nil && s.CredentialVersion != nil && *s.CredentialVersion == resolvedTokenVersion(user)
 }
 
 // GetLoginSession retrieves a login session

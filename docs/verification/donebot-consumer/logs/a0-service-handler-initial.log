@@ -1,0 +1,128 @@
+cwd: backend
+command: go test -p 1 -tags=unit ./internal/service ./internal/handler -run Test(PasswordRecovery|RedactAuditBodyPasswordRecoveryCodes|ConsumePasswordResetToken|NotificationEmailAuth|Login2FA|CompletePendingOAuth.*2FA) -count=1 -v
+2026/11/04 16:52:04 Timezone initialized: UTC (UTC offset: +00:00)
+=== RUN   TestRedactAuditBodyPasswordRecoveryCodes
+--- PASS: TestRedactAuditBodyPasswordRecoveryCodes (0.00s)
+=== RUN   TestConsumePasswordResetToken_ComparesHashNotPlaintext
+--- PASS: TestConsumePasswordResetToken_ComparesHashNotPlaintext (0.00s)
+=== RUN   TestNotificationEmailAuthTemplatesAreListedAndPreviewable
+--- PASS: TestNotificationEmailAuthTemplatesAreListedAndPreviewable (0.00s)
+=== RUN   TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts
+=== RUN   TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/existing
+=== RUN   TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/missing
+=== RUN   TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/inactive
+=== RUN   TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/database_failure
+--- PASS: TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts (0.00s)
+    --- PASS: TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/existing (0.00s)
+    --- PASS: TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/missing (0.00s)
+    --- PASS: TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/inactive (0.00s)
+    --- PASS: TestPasswordRecoveryCodeRequestsDoNotEnumerateAccounts/database_failure (0.00s)
+=== RUN   TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown
+=== RUN   TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown/reserve
+=== RUN   TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown/store
+2026/11/04 16:52:04 WARN password recovery mail queue unavailable recipient_hash=b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514
+--- PASS: TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown (0.00s)
+    --- PASS: TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown/reserve (0.00s)
+    --- PASS: TestPasswordRecoveryCodeCacheFailureIsClosedAndQueueFailureRetainsCooldown/store (0.00s)
+=== RUN   TestPasswordRecoveryCodeSuccessRevokesSessionsAndPreservesAccount
+--- PASS: TestPasswordRecoveryCodeSuccessRevokesSessionsAndPreservesAccount (0.13s)
+=== RUN   TestPasswordRecoveryCodeCannotReuseRegistrationCodeOrChangedPassword
+--- PASS: TestPasswordRecoveryCodeCannotReuseRegistrationCodeOrChangedPassword (0.00s)
+=== RUN   TestPasswordRecoveryCodeDatabaseFailureConsumesAndRequiresNewCode
+--- PASS: TestPasswordRecoveryCodeDatabaseFailureConsumesAndRequiresNewCode (0.10s)
+=== RUN   TestPasswordRecoveryCodeCASDoesNotOverwriteConcurrentChange
+--- PASS: TestPasswordRecoveryCodeCASDoesNotOverwriteConcurrentChange (0.07s)
+=== RUN   TestPasswordRecoveryLegacyTokenRemainsCompatibleAndClearsCode
+--- PASS: TestPasswordRecoveryLegacyTokenRemainsCompatibleAndClearsCode (0.17s)
+=== RUN   TestPasswordRecoveryLegacyTokenSnapshotPrecedesConsume
+--- PASS: TestPasswordRecoveryLegacyTokenSnapshotPrecedesConsume (0.07s)
+=== RUN   TestPasswordRecoveryCodeMailSkipsStaleGenerationAndExpires
+--- PASS: TestPasswordRecoveryCodeMailSkipsStaleGenerationAndExpires (0.00s)
+=== RUN   TestPasswordRecoveryCodeMailFailureRemovesOnlyOwnGeneration
+--- PASS: TestPasswordRecoveryCodeMailFailureRemovesOnlyOwnGeneration (0.00s)
+=== RUN   TestPasswordRecoveryCodeTemplateIsIndependentAndContainsNoLink
+--- PASS: TestPasswordRecoveryCodeTemplateIsIndependentAndContainsNoLink (0.00s)
+=== RUN   TestPasswordRecoveryCodeHMACBindsPurposeIdentityGenerationAndPassword
+--- PASS: TestPasswordRecoveryCodeHMACBindsPurposeIdentityGenerationAndPassword (0.00s)
+PASS
+ok  	github.com/Wei-Shaw/sub2api/internal/service	2.271s
+=== RUN   TestLogin2FACompletesPendingOAuthBindAndConsumesSession
+--- PASS: TestLogin2FACompletesPendingOAuthBindAndConsumesSession (0.06s)
+=== RUN   TestPasswordRecoveryHandlerCodeRequestDoesNotRequireFrontendURL
+2026/11/05 00:52:34 [EmailQueue] Started 1 workers
+2026/11/05 00:52:34 [EmailQueue] Worker 0 password recovery mail failed for b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514
+2026/11/05 00:52:34 [EmailQueue] Worker 0 stopping
+2026/11/05 00:52:34 [EmailQueue] All workers stopped
+--- PASS: TestPasswordRecoveryHandlerCodeRequestDoesNotRequireFrontendURL (0.00s)
+=== RUN   TestPasswordRecoveryHandlerOldRequestRetainsLinkProtocol
+2026/11/05 00:52:34 [EmailQueue] Started 1 workers
+2026/11/05 00:52:34 ERROR frontend_url not configured in settings or config; cannot build password reset link
+2026/11/05 00:52:34 [EmailQueue] Enqueued password reset task for user@example.com
+2026/11/05 00:52:34 [Auth] Password reset email enqueued for: user@example.com
+2026/11/05 00:52:34 [EmailQueue] Worker 0 failed to send password reset to user@example.com: send email: error: code=503 reason="EMAIL_NOT_CONFIGURED" message="email service not configured" metadata=map[]
+2026/11/05 00:52:34 [EmailQueue] Worker 0 stopping
+2026/11/05 00:52:34 [EmailQueue] All workers stopped
+--- PASS: TestPasswordRecoveryHandlerOldRequestRetainsLinkProtocol (0.00s)
+=== RUN   TestPasswordRecoveryHandlerRejectsDeliveryAndCredentialAmbiguity
+2026/11/05 00:52:34 [EmailQueue] Started 1 workers
+2026/11/05 00:52:34 [EmailQueue] Worker 0 stopping
+2026/11/05 00:52:34 [EmailQueue] All workers stopped
+--- PASS: TestPasswordRecoveryHandlerRejectsDeliveryAndCredentialAmbiguity (0.00s)
+=== RUN   TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage
+=== RUN   TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage/code
+2026/11/05 00:52:34 [EmailQueue] Started 1 workers
+2026/11/05 00:52:35 [EmailQueue] Worker 0 stopping
+2026/11/05 00:52:35 [EmailQueue] All workers stopped
+=== RUN   TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage/token
+2026/11/05 00:52:35 [EmailQueue] Started 1 workers
+2026/11/05 00:52:35 [EmailQueue] Worker 0 stopping
+2026/11/05 00:52:35 [EmailQueue] All workers stopped
+--- PASS: TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage (0.21s)
+    --- PASS: TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage/code (0.10s)
+    --- PASS: TestPasswordRecoveryHandlerCodeAndOldTokenResetReturnOnlyMessage/token (0.10s)
+=== RUN   TestPasswordRecoveryHandlerRedisFailureIsUnavailable
+2026/11/05 00:52:35 [EmailQueue] Started 1 workers
+redis: 2026/11/05 00:52:35 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:49500: connect: connection refused
+redis: 2026/11/05 00:52:35 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:49500: connect: connection refused
+redis: 2026/11/05 00:52:36 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:49500: connect: connection refused
+redis: 2026/11/05 00:52:36 pool.go:762: redis: connection pool: failed to dial after 5 attempts: dial tcp 127.0.0.1:49500: connect: connection refused
+2026/11/05 00:52:36 [ERROR] POST /api/v1/auth/fixture
+  Error: error: code=*** reason="SERVICE_UNAVAILABLE" message="service temporarily unavailable" metadata=map[]
+2026/11/05 00:52:36 [EmailQueue] Worker 0 stopping
+2026/11/05 00:52:36 [EmailQueue] All workers stopped
+--- PASS: TestPasswordRecoveryHandlerRedisFailureIsUnavailable (1.72s)
+=== RUN   TestPasswordRecoveryInvalidatesPendingTwoFactorLogin
+2026/11/05 00:52:36 [EmailQueue] Started 1 workers
+2026/11/05 00:52:36 [EmailQueue] Worker 0 stopping
+2026/11/05 00:52:36 [EmailQueue] All workers stopped
+--- FAIL: TestPasswordRecoveryInvalidatesPendingTwoFactorLogin (0.06s)
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x2 addr=0xb0 pc=0x103ffd3f0]
+
+goroutine 47 [running]:
+testing.tRunner.func1.2({0x107da21b0, 0x10831e700})
+	/Users/zluo/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.darwin-arm64/src/testing/testing.go:2125 +0x1a0
+testing.tRunner.func1()
+	/Users/zluo/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.darwin-arm64/src/testing/testing.go:2128 +0x2c8
+panic({0x107da21b0?, 0x10831e700?})
+	/Users/zluo/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.darwin-arm64/src/runtime/panic.go:859 +0x120
+github.com/Wei-Shaw/sub2api/internal/service.(*AuthService).shouldApplyEmailFirstBindDefaults(0x30d4412be160, {0x10819bf40, 0x1083f96a0}, 0x13, 0x0, 0x0)
+	/Users/zluo/Dev/donebot-api/backend/internal/service/auth_service.go:1060 +0x30
+github.com/Wei-Shaw/sub2api/internal/service.(*AuthService).backfillEmailIdentityOnSuccessfulLogin(0x30d4412be160, {0x10819bf40, 0x1083f96a0}, 0x30d441452a00)
+	/Users/zluo/Dev/donebot-api/backend/internal/service/auth_service.go:1047 +0x74
+github.com/Wei-Shaw/sub2api/internal/service.(*AuthService).RecordSuccessfulLogin(0x30d4412be160, {0x10819bf40, 0x1083f96a0}, 0x13)
+	/Users/zluo/Dev/donebot-api/backend/internal/service/auth_oauth_email_flow.go:496 +0x7c
+github.com/Wei-Shaw/sub2api/internal/handler.(*AuthHandler).Login2FA(0x30d4410874f0, 0x30d441422400)
+	/Users/zluo/Dev/donebot-api/backend/internal/handler/auth_handler.go:431 +0xb00
+github.com/Wei-Shaw/sub2api/internal/handler.recoveryRequest(0x104c920be?, 0x30d441031f38, {0x30d4412b9ce0, 0x66})
+	/Users/zluo/Dev/donebot-api/backend/internal/handler/auth_password_recovery_test.go:71 +0x1fc
+github.com/Wei-Shaw/sub2api/internal/handler.TestPasswordRecoveryInvalidatesPendingTwoFactorLogin(0x30d441426008)
+	/Users/zluo/Dev/donebot-api/backend/internal/handler/auth_password_recovery_test.go:189 +0x6a4
+testing.tRunner(0x30d441426008, 0x1081b78c0)
+	/Users/zluo/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.darwin-arm64/src/testing/testing.go:2195 +0xc4
+created by testing.(*T).Run in goroutine 1
+	/Users/zluo/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.darwin-arm64/src/testing/testing.go:2260 +0x3b8
+FAIL	github.com/Wei-Shaw/sub2api/internal/handler	3.035s
+FAIL
+
+exit_code: 1

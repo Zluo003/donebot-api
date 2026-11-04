@@ -1,0 +1,39 @@
+$ go test -p 1 -tags unit ./internal/repository -run TestPasswordResetCodeCache|TestUserPasswordReset -count=1 -v
+=== RUN   TestPasswordResetCodeCacheResendAndGenerationFences
+--- PASS: TestPasswordResetCodeCacheResendAndGenerationFences (0.00s)
+=== RUN   TestPasswordResetCodeCacheConcurrentReservationsAndConsumption
+--- PASS: TestPasswordResetCodeCacheConcurrentReservationsAndConsumption (0.01s)
+=== RUN   TestPasswordResetCodeCacheAttemptLimitAndExpiry
+=== RUN   TestPasswordResetCodeCacheAttemptLimitAndExpiry/correct_on_fifth_false
+=== RUN   TestPasswordResetCodeCacheAttemptLimitAndExpiry/correct_on_fifth_true
+--- PASS: TestPasswordResetCodeCacheAttemptLimitAndExpiry (0.01s)
+    --- PASS: TestPasswordResetCodeCacheAttemptLimitAndExpiry/correct_on_fifth_false (0.00s)
+    --- PASS: TestPasswordResetCodeCacheAttemptLimitAndExpiry/correct_on_fifth_true (0.00s)
+=== RUN   TestPasswordResetCodeCacheConcurrentWrongGuessesStopAtFive
+--- PASS: TestPasswordResetCodeCacheConcurrentWrongGuessesStopAtFive (0.01s)
+=== RUN   TestPasswordResetCodeCacheUnconsumedCodeExpires
+--- PASS: TestPasswordResetCodeCacheUnconsumedCodeExpires (0.00s)
+=== RUN   TestPasswordResetCodeCacheNamespacesStayIndependent
+--- PASS: TestPasswordResetCodeCacheNamespacesStayIndependent (0.00s)
+=== RUN   TestPasswordResetCodeCacheFailsClosedOnRedisAndCorruption
+--- PASS: TestPasswordResetCodeCacheFailsClosedOnRedisAndCorruption (0.00s)
+=== RUN   TestUserPasswordResetCompareAndSwapPreservesOtherAccountChanges
+--- PASS: TestUserPasswordResetCompareAndSwapPreservesOtherAccountChanges (0.01s)
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/email
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/password
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/inactive
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/deleted
+=== RUN   TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/missing
+--- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount (0.03s)
+    --- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/email (0.01s)
+    --- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/password (0.01s)
+    --- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/inactive (0.01s)
+    --- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/deleted (0.01s)
+    --- PASS: TestUserPasswordResetCompareAndSwapRejectsChangedOrUnavailableAccount/missing (0.01s)
+=== RUN   TestUserPasswordResetCompareAndSwapReportsDatabaseFailure
+--- PASS: TestUserPasswordResetCompareAndSwapReportsDatabaseFailure (0.01s)
+PASS
+ok  	github.com/Wei-Shaw/sub2api/internal/repository	1.939s
+
+exit_code=0

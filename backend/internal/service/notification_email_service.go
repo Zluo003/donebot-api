@@ -22,6 +22,7 @@ import (
 const (
 	NotificationEmailEventAuthVerifyCode              = "auth.verify_code"
 	NotificationEmailEventAuthPasswordReset           = "auth.password_reset"
+	NotificationEmailEventAuthPasswordResetCode       = "auth.password_reset_code"
 	NotificationEmailEventNotificationEmailVerifyCode = "notification_email.verify_code"
 	NotificationEmailEventSubscriptionPurchaseSuccess = "subscription.purchase_success"
 	NotificationEmailEventSubscriptionExpiryReminder  = "subscription.expiry_reminder"
@@ -1023,6 +1024,7 @@ func addNotificationEmailOpsSummarySampleVariables(variables map[string]string) 
 var notificationEmailEventOrder = []string{
 	NotificationEmailEventAuthVerifyCode,
 	NotificationEmailEventAuthPasswordReset,
+	NotificationEmailEventAuthPasswordResetCode,
 	NotificationEmailEventNotificationEmailVerifyCode,
 	NotificationEmailEventSubscriptionPurchaseSuccess,
 	NotificationEmailEventSubscriptionExpiryReminder,
@@ -1052,6 +1054,13 @@ var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
 		Category:     "auth",
 		Optional:     false,
 		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "reset_url", "expires_in_minutes"),
+	},
+	NotificationEmailEventAuthPasswordResetCode: {
+		Event:       NotificationEmailEventAuthPasswordResetCode,
+		Label:       "Password recovery code",
+		Description: "Sent to complete password recovery inside the client.",
+		Category:    "auth", Optional: false,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "verification_code", "expires_in_minutes"),
 	},
 	NotificationEmailEventNotificationEmailVerifyCode: {
 		Event:        NotificationEmailEventNotificationEmailVerifyCode,
@@ -1195,6 +1204,26 @@ var notificationEmailOfficialTemplates = map[string]map[string]notificationEmail
 <p>此链接将在 <strong>{{expires_in_minutes}}</strong> 分钟后失效。</p>
 <p class="muted">如果按钮无法点击，请复制以下链接到浏览器中打开：<br>{{reset_url}}</p>
 <p>如果不是您本人操作，请忽略此邮件。</p>`),
+		},
+	},
+	NotificationEmailEventAuthPasswordResetCode: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] Password recovery code",
+			HTML: notificationEmailCard("#b4422c", "Password recovery", `
+<p>Hello {{recipient_name}},</p>
+<p>Enter this code in your client to choose a new password:</p>
+<p style="font-size:32px;font-weight:700;letter-spacing:8px;text-align:center">{{verification_code}}</p>
+<p>This code expires in <strong>{{expires_in_minutes}}</strong> minutes.</p>
+<p>If you did not request this, ignore this email.</p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 找回密码验证码",
+			HTML: notificationEmailCard("#b4422c", "找回密码", `
+<p>{{recipient_name}}，您好：</p>
+<p>请在客户端输入以下验证码，并设置新密码：</p>
+<p style="font-size:32px;font-weight:700;letter-spacing:8px;text-align:center">{{verification_code}}</p>
+<p>验证码将在 <strong>{{expires_in_minutes}}</strong> 分钟后失效。</p>
+<p>若非本人操作，请忽略此邮件。</p>`),
 		},
 	},
 	NotificationEmailEventNotificationEmailVerifyCode: {

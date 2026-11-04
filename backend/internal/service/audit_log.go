@@ -127,7 +127,7 @@ func auditNormalizeBodyKey(key string) string {
 //   - providerSensitiveConfigFields：支付渠道密钥字段（pkey / privatekey / apiv3key 等）
 var auditBodySensitiveExactKeys = func() map[string]struct{} {
 	builtin := []string{
-		"code", "codes", "pin", "cvv",
+		"code", "codes", "email_code", "verification_code", "verify_code", "pin", "cvv",
 		"authorization", "cookie", "x-api-key",
 		"key",
 		// 字符串值内嵌完整凭证的字段：

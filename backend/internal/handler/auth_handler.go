@@ -264,7 +264,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Check if TOTP 2FA is enabled for this user
 	if h.totpService != nil && h.settingSvc.IsTotpEnabled(c.Request.Context()) && user.TotpEnabled {
 		// Create a temporary login session for 2FA
-		tempToken, err := h.totpService.CreateLoginSession(c.Request.Context(), user.ID, user.Email)
+		tempToken, err := h.totpService.CreateLoginSession(c.Request.Context(), user.ID, user.Email, service.CredentialVersion(user))
 		if err != nil {
 			response.InternalError(c, "Failed to create 2FA session")
 			return
@@ -312,12 +312,7 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 	// Get the login session
 	session, err := h.totpService.GetLoginSession(c.Request.Context(), req.TempToken)
 	if err != nil || session == nil {
-		tokenPrefix := ""
-		if len(req.TempToken) >= 8 {
-			tokenPrefix = req.TempToken[:8]
-		}
 		slog.Debug("login_2fa_session_invalid",
-			"temp_token_prefix", tokenPrefix,
 			"error", err)
 		response.BadRequest(c, "Invalid or expired 2FA session")
 		return
@@ -349,6 +344,12 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 
 	if err := h.ensureBackendModeAllowsUser(c.Request.Context(), user); err != nil {
 		response.ErrorFrom(c, err)
+		return
+	}
+
+	if !session.MatchesCredential(user) {
+		_ = h.totpService.DeleteLoginSession(c.Request.Context(), req.TempToken)
+		response.BadRequest(c, "Invalid or expired 2FA session")
 		return
 	}
 
@@ -409,6 +410,20 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 		}
 	}
 
+	user, err = h.userService.GetByID(c.Request.Context(), session.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if !session.MatchesCredential(user) {
+		_ = h.totpService.DeleteLoginSession(c.Request.Context(), req.TempToken)
+		response.BadRequest(c, "Invalid or expired 2FA session")
+		return
+	}
+	if err := ensureLoginUserActive(user); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	// Delete the login session (only after all checks pass)
 	_ = h.totpService.DeleteLoginSession(c.Request.Context(), req.TempToken)
 
@@ -589,6 +604,7 @@ func (h *AuthHandler) ValidateInvitationCode(c *gin.Context) {
 // ForgotPasswordRequest 忘记密码请求
 type ForgotPasswordRequest struct {
 	Email                 string `json:"email" binding:"required,email"`
+	Delivery              string `json:"delivery" binding:"omitempty,oneof=code"`
 	TurnstileToken        string `json:"turnstile_token"`
 	TencentCaptchaTicket  string `json:"tencent_captcha_ticket"`
 	TencentCaptchaRandstr string `json:"tencent_captcha_randstr"`
@@ -596,7 +612,9 @@ type ForgotPasswordRequest struct {
 
 // ForgotPasswordResponse 忘记密码响应
 type ForgotPasswordResponse struct {
-	Message string `json:"message"`
+	Message   string `json:"message"`
+	Countdown int    `json:"countdown,omitempty"`
+	ExpiresIn int    `json:"expires_in,omitempty"`
 }
 
 // ForgotPassword 请求密码重置
@@ -611,6 +629,17 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
 	if err := h.authService.VerifyCaptcha(c.Request.Context(), proof, ip.GetClientIP(c)); err != nil {
 		response.ErrorFrom(c, err)
+		return
+	}
+	if req.Delivery == "code" {
+		if err := h.authService.RequestPasswordResetCodeAsync(c.Request.Context(), req.Email, c.GetHeader("Accept-Language")); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Success(c, ForgotPasswordResponse{
+			Message:   "If your email is registered, you will receive a password recovery code shortly.",
+			Countdown: 60, ExpiresIn: 900,
+		})
 		return
 	}
 
@@ -636,7 +665,8 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 // ResetPasswordRequest 重置密码请求
 type ResetPasswordRequest struct {
 	Email       string `json:"email" binding:"required,email"`
-	Token       string `json:"token" binding:"required"`
+	Token       string `json:"token"`
+	EmailCode   string `json:"email_code" binding:"omitempty,len=6,numeric"`
 	NewPassword string `json:"new_password" binding:"required,min=6"`
 }
 
@@ -654,8 +684,17 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	// Reset password
-	if err := h.authService.ResetPassword(c.Request.Context(), req.Email, req.Token, req.NewPassword); err != nil {
+	if (req.Token == "") == (req.EmailCode == "") {
+		response.BadRequest(c, "Exactly one of token or email_code is required")
+		return
+	}
+	var err error
+	if req.EmailCode != "" {
+		err = h.authService.ResetPasswordWithCode(c.Request.Context(), req.Email, req.EmailCode, req.NewPassword)
+	} else {
+		err = h.authService.ResetPassword(c.Request.Context(), req.Email, req.Token, req.NewPassword)
+	}
+	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}

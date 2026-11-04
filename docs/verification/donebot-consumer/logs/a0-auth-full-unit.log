@@ -1,0 +1,8 @@
+cwd: backend
+command: go test -p 1 -tags=unit ./internal/service ./internal/repository ./internal/handler ./internal/server/routes -count=1
+ok  	github.com/Wei-Shaw/sub2api/internal/service	240.630s
+ok  	github.com/Wei-Shaw/sub2api/internal/repository	10.069s
+ok  	github.com/Wei-Shaw/sub2api/internal/handler	52.541s
+ok  	github.com/Wei-Shaw/sub2api/internal/server/routes	11.751s
+
+exit_code: 0

@@ -1631,9 +1631,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, token, newPasswo
 	if s.emailService == nil {
 		return ErrServiceUnavailable
 	}
-
-	// Verify and consume the reset token (one-time use)
-	if err := s.emailService.ConsumePasswordResetToken(ctx, email, token); err != nil {
+	if err := s.emailService.VerifyPasswordResetToken(ctx, email, token); err != nil {
 		return err
 	}
 
@@ -1647,35 +1645,18 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, token, newPasswo
 		return ErrServiceUnavailable
 	}
 
-	// Check if user is active
+	if err := s.emailService.ConsumePasswordResetToken(ctx, email, token); err != nil {
+		return err
+	}
 	if !user.IsActive() {
 		return ErrUserNotActive
 	}
-
-	// Hash new password
-	hashedPassword, err := s.HashPassword(newPassword)
-	if err != nil {
-		return fmt.Errorf("hash password: %w", err)
+	if err := s.completePasswordReset(ctx, user, newPassword); err != nil {
+		if errors.Is(err, ErrInvalidResetCode) {
+			return ErrInvalidResetToken
+		}
+		return err
 	}
-
-	// Update password and increment TokenVersion
-	user.PasswordHash = hashedPassword
-	user.TokenVersion++ // Invalidate all existing tokens
-
-	// TokenVersion 无对应数据库列（见 resolvedTokenVersion：由 email+password_hash 指纹推导），
-	// 写回 password_hash 本身即可让旧 token 失效。
-	if err := s.userRepo.Update(ctx, user, UserUpdateFields{PasswordHash: true}); err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Database error updating password for user %d: %v", user.ID, err)
-		return ErrServiceUnavailable
-	}
-
-	// Also revoke all refresh tokens for this user
-	if err := s.RevokeAllUserSessions(ctx, user.ID); err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Failed to revoke refresh tokens for user %d: %v", user.ID, err)
-		// Don't return error - password was already changed successfully
-	}
-
-	logger.LegacyPrintf("service.auth", "[Auth] Password reset successful for user: %s", email)
 	return nil
 }
 
@@ -1945,6 +1926,11 @@ func resolvedTokenVersion(user *User) int64 {
 	sum := sha256.Sum256([]byte(material))
 	fingerprint := int64(binary.BigEndian.Uint64(sum[:8]) & 0x7fffffffffffffff)
 	return user.TokenVersion ^ fingerprint
+}
+
+// CredentialVersion binds pending authentication to the password it verified.
+func CredentialVersion(user *User) int64 {
+	return resolvedTokenVersion(user)
 }
 
 // snapshotPlatformQuotaDefaults 把 plan.PlatformQuotas 中至少配置了一档限额的平台以

@@ -11,17 +11,20 @@ import (
 
 // Task type constants
 const (
-	TaskTypeVerifyCode    = "verify_code"
-	TaskTypePasswordReset = "password_reset"
+	TaskTypeVerifyCode        = "verify_code"
+	TaskTypePasswordReset     = "password_reset"
+	TaskTypePasswordResetCode = "password_reset_code"
 )
 
 // EmailTask 邮件发送任务
 type EmailTask struct {
-	Email    string
-	SiteName string
-	TaskType string // "verify_code" or "password_reset"
-	ResetURL string // Only used for password_reset task type
-	Locale   string // Optional Accept-Language locale hint
+	Email      string
+	SiteName   string
+	TaskType   string // "verify_code" or "password_reset"
+	ResetURL   string // Only used for password_reset task type
+	Locale     string // Optional Accept-Language locale hint
+	Code       string
+	Generation string
 }
 
 // EmailQueueService 异步邮件队列服务
@@ -94,6 +97,10 @@ func (s *EmailQueueService) processTask(workerID int, task EmailTask) {
 		} else {
 			logger.LegacyPrintf("service.email_queue", "[EmailQueue] Worker %d sent password reset to %s", workerID, task.Email)
 		}
+	case TaskTypePasswordResetCode:
+		if err := s.emailService.SendPasswordResetCode(ctx, task.Email, task.SiteName, task.Code, task.Generation, task.Locale); err != nil {
+			logger.LegacyPrintf("service.email_queue", "[EmailQueue] Worker %d password recovery mail failed for %s", workerID, notificationEmailHash(task.Email))
+		}
 	default:
 		logger.LegacyPrintf("service.email_queue", "[EmailQueue] Worker %d unknown task type: %s", workerID, task.TaskType)
 	}
@@ -130,6 +137,15 @@ func (s *EmailQueueService) EnqueuePasswordReset(email, siteName, resetURL strin
 	select {
 	case s.taskChan <- task:
 		logger.LegacyPrintf("service.email_queue", "[EmailQueue] Enqueued password reset task for %s", email)
+		return nil
+	default:
+		return fmt.Errorf("email queue is full")
+	}
+}
+
+func (s *EmailQueueService) EnqueuePasswordResetCode(email, siteName, code, generation, locale string) error {
+	select {
+	case s.taskChan <- EmailTask{Email: email, SiteName: siteName, TaskType: TaskTypePasswordResetCode, Code: code, Generation: generation, Locale: locale}:
 		return nil
 	default:
 		return fmt.Errorf("email queue is full")

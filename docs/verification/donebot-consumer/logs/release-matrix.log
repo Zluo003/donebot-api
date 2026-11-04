@@ -1,0 +1,18 @@
+$ python3 -m unittest discover -s .github/release-tools -p test_release_matrix.py -v
+test_collect_and_verify_hash_and_source_binding (test_release_matrix.ReleaseMatrixTest.test_collect_and_verify_hash_and_source_binding) ... ok
+test_docker_commands_do_not_publish_during_dry_run (test_release_matrix.ReleaseMatrixTest.test_docker_commands_do_not_publish_during_dry_run) ... ok
+test_dry_run_plan_resolves_matrix_without_a_new_tag (test_release_matrix.ReleaseMatrixTest.test_dry_run_plan_resolves_matrix_without_a_new_tag) ... ok
+test_full_and_simple_matrix_match_existing_targets (test_release_matrix.ReleaseMatrixTest.test_full_and_simple_matrix_match_existing_targets) ... ok
+test_leaf_keeps_packaging_and_selects_only_one_target (test_release_matrix.ReleaseMatrixTest.test_leaf_keeps_packaging_and_selects_only_one_target) ... ok
+test_linux_context_preserves_binary_executable_mode (test_release_matrix.ReleaseMatrixTest.test_linux_context_preserves_binary_executable_mode) ... ok
+test_missing_extra_and_wrong_commit_artifacts_are_rejected (test_release_matrix.ReleaseMatrixTest.test_missing_extra_and_wrong_commit_artifacts_are_rejected) ... ok
+test_plan_requires_a_tag_for_publication (test_release_matrix.ReleaseMatrixTest.test_plan_requires_a_tag_for_publication) ... ok
+test_publication_config_has_no_compilation_or_docker_work (test_release_matrix.ReleaseMatrixTest.test_publication_config_has_no_compilation_or_docker_work) ... ok
+test_published_full_and_simple_image_tags (test_release_matrix.ReleaseMatrixTest.test_published_full_and_simple_image_tags) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 1.542s
+
+OK
+
+EXIT_CODE=0
