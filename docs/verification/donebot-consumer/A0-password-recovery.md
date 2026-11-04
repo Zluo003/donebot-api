@@ -87,6 +87,6 @@ go test -p 1 -tags=unit ./internal/service ./internal/repository ./internal/hand
 golangci-lint run --timeout=30m
 ```
 
-四包目标验收退出 0，169 个顶层测试 / 207 项（含子项），分别为 service 9.994s、repository 0.971s、handler 3.003s、routes 9.542s；完整 lint 退出 0，`0 issues.`。完整命令与输出见 `logs/a0-ci-fix-auth-tests.log`、`logs/a0-ci-fix-golangci-lint.log`。修正提交推送后的独立远端 CI 状态另行记录，不能以本地通过冒充远端通过。
+四包目标验收退出 0，169 个顶层测试 / 207 项（含子项），分别为 service 9.994s、repository 0.971s、handler 3.003s、routes 9.542s；完整 lint 退出 0，`0 issues.`。完整命令与输出见 `logs/a0-ci-fix-auth-tests.log`、`logs/a0-ci-fix-golangci-lint.log`。修正提交 `78bd89d5ab5e9fdffc38b7790c2cfadc1e4edcb9` 的独立远端 CI [41909951987](https://github.com/Zluo003/donebot-api/actions/runs/41909951987) 最终为 `completed / success`；五个作业全部成功：shell 14s、test（完整 unit 和 integration）12m27s、frontend 1m41s、golangci-lint 5m19s、release-helpers 10s。最终状态与完整远端日志见 `logs/a0-ci-fix-remote-final.json`、`logs/a0-ci-fix-remote-full.log`。
 
 此收尾不修改验证码协议，不重发 v0.4.6，不部署网关；修正尚未进入不可变的 v0.4.6 二进制。原有安装和回滚命令继续对应已核验的 v0.4.6 / v0.4.5。

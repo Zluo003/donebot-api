@@ -151,7 +151,7 @@ golangci-lint	UNKNOWN STEP	2026-11-04T17:37:39.9780852Z [command]/usr/bin/tar -x
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.8504414Z Cache restored successfully
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.8620917Z Cache restored from key: setup-go-Linux-x64-ubuntu24-go-1.27.3-e071debf6ad28c7b27b95fc114b48c301b72cd0d3e2964283bf5069c3eb9562c
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.8645608Z go version go1.27.3 linux/amd64
-golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.8645828Z 
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.8645828Z
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.8646167Z ##[group]go env
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9732716Z AR='ar'
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9732936Z CC='gcc'
@@ -200,7 +200,7 @@ golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9741652Z GOVCS=''
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9741803Z GOVERSION='go1.27.3'
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9741956Z GOWORK=''
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9742115Z PKG_CONFIG='pkg-config'
-golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9742219Z 
+golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9742219Z
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9742515Z ##[endgroup]
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9918516Z ##[group]Run go version | grep -q 'go1.27.3'
 golangci-lint	UNKNOWN STEP	2026-11-04T17:37:40.9919225Z ^[[36;1mgo version | grep -q 'go1.27.3'^[[0m
@@ -262,7 +262,7 @@ golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3172993Z 		^
 golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3173177Z 4 issues:
 golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3173360Z * errcheck: 3
 golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3173591Z * staticcheck: 1
-golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3173714Z 
+golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3173714Z
 golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3181833Z ##[error]issues found
 golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3182551Z Ran golangci-lint in 217697ms
 golangci-lint	UNKNOWN STEP	2026-11-04T17:41:21.3182910Z ##[endgroup]
