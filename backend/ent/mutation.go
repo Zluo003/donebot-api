@@ -44726,6 +44726,9 @@ type UsageLogMutation struct {
 	typ                          string
 	id                           *int64
 	request_id                   *string
+	event_type                   *string
+	operation_receipt_id         *string
+	related_request_id           *string
 	model                        *string
 	requested_model              *string
 	upstream_model               *string
@@ -45044,6 +45047,140 @@ func (m *UsageLogMutation) OldRequestID(ctx context.Context) (v string, err erro
 // ResetRequestID resets all changes to the "request_id" field.
 func (m *UsageLogMutation) ResetRequestID() {
 	m.request_id = nil
+}
+
+// SetEventType sets the "event_type" field.
+func (m *UsageLogMutation) SetEventType(s string) {
+	m.event_type = &s
+}
+
+// EventType returns the value of the "event_type" field in the mutation.
+func (m *UsageLogMutation) EventType() (r string, exists bool) {
+	v := m.event_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEventType returns the old "event_type" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldEventType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEventType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEventType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEventType: %w", err)
+	}
+	return oldValue.EventType, nil
+}
+
+// ResetEventType resets all changes to the "event_type" field.
+func (m *UsageLogMutation) ResetEventType() {
+	m.event_type = nil
+}
+
+// SetOperationReceiptID sets the "operation_receipt_id" field.
+func (m *UsageLogMutation) SetOperationReceiptID(s string) {
+	m.operation_receipt_id = &s
+}
+
+// OperationReceiptID returns the value of the "operation_receipt_id" field in the mutation.
+func (m *UsageLogMutation) OperationReceiptID() (r string, exists bool) {
+	v := m.operation_receipt_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOperationReceiptID returns the old "operation_receipt_id" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldOperationReceiptID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOperationReceiptID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOperationReceiptID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOperationReceiptID: %w", err)
+	}
+	return oldValue.OperationReceiptID, nil
+}
+
+// ClearOperationReceiptID clears the value of the "operation_receipt_id" field.
+func (m *UsageLogMutation) ClearOperationReceiptID() {
+	m.operation_receipt_id = nil
+	m.clearedFields[usagelog.FieldOperationReceiptID] = struct{}{}
+}
+
+// OperationReceiptIDCleared returns if the "operation_receipt_id" field was cleared in this mutation.
+func (m *UsageLogMutation) OperationReceiptIDCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldOperationReceiptID]
+	return ok
+}
+
+// ResetOperationReceiptID resets all changes to the "operation_receipt_id" field.
+func (m *UsageLogMutation) ResetOperationReceiptID() {
+	m.operation_receipt_id = nil
+	delete(m.clearedFields, usagelog.FieldOperationReceiptID)
+}
+
+// SetRelatedRequestID sets the "related_request_id" field.
+func (m *UsageLogMutation) SetRelatedRequestID(s string) {
+	m.related_request_id = &s
+}
+
+// RelatedRequestID returns the value of the "related_request_id" field in the mutation.
+func (m *UsageLogMutation) RelatedRequestID() (r string, exists bool) {
+	v := m.related_request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelatedRequestID returns the old "related_request_id" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldRelatedRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelatedRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelatedRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelatedRequestID: %w", err)
+	}
+	return oldValue.RelatedRequestID, nil
+}
+
+// ClearRelatedRequestID clears the value of the "related_request_id" field.
+func (m *UsageLogMutation) ClearRelatedRequestID() {
+	m.related_request_id = nil
+	m.clearedFields[usagelog.FieldRelatedRequestID] = struct{}{}
+}
+
+// RelatedRequestIDCleared returns if the "related_request_id" field was cleared in this mutation.
+func (m *UsageLogMutation) RelatedRequestIDCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldRelatedRequestID]
+	return ok
+}
+
+// ResetRelatedRequestID resets all changes to the "related_request_id" field.
+func (m *UsageLogMutation) ResetRelatedRequestID() {
+	m.related_request_id = nil
+	delete(m.clearedFields, usagelog.FieldRelatedRequestID)
 }
 
 // SetModel sets the "model" field.
@@ -47474,7 +47611,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 47)
+	fields := make([]string, 0, 50)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -47486,6 +47623,15 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.request_id != nil {
 		fields = append(fields, usagelog.FieldRequestID)
+	}
+	if m.event_type != nil {
+		fields = append(fields, usagelog.FieldEventType)
+	}
+	if m.operation_receipt_id != nil {
+		fields = append(fields, usagelog.FieldOperationReceiptID)
+	}
+	if m.related_request_id != nil {
+		fields = append(fields, usagelog.FieldRelatedRequestID)
 	}
 	if m.model != nil {
 		fields = append(fields, usagelog.FieldModel)
@@ -47632,6 +47778,12 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.AccountID()
 	case usagelog.FieldRequestID:
 		return m.RequestID()
+	case usagelog.FieldEventType:
+		return m.EventType()
+	case usagelog.FieldOperationReceiptID:
+		return m.OperationReceiptID()
+	case usagelog.FieldRelatedRequestID:
+		return m.RelatedRequestID()
 	case usagelog.FieldModel:
 		return m.Model()
 	case usagelog.FieldRequestedModel:
@@ -47735,6 +47887,12 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldAccountID(ctx)
 	case usagelog.FieldRequestID:
 		return m.OldRequestID(ctx)
+	case usagelog.FieldEventType:
+		return m.OldEventType(ctx)
+	case usagelog.FieldOperationReceiptID:
+		return m.OldOperationReceiptID(ctx)
+	case usagelog.FieldRelatedRequestID:
+		return m.OldRelatedRequestID(ctx)
 	case usagelog.FieldModel:
 		return m.OldModel(ctx)
 	case usagelog.FieldRequestedModel:
@@ -47857,6 +48015,27 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRequestID(v)
+		return nil
+	case usagelog.FieldEventType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEventType(v)
+		return nil
+	case usagelog.FieldOperationReceiptID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOperationReceiptID(v)
+		return nil
+	case usagelog.FieldRelatedRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelatedRequestID(v)
 		return nil
 	case usagelog.FieldModel:
 		v, ok := value.(string)
@@ -48444,6 +48623,12 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *UsageLogMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(usagelog.FieldOperationReceiptID) {
+		fields = append(fields, usagelog.FieldOperationReceiptID)
+	}
+	if m.FieldCleared(usagelog.FieldRelatedRequestID) {
+		fields = append(fields, usagelog.FieldRelatedRequestID)
+	}
 	if m.FieldCleared(usagelog.FieldRequestedModel) {
 		fields = append(fields, usagelog.FieldRequestedModel)
 	}
@@ -48524,6 +48709,12 @@ func (m *UsageLogMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *UsageLogMutation) ClearField(name string) error {
 	switch name {
+	case usagelog.FieldOperationReceiptID:
+		m.ClearOperationReceiptID()
+		return nil
+	case usagelog.FieldRelatedRequestID:
+		m.ClearRelatedRequestID()
+		return nil
 	case usagelog.FieldRequestedModel:
 		m.ClearRequestedModel()
 		return nil
@@ -48609,6 +48800,15 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldRequestID:
 		m.ResetRequestID()
+		return nil
+	case usagelog.FieldEventType:
+		m.ResetEventType()
+		return nil
+	case usagelog.FieldOperationReceiptID:
+		m.ResetOperationReceiptID()
+		return nil
+	case usagelog.FieldRelatedRequestID:
+		m.ResetRelatedRequestID()
 		return nil
 	case usagelog.FieldModel:
 		m.ResetModel()

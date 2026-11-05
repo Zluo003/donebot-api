@@ -109,14 +109,16 @@ type DoneBotMediaService struct {
 	repo     DoneBotMediaOperationRepository
 	installs *DoneBotService
 	usage    doneBotMediaUsageReader
+	prepaid  DoneBotMediaPrepaidRepository
 }
 
-func NewDoneBotMediaService(repo DoneBotMediaOperationRepository, installs *DoneBotService, usage *UsageService) *DoneBotMediaService {
+func NewDoneBotMediaService(repo DoneBotMediaOperationRepository, installs *DoneBotService, usage *UsageService, billing UsageBillingRepository) *DoneBotMediaService {
 	var reader doneBotMediaUsageReader
 	if usage != nil {
 		reader = usage
 	}
-	return &DoneBotMediaService{repo: repo, installs: installs, usage: reader}
+	prepaid, _ := billing.(DoneBotMediaPrepaidRepository)
+	return &DoneBotMediaService{repo: repo, installs: installs, usage: reader, prepaid: prepaid}
 }
 
 func (s *DoneBotMediaService) ResolveOwner(ctx context.Context, userID, keyID, groupID int64) (DoneBotMediaOwner, error) {
@@ -203,6 +205,12 @@ func (s *DoneBotMediaService) Begin(ctx context.Context, input DoneBotMediaBegin
 	hash := sha256.Sum256([]byte(key))
 	op := &DoneBotMediaOperation{ReceiptID: id, Owner: owner, IdempotencyHash: hex.EncodeToString(hash[:]), Fingerprint: input.Fingerprint,
 		Kind: input.Kind, Model: input.Model, Method: input.Method, Path: input.Path, Status: "dispatching", UsageRequestID: "client:" + id, EstimatedCents: input.EstimatedCents}
+	if input.Kind == "speech" {
+		op.UsageRequestID = DoneBotSpeechBillingRequestID(id)
+	}
+	if input.Kind == "image" && strings.HasSuffix(input.Path, "/async") {
+		op.TaskID, op.TaskKey, op.Provider = DoneBotImageTaskID(id), DoneBotImageTaskID(id), "donebot"
+	}
 	op, created, err := s.repo.Begin(ctx, op)
 	if err != nil {
 		return nil, err
@@ -219,6 +227,10 @@ func (s *DoneBotMediaService) Begin(ctx context.Context, input DoneBotMediaBegin
 		return result, nil
 	}
 	return result, ErrDoneBotMediaPending
+}
+
+func DoneBotSpeechBillingRequestID(receiptID string) string {
+	return "apimart:tts:donebot:" + receiptID
 }
 
 func doneBotMediaValidEstimate(value *json.Number) bool {
@@ -252,7 +264,7 @@ func doneBotMediaPath(kind, method, path string) bool {
 	}
 	switch kind {
 	case "image":
-		return path == "/v1/images/generations" || path == "/v1/images/edits"
+		return path == "/v1/images/generations" || path == "/v1/images/edits" || path == "/v1/images/generations/async" || path == "/v1/images/edits/async"
 	case "video":
 		return path == "/v1/videos" || path == "/v1/videos/edits" || path == "/v1/videos/extensions"
 	case "music":
@@ -281,6 +293,9 @@ func (s *DoneBotMediaService) Complete(ctx context.Context, owner DoneBotMediaOw
 	if completion.HTTPStatus != 0 && (completion.HTTPStatus < 200 || completion.HTTPStatus > 599) {
 		return nil, ErrDoneBotMediaInvalid
 	}
+	if completion.HTTPStatus == 408 || completion.HTTPStatus == 499 {
+		completion.Status = "uncertain"
+	}
 	completion.RetryAfter = doneBotMediaRetryAfter(completion.RetryAfter)
 	if completion.Body != nil {
 		body, contentType, ok := doneBotMediaSafeResponse(completion.ContentType, completion.Body)
@@ -289,8 +304,33 @@ func (s *DoneBotMediaService) Complete(ctx context.Context, owner DoneBotMediaOw
 			completion.Status = "uncertain"
 		}
 	}
-	if completion.HTTPStatus != 0 && completion.Body == nil && completion.TaskID == "" && completion.Status == "completed" {
+	streamSettled := completion.Provider == "apimart" && strings.HasPrefix(completion.UsageRequestID, "apimart:tts:")
+	if completion.HTTPStatus != 0 && completion.Body == nil && completion.TaskID == "" && completion.Status == "completed" && !streamSettled {
 		completion.Status = "uncertain"
+	}
+	if s.prepaid != nil {
+		p, err := s.prepaid.LookupDoneBotMediaPrecharge(ctx, receiptID, owner.APIKeyID, "")
+		if err != nil {
+			return nil, err
+		}
+		if p != nil {
+			completion.UsageRequestID = ""
+			if p.State == "prepaid" && completion.Status == "completed" {
+				completion.Status = "uncertain"
+			}
+			op, err := s.repo.Complete(ctx, owner, receiptID, completion)
+			if err != nil {
+				return nil, err
+			}
+			if p.State == "prepaid" && (completion.Status == "failed" || completion.Status == "cancelled") {
+				_, err = s.prepaid.SettleDoneBotMediaPrecharge(ctx, DoneBotMediaPrepaidSettlement{ReceiptID: receiptID, Failure: true})
+				if err != nil {
+					return nil, err
+				}
+				return s.repo.Lookup(ctx, owner, receiptID)
+			}
+			return op, nil
+		}
 	}
 	return s.repo.Complete(ctx, owner, receiptID, completion)
 }
@@ -354,20 +394,25 @@ func (s *DoneBotMediaService) Observe(ctx context.Context, owner DoneBotMediaOwn
 		status = "processing"
 	case "succeeded", "success", "completed", "done":
 		status = "completed"
-	case "failed", "error":
+	case "failed", "error", "expired":
 		status = "failed"
 	case "cancelled", "canceled":
 		status = "cancelled"
 	case "refunded":
 		status = "refunded"
+	case "uncertain":
+		status = "uncertain"
 	default:
 		return op, nil
 	}
-	return s.repo.Complete(ctx, op.Owner, op.ReceiptID, DoneBotMediaCompletion{Status: status})
+	return s.Complete(ctx, op.Owner, op.ReceiptID, DoneBotMediaCompletion{Status: status})
 }
 
-// DoneBotMediaReceipt reports settlement from usage_logs; the operation table never charges or stores actual costs.
+// DoneBotMediaReceipt separates pending prepayment from confirmed settlement.
 type DoneBotMediaReceipt struct {
+	PaymentState       string       `json:"payment_state,omitempty"`
+	PrepaidCents       *json.Number `json:"prepaid_cents,omitempty"`
+	RefundedCents      *json.Number `json:"refunded_cents,omitempty"`
 	ReceiptID          string       `json:"receipt_id"`
 	RequestID          string       `json:"request_id"`
 	InstallationID     string       `json:"installation_id"`
@@ -403,6 +448,42 @@ func (s *DoneBotMediaService) Receipt(ctx context.Context, userID int64, install
 	}
 	receipt := &DoneBotMediaReceipt{ReceiptID: op.ReceiptID, RequestID: op.UsageRequestID, InstallationID: owner.InstallationID, Status: op.Status,
 		MediaType: op.Kind, Model: op.Model, TaskID: op.TaskID, Currency: "CNY", EstimatedCents: op.EstimatedCents}
+	if s.prepaid != nil {
+		p, err := s.prepaid.LookupDoneBotMediaPrecharge(ctx, receiptID, owner.APIKeyID, "")
+		if err != nil {
+			return nil, err
+		}
+		if p != nil {
+			paid, err := doneBotCents(p.Amount)
+			if err != nil {
+				return nil, err
+			}
+			refunded, err := doneBotCents(p.RefundedAmount)
+			if err != nil {
+				return nil, err
+			}
+			if p.State == "prepaid" && op.Kind == "image" && op.Provider == "donebot" && !op.CreatedAt.IsZero() && time.Since(op.CreatedAt) > defaultImageTaskExecutionTimeout {
+				receipt.Status = "uncertain"
+			}
+			receipt.RequestID = DoneBotMediaChargeRequestID(receiptID)
+			receipt.PaymentState = p.State
+			receipt.PrepaidCents = &paid
+			receipt.RefundedCents = &refunded
+			if p.State == "settled" || p.State == "refunded" {
+				actual, err := doneBotCents(p.SettledAmount)
+				if err != nil {
+					return nil, err
+				}
+				receipt.ActualCents = &actual
+				if p.State == "refunded" {
+					receipt.Status = "refunded"
+				} else {
+					receipt.Status = "completed"
+				}
+			}
+			return receipt, nil
+		}
+	}
 	logs, _, err := s.usage.ListWithFilters(ctx, pagination.PaginationParams{Page: 1, PageSize: 1}, usagestats.UsageLogFilters{UserID: userID, APIKeyID: owner.APIKeyID, GroupID: owner.GroupID, RequestID: op.UsageRequestID})
 	if err != nil {
 		return nil, err
@@ -462,7 +543,7 @@ func doneBotMediaSafeJSON(value any, depth int) any {
 		clean := make(map[string]any)
 		for key, item := range value {
 			switch key {
-			case "id", "task_id", "request_id", "object", "status", "model", "code", "type", "created", "created_at", "updated_at", "completed_at", "expires_at", "progress", "duration", "seconds", "size", "resolution", "output_format", "seed":
+			case "id", "task_id", "request_id", "receipt_id", "object", "status", "model", "code", "type", "created", "created_at", "updated_at", "completed_at", "expires_at", "progress", "duration", "seconds", "size", "resolution", "output_format", "seed":
 				switch scalar := item.(type) {
 				case json.Number, bool, nil:
 					clean[key] = scalar

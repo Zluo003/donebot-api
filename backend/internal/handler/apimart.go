@@ -10,6 +10,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -205,7 +206,8 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 			h.errorResponse(c, 503, "api_error", "APIMart tariff is unavailable")
 			return
 		}
-		if h.cfg == nil || h.cfg.RunMode != config.RunModeSimple {
+		prepaid := endpoint != service.APIMartTTS && service.DoneBotMediaReceiptID(ctx) != ""
+		if !prepaid && (h.cfg == nil || h.cfg.RunMode != config.RunModeSimple) {
 			reservation, err = h.billingCacheService.ReserveFixedCharge(ctx, key.User, key, key.Group, subscription, amount)
 		}
 		if err != nil {
@@ -215,7 +217,7 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 		}
 		simpleMode := h.cfg != nil && h.cfg.RunMode == config.RunModeSimple
 		subscriptionMode := key.Group.IsSubscriptionType() && subscription != nil
-		if endpoint != service.APIMartTTS && amount > 0 && reservation == nil && !simpleMode && !subscriptionMode {
+		if !prepaid && endpoint != service.APIMartTTS && amount > 0 && reservation == nil && !simpleMode && !subscriptionMode {
 			h.errorResponse(c, 503, "api_error", "Async generation requires available inflight billing storage")
 			return
 		}
@@ -237,6 +239,11 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 	if release != nil {
 		defer release()
 	}
+	if !lookup && endpoint != service.APIMartTTS {
+		if err := h.gatewayService.PrepayDoneBotAPIMart(ctx, key, account, info, endpoint); response.ErrorFrom(c, err) {
+			return
+		}
+	}
 	response, err := h.gatewayService.ForwardAPIMart(ctx, c, account, endpoint, taskID, body)
 	if err != nil {
 		log.Warn("apimart.forward_failed")
@@ -244,7 +251,28 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 		return
 	}
 	if response.IsFailure() {
+		if !lookup {
+			h.refundDoneBotRejectedMedia(c, response.Status)
+		}
 		writeAPIMartResponse(c, response)
+		return
+	}
+	if endpoint == service.APIMartTTS {
+		if response.Stream == nil || response.Result == nil {
+			h.errorResponse(c, 502, "upstream_error", "APIMart did not return an audio stream")
+			return
+		}
+		c.Set(middleware.DoneBotMediaProvider, "apimart")
+		c.Set(middleware.DoneBotMediaUsageRequestID, response.Result.RequestID)
+		response.Result.Model = info.Model
+		response.Result.BillingModel = info.BillingModel
+		if err := streamAPIMartSpeech(c, response, func() error {
+			return h.recordAPIMartUsage(c, key, subscription, account, response.Result, info.Model)
+		}); err != nil {
+			log.Warn("apimart.speech_stream_incomplete", zap.Error(err))
+			return
+		}
+		h.gatewayService.ReportOpenAIAccountScheduleResult(account, account.GetMappedModel(info.Model), true, nil)
 		return
 	}
 	if !lookup {
@@ -261,6 +289,10 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 		p := service.APIMartPending{Endpoint: endpoint, Model: info.Model, UpstreamModel: response.Result.UpstreamModel, OriginalModel: clientRequestedModel(c, info.Model), Tier: info.Tier, Units: info.Units, CreatedAt: service.GrokVideoPendingCreatedAtNow(), LayerDecomposition: info.LayerDecomposition, BillingModel: info.BillingModel}
 		persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 		defer persistCancel()
+		if err := h.gatewayService.BindDoneBotMediaTask(persistCtx, key.ID, taskKey); err != nil {
+			h.errorResponse(c, 503, "api_error", fmt.Sprintf("Accepted task %s could not be bound; do not resubmit", response.TaskID))
+			return
+		}
 		job := service.APIMartSettlementJob{TaskID: response.TaskID, UserID: subject.UserID, APIKeyID: key.ID, GroupID: key.Group.ID, AccountID: account.ID, Pending: p, UserAgent: c.GetHeader("User-Agent"), IPAddress: ip.GetClientIP(c), QuotaPlatform: service.QuotaPlatform(ctx, key)}
 		if subscription != nil {
 			job.SubscriptionID = subscription.ID

@@ -71,7 +71,8 @@ func TestDoneBotMediaValidationRejectsCrossAdapterKindsAndUnadvertisedOperations
 		{"speech", "music", "/v1/audio/speech", `{"input":"hi","voice":"alloy","response_format":"wav"}`, false},
 		{"music", "speech", "/v1/music/generations", `{"prompt":"hi","version":"v6","audio_format":"mp3"}`, false},
 		{"video", "video", "/v1/videos", `{"content":[{"type":"text","text":"hi"}],"duration":5,"resolution":"720p","ratio":"16:9"}`, true},
-		{"video", "video", "/v1/videos/edits", `{"content":[{"type":"text","text":"hi"}],"duration":5,"resolution":"720p","ratio":"adaptive"}`, false},
+		{"video", "video", "/v1/videos/edits", `{"content":[{"type":"text","text":"hi"}],"duration":5,"resolution":"720p","ratio":"adaptive"}`, true},
+		{"video", "video", "/v1/videos/extensions", `{"content":[{"type":"text","text":"hi"}],"duration":5,"resolution":"720p","ratio":"adaptive"}`, true},
 		{"image", "speech", "/v1/images/generations", `{}`, false},
 		{"image", "image", "/v1/images/generations", `{"ratio":"16:9","size":"1K"}`, false},
 		{"music", "music", "/v1/music/generations", `{"version":"v6","audio_format":"mp3","response_format":"wav"}`, false},
@@ -85,6 +86,17 @@ func TestDoneBotMediaValidationRejectsCrossAdapterKindsAndUnadvertisedOperations
 				require.ErrorIs(t, err, ErrDoneBotMediaInvalid)
 			}
 		})
+	}
+}
+
+func TestDoneBotAsyncImageValidationKeepsNativeChoicesAndPathIsolation(t *testing.T) {
+	model := &DoneBotCatalogModel{ID: "image", MediaTypes: []string{"image"}, Interfaces: []string{"openai.images"}, MediaParameters: &DoneBotCatalogMediaParameters{Protocol: doneBotMediaProtocol("donebot.images.async.v1")}}
+	params := map[string]any{"model": "image", "size": "1536x1024", "output_format": "png"}
+	for _, path := range []string{"/v1/images/generations/async", "/v1/images/edits/async"} {
+		require.NoError(t, validateDoneBotMediaModel(model, "image", path, params))
+	}
+	for _, path := range []string{"/v1/images/generations", "/v1/videos", "/v1/images/other/async"} {
+		require.ErrorIs(t, validateDoneBotMediaModel(model, "image", path, params), ErrDoneBotMediaInvalid)
 	}
 }
 

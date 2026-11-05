@@ -38,6 +38,9 @@ func (UsageLog) Fields() []ent.Field {
 		field.String("request_id").
 			MaxLen(64).
 			NotEmpty(),
+		field.String("event_type").Default("charge").MaxLen(16),
+		field.String("operation_receipt_id").SchemaType(map[string]string{dialect.Postgres: "uuid"}).Optional().Nillable(),
+		field.String("related_request_id").MaxLen(64).Optional().Nillable(),
 		field.String("model").
 			MaxLen(100).
 			NotEmpty(),

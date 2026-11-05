@@ -208,7 +208,13 @@
         <template #cell-cost="{ row }">
           <div class="text-sm">
             <div class="flex items-center gap-1.5">
-              <span class="font-medium text-green-600 dark:text-green-400">${{ row.actual_cost?.toFixed(6) || '0.000000' }}</span>
+              <span data-testid="usage-balance-amount" class="font-medium text-green-600 dark:text-green-400">{{ formatUsageBalanceAmount(row) }}</span>
+              <span
+                v-if="usageBillingEvent(row)"
+                data-testid="usage-billing-event"
+                class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium"
+                :class="usageBillingEvent(row) === 'refund' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'"
+              >{{ t(`usage.billingEvent.${usageBillingEvent(row)}`) }}</span>
               <span
                 v-if="row.long_context_billing_applied"
                 data-testid="long-context-billing-marker"
@@ -225,6 +231,9 @@
                   <Icon name="infoCircle" size="xs" class="text-gray-400 group-hover:text-blue-500 dark:text-gray-500 dark:group-hover:text-blue-400" />
                 </div>
               </div>
+            </div>
+            <div v-if="row.operation_receipt_id" data-testid="usage-operation-receipt" class="mt-0.5 max-w-48 break-all font-mono text-[10px] text-gray-500 dark:text-gray-400" :title="row.operation_receipt_id">
+              {{ t('usage.billingEvent.operation') }} {{ row.operation_receipt_id }}
             </div>
             <div v-if="showAccountBilling && row.account_rate_multiplier != null" class="mt-0.5 text-[11px] text-orange-500 dark:text-orange-400">
               A ${{ accountBilled(row).toFixed(6) }}
@@ -411,6 +420,12 @@
           <!-- Cost Breakdown -->
           <div class="mb-2 border-b border-gray-700 pb-1.5">
             <div class="text-xs font-semibold text-gray-300 mb-1">{{ t('usage.costDetails') }}</div>
+            <div v-if="tooltipData && usageBillingEvent(tooltipData)" class="mb-1 space-y-1 border-b border-gray-700 pb-1.5">
+              <div class="font-medium text-emerald-300">{{ t(`usage.billingEvent.${usageBillingEvent(tooltipData)}`) }} · {{ formatUsageBalanceAmount(tooltipData, 8) }}</div>
+              <div v-if="tooltipData.operation_receipt_id">{{ t('usage.billingEvent.operation') }}: {{ tooltipData.operation_receipt_id }}</div>
+              <div v-if="tooltipData.related_request_id">{{ t('usage.billingEvent.relatedRequest') }}: {{ tooltipData.related_request_id }}</div>
+              <div class="text-gray-400">{{ t('usage.billingEvent.netHint') }}</div>
+            </div>
             <div v-if="tooltipData && tooltipData.input_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.inputCost') }}</span>
               <span class="font-medium text-white">${{ tooltipData.input_cost.toFixed(8) }}</span>
@@ -573,6 +588,7 @@ import {
   textInputTokens,
   hasImageInputCost,
 } from '@/utils/imageUsage'
+import { formatUsageBalanceAmount, usageBillingEvent } from '@/utils/usageBillingEvent'
 
 /** Compute the account-billed cost for display: (account_stats_cost ?? total_cost) * rate_multiplier */
 function accountBilled(row: { total_cost?: number | null; account_stats_cost?: number | null; account_rate_multiplier?: number | null }): number {

@@ -8,6 +8,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestUsageLogFromService_PreservesRefundLedgerIdentityAndSignedCost(t *testing.T) {
+	receiptID := "ffe0598f-1fab-4d29-a832-c4b0380c9723"
+	chargeRequestID := "dbm:charge:" + receiptID
+	refund := &service.UsageLog{RequestID: "dbm:refund:" + receiptID, EventType: service.UsageEventRefund,
+		OperationReceiptID: &receiptID, RelatedRequestID: &chargeRequestID, TotalCost: -0.4, ActualCost: -0.4}
+	for _, mapped := range []*UsageLog{UsageLogFromService(refund), &UsageLogFromServiceAdmin(refund).UsageLog} {
+		require.Equal(t, "refund", mapped.EventType)
+		require.Equal(t, &receiptID, mapped.OperationReceiptID)
+		require.Equal(t, &chargeRequestID, mapped.RelatedRequestID)
+		require.Equal(t, -0.4, mapped.TotalCost)
+		require.Equal(t, -0.4, mapped.ActualCost)
+	}
+	require.Equal(t, "charge", UsageLogFromService(&service.UsageLog{}).EventType)
+}
+
 func TestUsageLogFromService_IncludesOpenAIWSMode(t *testing.T) {
 	t.Parallel()
 

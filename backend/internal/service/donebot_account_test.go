@@ -11,6 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type doneBotAccountConcurrencyUser struct{ UserRepository }
+
+func (doneBotAccountConcurrencyUser) GetByID(_ context.Context, id int64) (*User, error) {
+	return &User{ID: id, Status: StatusActive, Concurrency: 18}, nil
+}
+
 type doneBotAccountUsageStub struct {
 	filters usagestats.UsageLogFilters
 	rows    []UsageLog
@@ -61,7 +67,9 @@ func TestDoneBotReceiptRequiresLiveInstallationAndExactUsageScope(t *testing.T) 
 }
 
 func TestDoneBotAccountSummarizesOnlyItsUserAndDoneBotGroupInCNY(t *testing.T) {
+
 	installs, _, _ := newDoneBotServiceTest()
+	installs.keys.userRepo = doneBotAccountConcurrencyUser{}
 	installs.cfg.DoneBot.CatalogCurrency = "CNY"
 	ctx := context.Background()
 	claim, err := installs.Claim(ctx, 42, DoneBotClaimRequest{InstallationID: "9c6048be-395d-4d9b-bc00-a7c7b508fa55", InstallName: "isolated"})
@@ -73,6 +81,7 @@ func TestDoneBotAccountSummarizesOnlyItsUserAndDoneBotGroupInCNY(t *testing.T) {
 	account, err := s.Account(ctx, 42, claim.Install.InstallationID)
 	require.NoError(t, err)
 	require.Equal(t, usagestats.UsageLogFilters{UserID: 42, GroupID: 9}, usage.filters)
+	require.Equal(t, 18, account.Concurrency)
 	require.Equal(t, "CNY", account.Currency)
 	require.Equal(t, int64(2), account.Usage.Requests)
 	require.Equal(t, "0.0001", account.Usage.ActualCents.String())

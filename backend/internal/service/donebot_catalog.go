@@ -102,12 +102,19 @@ type DoneBotCatalogPricing struct {
 }
 
 type DoneBotCatalogService struct {
-	installs *DoneBotService
-	admin    *DoneBotAdminService
+	installs   *DoneBotService
+	admin      *DoneBotAdminService
+	imageTasks *ImageTaskService
 }
 
 func NewDoneBotCatalogService(installs *DoneBotService, admin *DoneBotAdminService) *DoneBotCatalogService {
 	return &DoneBotCatalogService{installs: installs, admin: admin}
+}
+
+func ProvideDoneBotCatalogService(installs *DoneBotService, admin *DoneBotAdminService, tasks *ImageTaskService) *DoneBotCatalogService {
+	s := NewDoneBotCatalogService(installs, admin)
+	s.imageTasks = tasks
+	return s
 }
 
 func (s *DoneBotCatalogService) Models(ctx context.Context, userID int64, installationUUID string) (*DoneBotCatalogResult, error) {
@@ -129,7 +136,31 @@ func (s *DoneBotCatalogService) Models(ctx context.Context, userID int64, instal
 	if err != nil {
 		return nil, err
 	}
+	if s.imageTasks != nil && !s.imageTasks.Enabled() {
+		inputs.rows, err = doneBotRowsWithoutUnavailableImageTasks(inputs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return buildDoneBotPublicCatalog(inputs.group, userID, install.InstallationID, inputs.rows, inputs.accounts, inputs.routes, inputs.capabilities)
+}
+
+func doneBotRowsWithoutUnavailableImageTasks(inputs *doneBotCatalogInputs) ([]DoneBotModel, error) {
+	rows := make([]DoneBotModel, 0, len(inputs.rows))
+	for _, row := range inputs.rows {
+		if row.Kind == "images" {
+			configured := inputs.capabilities[row.Model].MediaParameters
+			media, err := doneBotPublicMediaParameters(inputs.group.ID, row, inputs.accounts, inputs.routes, configured)
+			if err != nil {
+				return nil, err
+			}
+			if media != nil && media.Protocol.Adapter == "donebot.images.async.v1" {
+				continue
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
 }
 
 type doneBotCatalogInputs struct {

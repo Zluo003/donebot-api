@@ -51,6 +51,48 @@ func (_c *UsageLogCreate) SetRequestID(v string) *UsageLogCreate {
 	return _c
 }
 
+// SetEventType sets the "event_type" field.
+func (_c *UsageLogCreate) SetEventType(v string) *UsageLogCreate {
+	_c.mutation.SetEventType(v)
+	return _c
+}
+
+// SetNillableEventType sets the "event_type" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableEventType(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetEventType(*v)
+	}
+	return _c
+}
+
+// SetOperationReceiptID sets the "operation_receipt_id" field.
+func (_c *UsageLogCreate) SetOperationReceiptID(v string) *UsageLogCreate {
+	_c.mutation.SetOperationReceiptID(v)
+	return _c
+}
+
+// SetNillableOperationReceiptID sets the "operation_receipt_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableOperationReceiptID(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetOperationReceiptID(*v)
+	}
+	return _c
+}
+
+// SetRelatedRequestID sets the "related_request_id" field.
+func (_c *UsageLogCreate) SetRelatedRequestID(v string) *UsageLogCreate {
+	_c.mutation.SetRelatedRequestID(v)
+	return _c
+}
+
+// SetNillableRelatedRequestID sets the "related_request_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableRelatedRequestID(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetRelatedRequestID(*v)
+	}
+	return _c
+}
+
 // SetModel sets the "model" field.
 func (_c *UsageLogCreate) SetModel(v string) *UsageLogCreate {
 	_c.mutation.SetModel(v)
@@ -697,6 +739,10 @@ func (_c *UsageLogCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *UsageLogCreate) defaults() {
+	if _, ok := _c.mutation.EventType(); !ok {
+		v := usagelog.DefaultEventType
+		_c.mutation.SetEventType(v)
+	}
 	if _, ok := _c.mutation.InputTokens(); !ok {
 		v := usagelog.DefaultInputTokens
 		_c.mutation.SetInputTokens(v)
@@ -796,6 +842,19 @@ func (_c *UsageLogCreate) check() error {
 	if v, ok := _c.mutation.RequestID(); ok {
 		if err := usagelog.RequestIDValidator(v); err != nil {
 			return &ValidationError{Name: "request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.request_id": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.EventType(); !ok {
+		return &ValidationError{Name: "event_type", err: errors.New(`ent: missing required field "UsageLog.event_type"`)}
+	}
+	if v, ok := _c.mutation.EventType(); ok {
+		if err := usagelog.EventTypeValidator(v); err != nil {
+			return &ValidationError{Name: "event_type", err: fmt.Errorf(`ent: validator failed for field "UsageLog.event_type": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.RelatedRequestID(); ok {
+		if err := usagelog.RelatedRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "related_request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.related_request_id": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Model(); !ok {
@@ -970,6 +1029,18 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RequestID(); ok {
 		_spec.SetField(usagelog.FieldRequestID, field.TypeString, value)
 		_node.RequestID = value
+	}
+	if value, ok := _c.mutation.EventType(); ok {
+		_spec.SetField(usagelog.FieldEventType, field.TypeString, value)
+		_node.EventType = value
+	}
+	if value, ok := _c.mutation.OperationReceiptID(); ok {
+		_spec.SetField(usagelog.FieldOperationReceiptID, field.TypeString, value)
+		_node.OperationReceiptID = &value
+	}
+	if value, ok := _c.mutation.RelatedRequestID(); ok {
+		_spec.SetField(usagelog.FieldRelatedRequestID, field.TypeString, value)
+		_node.RelatedRequestID = &value
 	}
 	if value, ok := _c.mutation.Model(); ok {
 		_spec.SetField(usagelog.FieldModel, field.TypeString, value)
@@ -1317,6 +1388,54 @@ func (u *UsageLogUpsert) SetRequestID(v string) *UsageLogUpsert {
 // UpdateRequestID sets the "request_id" field to the value that was provided on create.
 func (u *UsageLogUpsert) UpdateRequestID() *UsageLogUpsert {
 	u.SetExcluded(usagelog.FieldRequestID)
+	return u
+}
+
+// SetEventType sets the "event_type" field.
+func (u *UsageLogUpsert) SetEventType(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldEventType, v)
+	return u
+}
+
+// UpdateEventType sets the "event_type" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateEventType() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldEventType)
+	return u
+}
+
+// SetOperationReceiptID sets the "operation_receipt_id" field.
+func (u *UsageLogUpsert) SetOperationReceiptID(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldOperationReceiptID, v)
+	return u
+}
+
+// UpdateOperationReceiptID sets the "operation_receipt_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateOperationReceiptID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldOperationReceiptID)
+	return u
+}
+
+// ClearOperationReceiptID clears the value of the "operation_receipt_id" field.
+func (u *UsageLogUpsert) ClearOperationReceiptID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldOperationReceiptID)
+	return u
+}
+
+// SetRelatedRequestID sets the "related_request_id" field.
+func (u *UsageLogUpsert) SetRelatedRequestID(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldRelatedRequestID, v)
+	return u
+}
+
+// UpdateRelatedRequestID sets the "related_request_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateRelatedRequestID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldRelatedRequestID)
+	return u
+}
+
+// ClearRelatedRequestID clears the value of the "related_request_id" field.
+func (u *UsageLogUpsert) ClearRelatedRequestID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldRelatedRequestID)
 	return u
 }
 
@@ -2180,6 +2299,62 @@ func (u *UsageLogUpsertOne) SetRequestID(v string) *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) UpdateRequestID() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateRequestID()
+	})
+}
+
+// SetEventType sets the "event_type" field.
+func (u *UsageLogUpsertOne) SetEventType(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetEventType(v)
+	})
+}
+
+// UpdateEventType sets the "event_type" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateEventType() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateEventType()
+	})
+}
+
+// SetOperationReceiptID sets the "operation_receipt_id" field.
+func (u *UsageLogUpsertOne) SetOperationReceiptID(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetOperationReceiptID(v)
+	})
+}
+
+// UpdateOperationReceiptID sets the "operation_receipt_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateOperationReceiptID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateOperationReceiptID()
+	})
+}
+
+// ClearOperationReceiptID clears the value of the "operation_receipt_id" field.
+func (u *UsageLogUpsertOne) ClearOperationReceiptID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearOperationReceiptID()
+	})
+}
+
+// SetRelatedRequestID sets the "related_request_id" field.
+func (u *UsageLogUpsertOne) SetRelatedRequestID(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRelatedRequestID(v)
+	})
+}
+
+// UpdateRelatedRequestID sets the "related_request_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateRelatedRequestID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRelatedRequestID()
+	})
+}
+
+// ClearRelatedRequestID clears the value of the "related_request_id" field.
+func (u *UsageLogUpsertOne) ClearRelatedRequestID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearRelatedRequestID()
 	})
 }
 
@@ -3336,6 +3511,62 @@ func (u *UsageLogUpsertBulk) SetRequestID(v string) *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) UpdateRequestID() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateRequestID()
+	})
+}
+
+// SetEventType sets the "event_type" field.
+func (u *UsageLogUpsertBulk) SetEventType(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetEventType(v)
+	})
+}
+
+// UpdateEventType sets the "event_type" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateEventType() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateEventType()
+	})
+}
+
+// SetOperationReceiptID sets the "operation_receipt_id" field.
+func (u *UsageLogUpsertBulk) SetOperationReceiptID(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetOperationReceiptID(v)
+	})
+}
+
+// UpdateOperationReceiptID sets the "operation_receipt_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateOperationReceiptID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateOperationReceiptID()
+	})
+}
+
+// ClearOperationReceiptID clears the value of the "operation_receipt_id" field.
+func (u *UsageLogUpsertBulk) ClearOperationReceiptID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearOperationReceiptID()
+	})
+}
+
+// SetRelatedRequestID sets the "related_request_id" field.
+func (u *UsageLogUpsertBulk) SetRelatedRequestID(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRelatedRequestID(v)
+	})
+}
+
+// UpdateRelatedRequestID sets the "related_request_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateRelatedRequestID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRelatedRequestID()
+	})
+}
+
+// ClearRelatedRequestID clears the value of the "related_request_id" field.
+func (u *UsageLogUpsertBulk) ClearRelatedRequestID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearRelatedRequestID()
 	})
 }
 

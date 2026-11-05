@@ -401,7 +401,7 @@ func (r *dashboardAggregationRepository) insertHourlyActiveUsers(ctx context.Con
 			date_trunc('hour', created_at AT TIME ZONE $3) AT TIME ZONE $3 AS bucket_start,
 			user_id
 		FROM usage_logs
-		WHERE created_at >= $1 AND created_at < $2
+		WHERE created_at >= $1 AND created_at < $2 AND event_type <> 'refund'
 		ON CONFLICT DO NOTHING
 	`
 	_, err := r.sql.ExecContext(ctx, query, start, end, tzName)
@@ -429,15 +429,15 @@ func (r *dashboardAggregationRepository) upsertHourlyAggregates(ctx context.Cont
 		WITH hourly AS (
 			SELECT
 				date_trunc('hour', created_at AT TIME ZONE $3) AT TIME ZONE $3 AS bucket_start,
-				COUNT(*) AS total_requests,
-				COALESCE(SUM(input_tokens), 0) AS input_tokens,
-				COALESCE(SUM(output_tokens), 0) AS output_tokens,
-				COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation_tokens,
-				COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+				COUNT(*) FILTER (WHERE event_type <> 'refund') AS total_requests,
+				COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) AS input_tokens,
+				COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) AS output_tokens,
+				COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) AS cache_creation_tokens,
+				COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) AS cache_read_tokens,
 				COALESCE(SUM(total_cost), 0) AS total_cost,
 				COALESCE(SUM(actual_cost), 0) AS actual_cost,
 				COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) AS account_cost,
-				COALESCE(SUM(COALESCE(duration_ms, 0)), 0) AS total_duration_ms
+				COALESCE(SUM(COALESCE(duration_ms, 0)) FILTER (WHERE event_type <> 'refund'), 0) AS total_duration_ms
 			FROM usage_logs
 			WHERE created_at >= $1 AND created_at < $2
 			GROUP BY 1

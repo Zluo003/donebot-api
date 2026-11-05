@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -25,6 +26,30 @@ func TestAPIMartBillingIDsSurviveClientAndPollingRequestContexts(t *testing.T) {
 				require.Equal(t, id, resolveUsageBillingRequestID(ctx, id))
 			}
 		})
+	}
+}
+
+func TestAPIMartSpeechUsesServerReceiptBeforeUpstreamID(t *testing.T) {
+	receipt := uuid.NewString()
+	for _, serverReceipt := range []bool{false, true} {
+		ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, receipt)
+		if serverReceipt {
+			ctx = WithDoneBotMediaReceipt(ctx, receipt)
+		}
+		upstream := &grokMediaContentUpstreamStub{response: &http.Response{StatusCode: 200,
+			Header: http.Header{"Content-Type": []string{"audio/pcm"}, "X-Request-Id": []string{"tts-native-request"}},
+			Body:   io.NopCloser(strings.NewReader("audio"))}}
+		svc := &OpenAIGatewayService{httpUpstream: upstream}
+		c, _ := grokMediaContentTestContext(http.MethodPost, "/v1/audio/speech", nil)
+		response, err := svc.ForwardAPIMart(ctx, c, apimartTestAccount(), APIMartTTS, "", []byte(`{"model":"gpt-4o-mini-tts","input":"Hello","voice":"alloy"}`))
+		require.NoError(t, err)
+		require.NoError(t, response.Stream.Close())
+		if serverReceipt {
+			require.Equal(t, DoneBotSpeechBillingRequestID(receipt), response.Result.RequestID)
+		} else {
+			require.Equal(t, "apimart:tts:"+StableGrokAudioBillingRequestID("tts-native-request"), response.Result.RequestID)
+		}
+		require.Equal(t, response.Result.RequestID, response.Result.ResponseID)
 	}
 }
 
@@ -67,7 +92,12 @@ func TestAPIMartTTSAudioBytesAndNativeDefaults(t *testing.T) {
 	c, _ := grokMediaContentTestContext(http.MethodPost, "/v1/audio/speech", nil)
 	response, err := svc.ForwardAPIMart(context.Background(), c, apimartTestAccount(), APIMartTTS, "", []byte(body))
 	require.NoError(t, err)
-	require.Equal(t, []byte(audio), response.Body)
+	require.Empty(t, response.Body)
+	require.NotNil(t, response.Stream)
+	audioBytes, err := io.ReadAll(response.Stream)
+	require.NoError(t, err)
+	require.NoError(t, response.Stream.Close())
+	require.Equal(t, []byte(audio), audioBytes)
 	require.Equal(t, "audio/opus", response.Headers.Get("Content-Type"))
 	require.Equal(t, `attachment; filename="speech.opus"`, response.Headers.Get("Content-Disposition"))
 	require.NotEmpty(t, response.Result.RequestID)

@@ -36,6 +36,11 @@ const messages: Record<string, string> = {
   'usage.outputTps': 'Output TPS',
   'admin.usage.userDeletedBadge': 'Deleted',
   'usage.costDetails': 'Cost Breakdown',
+  'usage.billingEvent.charge': 'Charge',
+  'usage.billingEvent.refund': 'Refund',
+  'usage.billingEvent.operation': 'Task receipt',
+  'usage.billingEvent.relatedRequest': 'Original charge request',
+  'usage.billingEvent.netHint': 'Charges and refunds are separate entries. Totals use their net amount.',
   'admin.usage.inputCost': 'Input Cost',
   'admin.usage.outputCost': 'Output Cost',
   'admin.usage.cacheCreationCost': 'Cache Creation Cost',
@@ -145,6 +150,25 @@ const baseImageRow = {
 }
 
 describe('admin UsageTable tooltip', () => {
+  it('keeps a failed media task charge and refund as two linked rows with a credited refund', async () => {
+    const receipt = 'ffe0598f-1fab-4d29-a832-c4b0380c9723'
+    const charge = { ...baseImageRow, request_id: `dbm:charge:${receipt}`, event_type: 'charge', operation_receipt_id: receipt }
+    const refund = { ...charge, request_id: `dbm:refund:${receipt}`, event_type: 'refund', related_request_id: charge.request_id, actual_cost: -0.4, total_cost: -0.4 }
+    const wrapper = mount(UsageTable, {
+      props: { data: [charge, refund], loading: false, columns: [{ key: 'cost', label: 'Cost' }] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    expect(wrapper.findAll('[data-testid="usage-billing-event"]').map(cell => cell.text())).toEqual(['Charge', 'Refund'])
+    expect(wrapper.findAll('[data-testid="usage-balance-amount"]').map(cell => cell.text())).toEqual(['$0.400000', '+$0.400000'])
+    expect(wrapper.findAll('[data-testid="usage-operation-receipt"]').map(cell => cell.attributes('title'))).toEqual([receipt, receipt])
+    const triggers = wrapper.findAll('.group.relative')
+    await triggers[triggers.length - 1].trigger('mouseenter')
+    expect(wrapper.get('.fixed').text()).toContain(charge.request_id)
+    expect(wrapper.get('.fixed').text()).toContain('Totals use their net amount.')
+    expect(charge.actual_cost + refund.actual_cost).toBe(0)
+    wrapper.unmount()
+  })
+
   it('shows output TPS in the latency cell using total duration', () => {
     const row = { ...baseImageRow, image_count: 0, billing_mode: 'token', output_tokens: 1000, duration_ms: 20_000, first_token_ms: 10_000 }
     const wrapper = mount(UsageTable, {

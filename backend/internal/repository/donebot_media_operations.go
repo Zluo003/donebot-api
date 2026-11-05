@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -69,10 +70,10 @@ func (r *doneBotMediaOperationRepository) Begin(ctx context.Context, op *service
 		estimated = op.EstimatedCents.String()
 	}
 	result, err := clientFromContext(ctx, r.client).ExecContext(ctx, `INSERT INTO donebot_media_operations
- (receipt_id,user_id,api_key_id,group_id,installation_id,idempotency_hash,request_fingerprint,media_kind,model,method,native_path,status,usage_request_id,estimated_cents)
- VALUES($1::uuid,$2,$3,$4,$5::uuid,$6,$7,$8,$9,$10,$11,'dispatching',$12,$13::numeric)
+ (receipt_id,user_id,api_key_id,group_id,installation_id,idempotency_hash,request_fingerprint,media_kind,model,method,native_path,status,usage_request_id,estimated_cents,task_id,provider_task_key,provider)
+ VALUES($1::uuid,$2,$3,$4,$5::uuid,$6,$7,$8,$9,$10,$11,'dispatching',$12,$13::numeric,$14,$15,$16)
  ON CONFLICT(user_id,api_key_id,group_id,installation_id,idempotency_hash) DO NOTHING`,
-		op.ReceiptID, op.Owner.UserID, op.Owner.APIKeyID, op.Owner.GroupID, op.Owner.InstallationID, op.IdempotencyHash, op.Fingerprint, op.Kind, op.Model, op.Method, op.Path, op.UsageRequestID, estimated)
+		op.ReceiptID, op.Owner.UserID, op.Owner.APIKeyID, op.Owner.GroupID, op.Owner.InstallationID, op.IdempotencyHash, op.Fingerprint, op.Kind, op.Model, op.Method, op.Path, op.UsageRequestID, estimated, op.TaskID, op.TaskKey, op.Provider)
 	if err != nil {
 		return nil, false, err
 	}
@@ -120,7 +121,7 @@ func (r *doneBotMediaOperationRepository) Complete(ctx context.Context, owner se
 	result, err := clientFromContext(ctx, r.client).ExecContext(ctx, `UPDATE donebot_media_operations SET
  status=CASE WHEN status='processing' AND $6='accepted' THEN status ELSE $6 END,
  task_id=COALESCE(NULLIF($7,''),task_id),provider_task_key=COALESCE(NULLIF($8,''),provider_task_key),
- provider=COALESCE(NULLIF($9,''),provider),usage_request_id=COALESCE(NULLIF($10,''),usage_request_id),
+ provider=COALESCE(NULLIF($9,''),provider),usage_request_id=CASE WHEN usage_request_id LIKE 'dbm:charge:%' THEN usage_request_id ELSE COALESCE(NULLIF($10,''),usage_request_id) END,
  replay_status=CASE WHEN replay_body IS NULL AND $13::bytea IS NOT NULL THEN NULLIF($11,0) ELSE replay_status END,
  replay_content_type=CASE WHEN replay_body IS NULL AND $13::bytea IS NOT NULL THEN $12 ELSE replay_content_type END,
  replay_retry_after=CASE WHEN replay_body IS NULL AND $13::bytea IS NOT NULL THEN $14 ELSE replay_retry_after END,
@@ -130,7 +131,7 @@ func (r *doneBotMediaOperationRepository) Complete(ctx context.Context, owner se
  AND (task_id='' OR $7='' OR task_id=$7)
  AND (provider_task_key='' OR $8='' OR provider_task_key=$8)
  AND (provider='' OR $9='' OR provider=$9)
- AND (usage_request_id LIKE 'client:%' OR $10='' OR usage_request_id=$10)`, args...)
+ AND (usage_request_id LIKE 'client:%' OR usage_request_id LIKE 'dbm:charge:%' OR $10='' OR usage_request_id=$10)`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +143,7 @@ func (r *doneBotMediaOperationRepository) Complete(ctx context.Context, owner se
 	if err != nil {
 		return nil, err
 	}
-	if n == 0 && ((c.TaskID != "" && c.TaskID != op.TaskID) || (c.TaskKey != "" && c.TaskKey != op.TaskKey) || (c.UsageRequestID != "" && c.UsageRequestID != op.UsageRequestID)) {
+	if n == 0 && ((c.TaskID != "" && c.TaskID != op.TaskID) || (c.TaskKey != "" && c.TaskKey != op.TaskKey) || (c.UsageRequestID != "" && c.UsageRequestID != op.UsageRequestID && !strings.HasPrefix(op.UsageRequestID, "dbm:charge:"))) {
 		return nil, fmt.Errorf("media operation metadata conflict")
 	}
 	return op, nil

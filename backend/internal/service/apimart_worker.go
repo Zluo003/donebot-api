@@ -15,8 +15,8 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// APIMartSettlementStore is a persistent work queue, not an accounting ledger.
-// The only money event is the existing RecordUsage transaction and its dedup ID.
+// APIMartSettlementStore persists recovery work; monetary changes remain in
+// PostgreSQL transactions and are deduplicated independently of queue leases.
 type APIMartSettlementStore interface {
 	SaveAPIMartSettlement(context.Context, APIMartSettlementJob, time.Time) error
 	TakeDueAPIMartSettlements(context.Context, time.Time, int, time.Duration) ([]APIMartSettlementJob, error)
@@ -136,6 +136,7 @@ func (s *OpenAIGatewayService) EnqueueAPIMartSettlement(ctx context.Context, job
 }
 
 func (w *apimartSettlementWorker) tick(ctx context.Context, now time.Time) {
+	w.recoverDoneBotMedia(ctx, now)
 	// Take only as many jobs as can start immediately. Every attempt finishes
 	// before its lease expires, including with several gateway instances.
 	jobs, err := w.store.TakeDueAPIMartSettlements(ctx, now, 4, time.Minute)
@@ -241,7 +242,11 @@ func (w *apimartSettlementWorker) settle(ctx context.Context, job APIMartSettlem
 			root = root.Get("data")
 		}
 		status := root.Get("status").String()
-		return status == "failed" || status == "cancelled", nil
+		if status == "failed" || status == "cancelled" || status == "expired" {
+			err := s.RefundDoneBotMediaTask(ctx, key.ID, taskKey)
+			return err == nil, err
+		}
+		return false, nil
 	}
 	ctx = WithResolvedTargetPlatform(ctx, PlatformOpenAI)
 	// RecordUsage's durable request-ID transaction is the arbiter. A client
@@ -319,7 +324,11 @@ func (w *apimartSettlementWorker) settleSeedance(ctx context.Context, job APIMar
 	result = MergeSeedanceCompletion(result, job.VideoPending, job.TaskKey())
 	if result == nil {
 		status := gjson.GetBytes(recorder.Body.Bytes(), "status").String()
-		return status == "failed" || status == "cancelled" || status == "expired", nil
+		if status == "failed" || status == "cancelled" || status == "expired" {
+			err := w.service.RefundDoneBotMediaTask(ctx, key.ID, job.TaskKey())
+			return err == nil, err
+		}
+		return false, nil
 	}
 	recorded, err := w.service.UsageAlreadyRecorded(ctx, result.RequestID, key.ID)
 	if err != nil {
@@ -330,4 +339,87 @@ func (w *apimartSettlementWorker) settleSeedance(ctx context.Context, job APIMar
 	}
 	err = w.service.RecordUsage(ctx, &OpenAIRecordUsageInput{Result: result, APIKey: key, User: key.User, Account: account, Subscription: subscription, APIKeyService: w.keys, UserAgent: job.UserAgent, IPAddress: job.IPAddress, QuotaPlatform: job.QuotaPlatform, InboundEndpoint: "/api/v3/contents/generations/tasks", UpstreamEndpoint: c.Request.URL.Path, RequestPayloadHash: HashUsageRequestPayload([]byte(result.RequestID)), ChannelUsageFields: ChannelUsageFields{OriginalModel: job.VideoPending.OriginalModel, ChannelMappedModel: job.VideoPending.Model}})
 	return err == nil, err
+}
+
+func (w *apimartSettlementWorker) recoverDoneBotMedia(ctx context.Context, now time.Time) {
+	if w.service == nil {
+		return
+	}
+	repo, ok := w.service.usageBillingRepo.(interface {
+		TakeDoneBotMediaRecovery(context.Context, int) ([]DoneBotMediaPrecharge, error)
+	})
+	queue, queued := w.store.(interface {
+		EnsureAPIMartSettlement(context.Context, APIMartSettlementJob, time.Time) error
+	})
+	if !ok || !queued {
+		return
+	}
+	entries, err := repo.TakeDoneBotMediaRecovery(ctx, 100)
+	if err != nil {
+		logger.LegacyPrintf("service.apimart", "durable media recovery: %v", err)
+		return
+	}
+	for _, p := range entries {
+		if p.Settlement != nil {
+			var result *UsageBillingApplyResult
+			result, err = w.service.doneBotPrepaidRepository().SettleDoneBotMediaPrecharge(ctx, *p.Settlement)
+			if err == nil && result != nil && result.Applied {
+				w.finalizeRecoveredDoneBotMedia(ctx, p)
+			}
+			if err == nil && w.service.billingCacheService != nil {
+				_ = w.service.billingCacheService.InvalidateUserBalance(ctx, p.UserID)
+			}
+		} else if p.OperationStatus == "failed" || p.OperationStatus == "cancelled" {
+			err = w.service.refundDoneBotMedia(ctx, p.ReceiptID, p.APIKeyID, "")
+		} else if strings.HasPrefix(p.TaskKey, "seedance:") || strings.HasPrefix(p.TaskKey, "apimart:") {
+			job := APIMartSettlementJob{TaskID: p.TaskKey, UserID: p.UserID, APIKeyID: p.APIKeyID, GroupID: p.GroupID, AccountID: p.AccountID, QuotaPlatform: PlatformOpenAI}
+			created := p.CreatedAt.UTC().Format(time.RFC3339Nano)
+			if strings.HasPrefix(p.TaskKey, "seedance:") {
+				job.Provider = "seedance"
+				job.VideoPending = &GrokVideoPendingBilling{Model: p.Model, BillingModel: p.Model, OriginalModel: p.Model, VideoResolution: p.Snapshot.Tier, VideoReference: p.Snapshot.InputSeconds > 0, VideoInputDurationSeconds: p.Snapshot.InputSeconds, CreatedAt: created}
+			} else {
+				endpoint := APIMartImages
+				prefix := "apimart:image:"
+				if p.Kind == "music" {
+					endpoint = APIMartSuno
+					prefix = "apimart:music:"
+				}
+				job.TaskID = strings.TrimPrefix(p.TaskKey, prefix)
+				job.Pending = APIMartPending{Endpoint: endpoint, Model: p.Model, BillingModel: p.Model, OriginalModel: p.Model, Tier: p.Snapshot.Tier, Units: p.Snapshot.MaxUnits, LayerDecomposition: p.Snapshot.MaxUnits == 17, CreatedAt: created}
+			}
+			err = queue.EnsureAPIMartSettlement(ctx, job, now)
+		}
+		if err != nil {
+			logger.LegacyPrintf("service.apimart", "receipt %s recovery pending: %v", p.ReceiptID, err)
+		}
+	}
+}
+
+func (w *apimartSettlementWorker) finalizeRecoveredDoneBotMedia(ctx context.Context, p DoneBotMediaPrecharge) {
+	if w.service.billingCacheService != nil {
+		_ = w.service.billingCacheService.InvalidateAPIKeyRateLimit(ctx, p.APIKeyID)
+	}
+	if w.keys == nil {
+		return
+	}
+	key, err := w.keys.apiKeyRepo.GetByID(ctx, p.APIKeyID)
+	if err != nil || key == nil {
+		return
+	}
+	if key.Key != "" {
+		w.keys.InvalidateAuthCacheByKey(ctx, key.Key)
+	}
+	if p.Settlement == nil || p.Settlement.ActualAmount <= 0 || p.Settlement.QuotaPlatform == "" || w.service.billingCacheService == nil || key.User == nil {
+		return
+	}
+	cost := p.Settlement.ActualAmount
+	platform := p.Settlement.QuotaPlatform
+	if w.service.billingCacheService.HasUserPlatformQuotaLimit(ctx, p.UserID, platform) {
+		w.service.billingCacheService.IncrementUserPlatformQuotaUsage(p.UserID, platform, cost)
+		if w.service.userPlatformQuotaRepo != nil && (w.service.cfg == nil || !w.service.cfg.Database.UserPlatformQuotaFlusherEnabled) {
+			if err := w.service.userPlatformQuotaRepo.IncrementUsageWithReset(ctx, p.UserID, platform, cost, time.Now().UTC()); err != nil {
+				logger.LegacyPrintf("service.apimart", "recovered platform quota user %d: %v", p.UserID, err)
+			}
+		}
+	}
 }

@@ -22,6 +22,12 @@ const (
 	FieldAccountID = "account_id"
 	// FieldRequestID holds the string denoting the request_id field in the database.
 	FieldRequestID = "request_id"
+	// FieldEventType holds the string denoting the event_type field in the database.
+	FieldEventType = "event_type"
+	// FieldOperationReceiptID holds the string denoting the operation_receipt_id field in the database.
+	FieldOperationReceiptID = "operation_receipt_id"
+	// FieldRelatedRequestID holds the string denoting the related_request_id field in the database.
+	FieldRelatedRequestID = "related_request_id"
 	// FieldModel holds the string denoting the model field in the database.
 	FieldModel = "model"
 	// FieldRequestedModel holds the string denoting the requested_model field in the database.
@@ -164,6 +170,9 @@ var Columns = []string{
 	FieldAPIKeyID,
 	FieldAccountID,
 	FieldRequestID,
+	FieldEventType,
+	FieldOperationReceiptID,
+	FieldRelatedRequestID,
 	FieldModel,
 	FieldRequestedModel,
 	FieldUpstreamModel,
@@ -222,6 +231,12 @@ func ValidColumn(column string) bool {
 var (
 	// RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
 	RequestIDValidator func(string) error
+	// DefaultEventType holds the default value on creation for the "event_type" field.
+	DefaultEventType string
+	// EventTypeValidator is a validator for the "event_type" field. It is called by the builders before save.
+	EventTypeValidator func(string) error
+	// RelatedRequestIDValidator is a validator for the "related_request_id" field. It is called by the builders before save.
+	RelatedRequestIDValidator func(string) error
 	// ModelValidator is a validator for the "model" field. It is called by the builders before save.
 	ModelValidator func(string) error
 	// RequestedModelValidator is a validator for the "requested_model" field. It is called by the builders before save.
@@ -318,6 +333,21 @@ func ByAccountID(opts ...sql.OrderTermOption) OrderOption {
 // ByRequestID orders the results by the request_id field.
 func ByRequestID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRequestID, opts...).ToFunc()
+}
+
+// ByEventType orders the results by the event_type field.
+func ByEventType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEventType, opts...).ToFunc()
+}
+
+// ByOperationReceiptID orders the results by the operation_receipt_id field.
+func ByOperationReceiptID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOperationReceiptID, opts...).ToFunc()
+}
+
+// ByRelatedRequestID orders the results by the related_request_id field.
+func ByRelatedRequestID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRelatedRequestID, opts...).ToFunc()
 }
 
 // ByModel orders the results by the model field.

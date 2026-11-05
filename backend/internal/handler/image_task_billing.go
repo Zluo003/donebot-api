@@ -13,6 +13,9 @@ import (
 // reservation for the image estimate. The worker takes ownership of this handle
 // and settles through the normal usage task; no second reservation is created.
 func (h *AsyncImageHandler) reserveDoneBotBalanceBeforeSubmit(c *gin.Context, key *service.APIKey, platform string, body []byte) (*service.InflightReservation, bool) {
+	if service.DoneBotMediaReceiptID(c.Request.Context()) != "" {
+		return nil, true
+	}
 	if h.openAI == nil || h.openAI.cfg == nil || !h.openAI.cfg.DoneBot.Enabled || h.openAI.cfg.RunMode == config.RunModeSimple {
 		return nil, true
 	}

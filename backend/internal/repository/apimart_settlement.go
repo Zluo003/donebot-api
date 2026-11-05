@@ -82,3 +82,21 @@ func (c *gatewayCache) FinishAPIMartSettlement(ctx context.Context, id string) e
 }
 
 var _ service.APIMartSettlementStore = (*gatewayCache)(nil)
+
+var ensureAPIMartSettlementScript = redis.NewScript(`
+if redis.call('HSETNX',KEYS[1],ARGV[3],ARGV[1])==1 then
+  redis.call('ZADD',KEYS[2],ARGV[2],ARGV[3])
+end
+return 1
+`)
+
+func (c *gatewayCache) EnsureAPIMartSettlement(ctx context.Context, job service.APIMartSettlementJob, due time.Time) error {
+	if c == nil || c.rdb == nil || job.ID() == "" {
+		return fmt.Errorf("invalid APIMart settlement queue")
+	}
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return err
+	}
+	return ensureAPIMartSettlementScript.Run(ctx, c.rdb, []string{apimartSettlementJobs, apimartSettlementDue}, payload, due.UnixMilli(), job.ID()).Err()
+}

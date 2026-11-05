@@ -1801,6 +1801,7 @@ export interface CodexSessionImportResult {
 
 export type RedeemCodeType = 'balance' | 'concurrency' | 'subscription' | 'invitation'
 export type UsageRequestType = 'unknown' | 'sync' | 'stream' | 'ws_v2' | 'cyber' | 'live'
+export type UsageEventType = 'charge' | 'refund'
 export type ImageSizeSource = 'output' | 'input' | 'default' | 'legacy'
 export type ImageSizeBreakdown = Record<string, number>
 
@@ -1810,6 +1811,9 @@ export interface UsageLog {
   api_key_id: number
   account_id: number | null
   request_id: string
+  event_type?: UsageEventType
+  operation_receipt_id?: string | null
+  related_request_id?: string | null
   model: string
   service_tier?: string | null
   reasoning_effort?: string | null

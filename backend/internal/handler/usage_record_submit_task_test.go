@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -158,6 +160,45 @@ func TestOpenAIGatewayHandlerSubmitMandatoryUsageRecordTask_DroppedTaskSyncFallb
 	close(release)
 
 	require.True(t, called.Load(), "mandatory usage task must run synchronously when async submit is dropped")
+}
+
+func TestOpenAIGatewayHandlerSubmitMandatoryUsageRecordTask_TrustedMediaReceipt(t *testing.T) {
+	const serverReceipt = "f729a69d-fc0c-4cde-af6e-d0c1a3473507"
+	const callerReceipt = "2c8ffede-e3ef-4817-8b5d-d008c6aef686"
+	for _, tc := range []struct {
+		name    string
+		receipt string
+	}{
+		{name: "server receipt survives background submission", receipt: serverReceipt},
+		{name: "caller header cannot create a billing receipt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := newUsageRecordTestPool(t)
+			h := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
+			request := httptest.NewRequest(http.MethodPost, "/v1/images/generations/async", nil)
+			request.Header.Set("X-DoneBot-Receipt-ID", callerReceipt)
+			parent, cancel := context.WithCancel(request.Context())
+			if tc.receipt != "" {
+				parent = service.WithDoneBotMediaReceipt(parent, tc.receipt)
+			}
+			cancel()
+			type billingContext struct {
+				receipt string
+				err     error
+			}
+			done := make(chan billingContext, 1)
+			h.submitMandatoryUsageRecordTask(parent, func(ctx context.Context) {
+				done <- billingContext{receipt: service.DoneBotMediaReceiptID(ctx), err: ctx.Err()}
+			})
+			select {
+			case got := <-done:
+				require.Equal(t, tc.receipt, got.receipt)
+				require.NoError(t, got.err)
+			case <-time.After(time.Second):
+				t.Fatal("media usage task not executed")
+			}
+		})
+	}
 }
 
 func TestOpenAIGatewayHandlerSubmitOpenAIUsageRecordTask_ImageResultUsesMandatoryFallback(t *testing.T) {

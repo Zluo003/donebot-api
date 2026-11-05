@@ -206,6 +206,58 @@ func TestDoneBotMediaAcceptedReplayAndReceiptUseStableMoneyID(t *testing.T) {
 	require.Nil(t, receipt.ActualCents)
 }
 
+func TestDoneBotMediaAsyncImageReceiptKeepsTaskIdentityBeforeResponse(t *testing.T) {
+	s, input, _ := doneBotMediaFixture(t)
+	input.Kind, input.Path = "image", "/v1/images/generations/async"
+	result, err := s.Begin(context.Background(), input)
+	require.NoError(t, err)
+	op := result.Operation
+	require.Equal(t, DoneBotImageTaskID(op.ReceiptID), op.TaskID)
+	require.Equal(t, op.TaskID, op.TaskKey)
+	require.Equal(t, "donebot", op.Provider)
+	recovered, err := s.Begin(context.Background(), input)
+	require.ErrorIs(t, err, ErrDoneBotMediaPending)
+	require.Equal(t, op.TaskID, recovered.Operation.TaskID)
+	require.Equal(t, op.ReceiptID, recovered.Operation.ReceiptID)
+}
+
+func TestDoneBotMediaSettledSpeechRemainsCompletedWithoutAudioReplay(t *testing.T) {
+	s, input, _ := doneBotMediaFixture(t)
+	input.Kind, input.Path = "speech", "/v1/audio/speech"
+	result, err := s.Begin(context.Background(), input)
+	require.NoError(t, err)
+	op, err := s.Complete(context.Background(), input.Owner, result.Operation.ReceiptID, DoneBotMediaCompletion{Status: "completed", HTTPStatus: 200, ContentType: "audio/opus", Provider: "apimart", UsageRequestID: "apimart:tts:provider-request"})
+	require.NoError(t, err)
+	require.Equal(t, "completed", op.Status)
+	require.Empty(t, op.ReplayBody)
+	_, err = s.Begin(context.Background(), input)
+	require.ErrorIs(t, err, ErrDoneBotMediaPending)
+}
+
+func TestDoneBotMediaSpeechReceiptFindsChargeAfterCrashBeforeCompletion(t *testing.T) {
+	s, input, usage := doneBotMediaFixture(t)
+	input.Kind, input.Path = "speech", "/v1/audio/speech"
+	result, err := s.Begin(context.Background(), input)
+	require.NoError(t, err)
+	op := result.Operation
+	ctx := WithDoneBotMediaReceipt(context.Background(), op.ReceiptID)
+	moneyID := apimartSpeechBillingRequestID(ctx, "provider-assigned-id")
+	require.Equal(t, op.UsageRequestID, moneyID)
+	require.Equal(t, DoneBotSpeechBillingRequestID(op.ReceiptID), moneyID)
+	usage.rows = []UsageLog{{UserID: op.Owner.UserID, APIKeyID: op.Owner.APIKeyID, GroupID: &op.Owner.GroupID, RequestID: moneyID, ActualCost: 0.01}}
+	restarted := &DoneBotMediaService{repo: s.repo, installs: s.installs, usage: usage}
+	receipt, err := restarted.Receipt(context.Background(), op.Owner.UserID, op.Owner.InstallationID, op.ReceiptID)
+	require.NoError(t, err)
+	require.Equal(t, "completed", receipt.Status)
+	require.Equal(t, "1", receipt.ActualCents.String())
+	require.Equal(t, moneyID, usage.filters.RequestID)
+	recovered, err := restarted.Begin(context.Background(), input)
+	require.ErrorIs(t, err, ErrDoneBotMediaPending)
+	require.Equal(t, op.ReceiptID, recovered.Operation.ReceiptID)
+	require.Empty(t, recovered.Operation.ReplayBody)
+	require.False(t, recovered.Replay)
+}
+
 func TestDoneBotMediaOwnerCannotBeChosenByInstallationHeader(t *testing.T) {
 	s, input, _ := doneBotMediaFixture(t)
 	input.Owner.InstallationID = uuid.NewString()

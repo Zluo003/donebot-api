@@ -18,6 +18,7 @@ const (
 	ImageTaskStatusProcessing = "processing"
 	ImageTaskStatusCompleted  = "completed"
 	ImageTaskStatusFailed     = "failed"
+	ImageTaskStatusUncertain  = "uncertain"
 
 	defaultImageTaskTTL              = 24 * time.Hour
 	defaultImageTaskExecutionTimeout = 30 * time.Minute
@@ -32,6 +33,8 @@ var (
 // ImageTaskRecord is the private Redis representation of an asynchronous image
 // request. Ownership fields are intentionally omitted from the public view.
 type ImageTaskRecord struct {
+	ReceiptID            string          `json:"receipt_id,omitempty"`
+	ExecutionDeadlineAt  int64           `json:"execution_deadline_at,omitempty"`
 	IdempotencyExpiresAt int64           `json:"idempotency_expires_at,omitempty"`
 	ID                   string          `json:"id"`
 	UserID               int64           `json:"user_id"`
@@ -47,6 +50,7 @@ type ImageTaskRecord struct {
 
 // ImageTask is the API-safe task representation returned to callers.
 type ImageTask struct {
+	ReceiptID   string          `json:"receipt_id,omitempty"`
 	ID          string          `json:"id"`
 	TaskID      string          `json:"task_id"`
 	Object      string          `json:"object"`
@@ -157,12 +161,14 @@ func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*I
 	}
 	now := time.Now().UTC()
 	task := &ImageTaskRecord{
-		ID:        "imgtask_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
-		UserID:    owner.UserID,
-		APIKeyID:  owner.APIKeyID,
-		Status:    ImageTaskStatusProcessing,
-		CreatedAt: now.Unix(),
-		ExpiresAt: now.Add(s.ttl).Unix(),
+		ID:                  newImageTaskID(ctx),
+		ReceiptID:           imageTaskReceiptID(ctx),
+		ExecutionDeadlineAt: now.Add(s.ExecutionTimeout()).Unix(),
+		UserID:              owner.UserID,
+		APIKeyID:            owner.APIKeyID,
+		Status:              ImageTaskStatusProcessing,
+		CreatedAt:           now.Unix(),
+		ExpiresAt:           now.Add(s.ttl).Unix(),
 	}
 	if err := s.store.Save(ctx, task, s.ttl); err != nil {
 		return nil, ErrImageTaskUnavailable.WithCause(err)
@@ -185,7 +191,44 @@ func (s *ImageTaskService) Get(ctx context.Context, owner ImageTaskOwner, id str
 		// Do not reveal whether a random task ID exists for another caller.
 		return nil, ErrImageTaskNotFound
 	}
+	deadline := task.ExecutionDeadlineAt
+	if deadline == 0 {
+		deadline = time.Unix(task.CreatedAt, 0).Add(s.ExecutionTimeout()).Unix()
+	}
+	if task.Status == ImageTaskStatusProcessing && time.Now().Unix() > deadline {
+		copy := *task
+		copy.Status = ImageTaskStatusUncertain
+		copy.Error = imageTaskErrorJSON("execution_interrupted", "Image execution exceeded its deadline or was interrupted; do not resubmit this operation")
+		task = &copy
+	}
 	return imageTaskToPublic(task), nil
+}
+
+type doneBotMediaReceiptContextKey struct{}
+
+// WithDoneBotMediaReceipt binds a server-created receipt after installation
+// ownership and idempotency have been checked; caller headers are not receipts.
+func WithDoneBotMediaReceipt(ctx context.Context, receiptID string) context.Context {
+	return context.WithValue(ctx, doneBotMediaReceiptContextKey{}, receiptID)
+}
+
+func imageTaskReceiptID(ctx context.Context) string {
+	id, _ := ctx.Value(doneBotMediaReceiptContextKey{}).(string)
+	if parsed, err := uuid.Parse(id); err == nil {
+		return parsed.String()
+	}
+	return ""
+}
+
+func DoneBotImageTaskID(receiptID string) string {
+	return "imgtask_" + strings.ReplaceAll(receiptID, "-", "")
+}
+
+func newImageTaskID(ctx context.Context) string {
+	if receipt := imageTaskReceiptID(ctx); receipt != "" {
+		return DoneBotImageTaskID(receipt)
+	}
+	return DoneBotImageTaskID(uuid.NewString())
 }
 
 func (s *ImageTaskService) Complete(ctx context.Context, id string, statusCode int, result json.RawMessage) error {
@@ -239,6 +282,9 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 		}
 		return ErrImageTaskUnavailable.WithCause(err)
 	}
+	if task.ReceiptID != "" && status == ImageTaskStatusFailed && statusCode >= http.StatusInternalServerError {
+		status = ImageTaskStatusUncertain
+	}
 	now := time.Now().UTC()
 	completedAt := now.Unix()
 	task.Status = status
@@ -263,6 +309,7 @@ func imageTaskToPublic(task *ImageTaskRecord) *ImageTask {
 		return nil
 	}
 	return &ImageTask{
+		ReceiptID:   task.ReceiptID,
 		ID:          task.ID,
 		TaskID:      task.ID,
 		Object:      "image.generation.task",

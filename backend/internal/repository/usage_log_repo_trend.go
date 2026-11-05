@@ -36,15 +36,15 @@ func (r *usageLogRepository) GetAPIKeyUsageTrend(ctx context.Context, startTime,
 			FROM usage_logs
 			WHERE created_at >= $1 AND created_at < $2
 			GROUP BY api_key_id
-			ORDER BY SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) DESC
+			ORDER BY SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund') DESC
 			LIMIT $3
 		)
 		SELECT
 			TO_CHAR(u.created_at, '%s') as date,
 			u.api_key_id,
 			COALESCE(k.name, '') as key_name,
-			COUNT(*) as requests,
-			COALESCE(SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens), 0) as tokens
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+			COALESCE(SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as tokens
 		FROM usage_logs u
 		LEFT JOIN api_keys k ON u.api_key_id = k.id
 		WHERE u.api_key_id IN (SELECT api_key_id FROM top_keys)
@@ -84,7 +84,7 @@ func (r *usageLogRepository) GetAPIKeyUsageTrend(ctx context.Context, startTime,
 // GetUserUsageTrend returns usage trend data grouped by user and date
 func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int, metric string) (results []UserUsageTrendPoint, err error) {
 	dateFormat := safeDateFormat(granularity)
-	rankExpr := "SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens)"
+	rankExpr := "SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund')"
 	if metric == "actual_cost" {
 		rankExpr = "SUM(actual_cost)"
 	}
@@ -103,8 +103,8 @@ func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, e
 			u.user_id,
 			COALESCE(us.email, '') as email,
 			COALESCE(us.username, '') as username,
-			COUNT(*) as requests,
-			COALESCE(SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens), 0) as tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+			COALESCE(SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as tokens,
 			COALESCE(SUM(u.total_cost), 0) as cost,
 			COALESCE(SUM(u.actual_cost), 0) as actual_cost
 		FROM usage_logs u
@@ -156,8 +156,8 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 				COALESCE(us.email, '') as email,
 				COALESCE(us.username, '') as username,
 				COALESCE(SUM(u.actual_cost), 0) as actual_cost,
-				COUNT(*) as requests,
-				COALESCE(SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens), 0) as tokens
+				COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+				COALESCE(SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as tokens
 			FROM usage_logs u
 			LEFT JOIN users us ON u.user_id = us.id
 			WHERE u.created_at >= $1 AND u.created_at < $2
@@ -233,12 +233,12 @@ func (r *usageLogRepository) GetUserUsageTrendByUserID(ctx context.Context, user
 	query := fmt.Sprintf(`
 		SELECT
 			TO_CHAR(created_at, '%s') as date,
-			COUNT(*) as requests,
-			COALESCE(SUM(input_tokens), 0) as input_tokens,
-			COALESCE(SUM(output_tokens), 0) as output_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as output_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) as cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as cache_read_tokens,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_tokens,
 			COALESCE(SUM(total_cost), 0) as cost,
 			COALESCE(SUM(actual_cost), 0) as actual_cost
 		FROM usage_logs
@@ -294,12 +294,12 @@ func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, start
 	query := fmt.Sprintf(`
 		SELECT
 			TO_CHAR(created_at, '%s') as date,
-			COUNT(*) as requests,
-			COALESCE(SUM(input_tokens), 0) as input_tokens,
-			COALESCE(SUM(output_tokens), 0) as output_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as output_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) as cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as cache_read_tokens,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_tokens,
 			COALESCE(SUM(total_cost), 0) as cost,
 			COALESCE(SUM(actual_cost), 0) as actual_cost
 		FROM usage_logs
@@ -460,12 +460,12 @@ func (r *usageLogRepository) getModelStatsWithFiltersBySource(ctx context.Contex
 	query := fmt.Sprintf(`
 		SELECT
 			%s as model,
-			COUNT(*) as requests,
-			COALESCE(SUM(input_tokens), 0) as input_tokens,
-			COALESCE(SUM(output_tokens), 0) as output_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as output_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) as cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as cache_read_tokens,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_tokens,
 			COALESCE(SUM(total_cost), 0) as cost,
 			%s,
 			%s
@@ -540,8 +540,8 @@ func (r *usageLogRepository) getGroupStatsWithFilters(ctx context.Context, start
 		SELECT
 			COALESCE(ul.group_id, 0) as group_id,
 			COALESCE(g.name, '') as group_name,
-			COUNT(*) as requests,
-			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) as total_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_tokens,
 			COALESCE(SUM(ul.total_cost), 0) as cost,
 			COALESCE(SUM(ul.actual_cost), 0) as actual_cost,
 			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)), 0) as account_cost
@@ -623,11 +623,11 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 		SELECT
 			COALESCE(ul.user_id, 0) as user_id,
 			COALESCE(u.email, '') as email,
-			COUNT(*) as requests,
-			COALESCE(SUM(ul.input_tokens), 0) as input_tokens,
-			COALESCE(SUM(ul.output_tokens), 0) as output_tokens,
-			COALESCE(SUM(ul.cache_creation_tokens + ul.cache_read_tokens), 0) as cache_tokens,
-			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) as total_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+			COALESCE(SUM(ul.input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as input_tokens,
+			COALESCE(SUM(ul.output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as output_tokens,
+			COALESCE(SUM(ul.cache_creation_tokens + ul.cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as cache_tokens,
+			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_tokens,
 			COALESCE(SUM(ul.total_cost), 0) as cost,
 			COALESCE(SUM(ul.actual_cost), 0) as actual_cost,
 			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)), 0) as account_cost

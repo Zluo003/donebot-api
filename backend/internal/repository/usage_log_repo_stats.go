@@ -20,15 +20,15 @@ import (
 func (r *usageLogRepository) GetUserStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
 	query := `
 		SELECT
-			COUNT(*) as total_requests,
-			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
-			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as total_cache_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as total_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_read_tokens,
 			COALESCE(SUM(total_cost), 0) as total_cost,
 			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
-			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
+			COALESCE(AVG(COALESCE(duration_ms, 0)) FILTER (WHERE event_type <> 'refund'), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
 	`
@@ -59,15 +59,15 @@ func (r *usageLogRepository) GetUserStatsAggregated(ctx context.Context, userID 
 func (r *usageLogRepository) GetAPIKeyStatsAggregated(ctx context.Context, apiKeyID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
 	query := `
 		SELECT
-			COUNT(*) as total_requests,
-			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
-			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as total_cache_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as total_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_read_tokens,
 			COALESCE(SUM(total_cost), 0) as total_cost,
 			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
-			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
+			COALESCE(AVG(COALESCE(duration_ms, 0)) FILTER (WHERE event_type <> 'refund'), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE api_key_id = $1 AND created_at >= $2 AND created_at < $3
 	`
@@ -108,15 +108,15 @@ func (r *usageLogRepository) GetAPIKeyStatsAggregated(ctx context.Context, apiKe
 func (r *usageLogRepository) GetAccountStatsAggregated(ctx context.Context, accountID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
 	query := `
 		SELECT
-			COUNT(*) as total_requests,
-			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
-			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as total_cache_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as total_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_read_tokens,
 			COALESCE(SUM(total_cost), 0) as total_cost,
 			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
-			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
+			COALESCE(AVG(COALESCE(duration_ms, 0)) FILTER (WHERE event_type <> 'refund'), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE account_id = $1 AND created_at >= $2 AND created_at < $3
 	`
@@ -148,15 +148,15 @@ func (r *usageLogRepository) GetAccountStatsAggregated(ctx context.Context, acco
 func (r *usageLogRepository) GetModelStatsAggregated(ctx context.Context, modelName string, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
 	query := fmt.Sprintf(`
 		SELECT
-			COUNT(*) as total_requests,
-			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
-			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as total_cache_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as total_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_read_tokens,
 			COALESCE(SUM(total_cost), 0) as total_cost,
 			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
-			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
+			COALESCE(AVG(COALESCE(duration_ms, 0)) FILTER (WHERE event_type <> 'refund'), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE %s = $1 AND created_at >= $2 AND created_at < $3
 	`, rawUsageLogModelColumn)
@@ -191,13 +191,13 @@ func (r *usageLogRepository) GetDailyStatsAggregated(ctx context.Context, userID
 		SELECT
 			-- 使用应用时区分组，避免数据库会话时区导致日边界偏移。
 			TO_CHAR(created_at AT TIME ZONE $4, 'YYYY-MM-DD') as date,
-			COUNT(*) as total_requests,
-			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
-			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as total_cache_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as total_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_tokens,
 			COALESCE(SUM(total_cost), 0) as total_cost,
 			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
-			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
+			COALESCE(AVG(COALESCE(duration_ms, 0)) FILTER (WHERE event_type <> 'refund'), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
 		GROUP BY 1
@@ -278,8 +278,8 @@ func (r *usageLogRepository) GetAccountTodayStats(ctx context.Context, accountID
 
 	query := `
 		SELECT
-			COUNT(*) as requests,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as tokens,
 			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as cost,
 			COALESCE(SUM(total_cost), 0) as standard_cost,
 			COALESCE(SUM(actual_cost), 0) as user_cost
@@ -308,8 +308,8 @@ func (r *usageLogRepository) GetAccountTodayStats(ctx context.Context, accountID
 func (r *usageLogRepository) GetAccountWindowStats(ctx context.Context, accountID int64, startTime time.Time) (*usagestats.AccountStats, error) {
 	query := `
 		SELECT
-			COUNT(*) as requests,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as tokens,
 			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as cost,
 			COALESCE(SUM(total_cost), 0) as standard_cost,
 			COALESCE(SUM(actual_cost), 0) as user_cost
@@ -345,8 +345,8 @@ func (r *usageLogRepository) GetAccountWindowStatsBatch(ctx context.Context, acc
 	query := `
 		SELECT
 			account_id,
-			COUNT(*) as requests,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as tokens,
 			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as cost,
 			COALESCE(SUM(total_cost), 0) as standard_cost,
 			COALESCE(SUM(actual_cost), 0) as user_cost
@@ -398,10 +398,10 @@ func (r *usageLogRepository) GetGeminiUsageTotalsBatch(ctx context.Context, acco
 	query := `
 		SELECT
 			account_id,
-			COALESCE(SUM(CASE WHEN LOWER(COALESCE(model, '')) LIKE '%flash%' OR LOWER(COALESCE(model, '')) LIKE '%lite%' THEN 1 ELSE 0 END), 0) AS flash_requests,
-			COALESCE(SUM(CASE WHEN LOWER(COALESCE(model, '')) LIKE '%flash%' OR LOWER(COALESCE(model, '')) LIKE '%lite%' THEN 0 ELSE 1 END), 0) AS pro_requests,
-			COALESCE(SUM(CASE WHEN LOWER(COALESCE(model, '')) LIKE '%flash%' OR LOWER(COALESCE(model, '')) LIKE '%lite%' THEN (input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) ELSE 0 END), 0) AS flash_tokens,
-			COALESCE(SUM(CASE WHEN LOWER(COALESCE(model, '')) LIKE '%flash%' OR LOWER(COALESCE(model, '')) LIKE '%lite%' THEN 0 ELSE (input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) END), 0) AS pro_tokens,
+			COALESCE(SUM(CASE WHEN LOWER(COALESCE(model, '')) LIKE '%flash%' OR LOWER(COALESCE(model, '')) LIKE '%lite%' THEN 1 ELSE 0 END) FILTER (WHERE event_type <> 'refund'), 0) AS flash_requests,
+			COALESCE(SUM(CASE WHEN LOWER(COALESCE(model, '')) LIKE '%flash%' OR LOWER(COALESCE(model, '')) LIKE '%lite%' THEN 0 ELSE 1 END) FILTER (WHERE event_type <> 'refund'), 0) AS pro_requests,
+			COALESCE(SUM(CASE WHEN LOWER(COALESCE(model, '')) LIKE '%flash%' OR LOWER(COALESCE(model, '')) LIKE '%lite%' THEN (input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) ELSE 0 END) FILTER (WHERE event_type <> 'refund'), 0) AS flash_tokens,
+			COALESCE(SUM(CASE WHEN LOWER(COALESCE(model, '')) LIKE '%flash%' OR LOWER(COALESCE(model, '')) LIKE '%lite%' THEN 0 ELSE (input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) END) FILTER (WHERE event_type <> 'refund'), 0) AS pro_tokens,
 			COALESCE(SUM(CASE WHEN LOWER(COALESCE(model, '')) LIKE '%flash%' OR LOWER(COALESCE(model, '')) LIKE '%lite%' THEN actual_cost ELSE 0 END), 0) AS flash_cost,
 			COALESCE(SUM(CASE WHEN LOWER(COALESCE(model, '')) LIKE '%flash%' OR LOWER(COALESCE(model, '')) LIKE '%lite%' THEN 0 ELSE actual_cost END), 0) AS pro_cost
 		FROM usage_logs
@@ -504,7 +504,7 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 		LEFT JOIN accounts a ON a.id = ul.account_id
 		WHERE ul.user_id = ANY($1)
 		  AND ul.created_at >= LEAST($2, $4)
-		  AND ` + usageLogSuccessFilterUL + `
+		  AND ul.actual_cost <> 0
 		GROUP BY ul.user_id, ` + usageLogEffectivePlatformExpr + `
 	`
 	today := timezone.Today()
@@ -623,13 +623,13 @@ func resolveEndpointColumn(endpointType string) string {
 func (r *usageLogRepository) GetGlobalStats(ctx context.Context, startTime, endTime time.Time) (*UsageStats, error) {
 	query := `
 		SELECT
-			COUNT(*) as total_requests,
-			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
-			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as total_cache_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as total_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_tokens,
 			COALESCE(SUM(total_cost), 0) as total_cost,
 			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
-			COALESCE(AVG(duration_ms), 0) as avg_duration_ms
+			COALESCE(AVG(duration_ms) FILTER (WHERE event_type <> 'refund'), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at < $2
 	`
@@ -700,6 +700,7 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 			SELECT
 				COALESCE(NULLIF(TRIM(inbound_endpoint), ''), 'unknown') AS inbound_endpoint,
 				COALESCE(NULLIF(TRIM(upstream_endpoint), ''), 'unknown') AS upstream_endpoint,
+				event_type,
 				input_tokens,
 				output_tokens,
 				cache_creation_tokens,
@@ -716,15 +717,15 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 			GROUPING(upstream_endpoint) AS upstream_grouped,
 			inbound_endpoint,
 			upstream_endpoint,
-			COUNT(*) AS requests,
-			COALESCE(SUM(input_tokens), 0) AS input_tokens,
-			COALESCE(SUM(output_tokens), 0) AS output_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') AS requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) AS input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) AS output_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) AS cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) AS cache_read_tokens,
 			COALESCE(SUM(total_cost), 0) AS cost,
 			COALESCE(SUM(actual_cost), 0) AS actual_cost,
 			COALESCE(SUM(account_cost), 0) AS account_cost,
-			COALESCE(AVG(duration_ms), 0) AS avg_duration_ms
+			COALESCE(AVG(duration_ms) FILTER (WHERE event_type <> 'refund'), 0) AS avg_duration_ms
 		FROM scoped
 		GROUP BY GROUPING SETS (
 			(),
@@ -846,8 +847,8 @@ func (r *usageLogRepository) getEndpointStatsByColumnWithFilters(ctx context.Con
 	query := fmt.Sprintf(`
 		SELECT
 			COALESCE(NULLIF(TRIM(%s), ''), 'unknown') AS endpoint,
-			COUNT(*) AS requests,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) AS total_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') AS requests,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) AS total_tokens,
 			COALESCE(SUM(total_cost), 0) as cost,
 			%s
 		FROM usage_logs
@@ -925,8 +926,8 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 	query := `
 		SELECT
 			TO_CHAR(created_at, 'YYYY-MM-DD') as date,
-			COUNT(*) as requests,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as requests,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as tokens,
 			COALESCE(SUM(total_cost), 0) as cost,
 			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as actual_cost,
 			COALESCE(SUM(actual_cost), 0) as user_cost
@@ -1000,7 +1001,7 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 		actualDaysUsed = 1
 	}
 
-	avgQuery := "SELECT COALESCE(AVG(duration_ms), 0) as avg_duration_ms FROM usage_logs WHERE account_id = $1 AND created_at >= $2 AND created_at < $3"
+	avgQuery := "SELECT COALESCE(AVG(duration_ms) FILTER (WHERE event_type <> 'refund'), 0) as avg_duration_ms FROM usage_logs WHERE account_id = $1 AND created_at >= $2 AND created_at < $3"
 	var avgDuration float64
 	if err := scanSingleRow(ctx, r.sql, avgQuery, []any{accountID, startTime, endTime}, &avgDuration); err != nil {
 		return nil, err

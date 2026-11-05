@@ -9,6 +9,15 @@ func (s *OpenAIGatewayService) UsageAlreadyRecorded(ctx context.Context, request
 	if s == nil || s.usageBillingRepo == nil || requestID == "" || keyID <= 0 {
 		return false, nil
 	}
+	if repo := s.doneBotPrepaidRepository(); repo != nil {
+		p, err := repo.LookupDoneBotMediaPrecharge(ctx, DoneBotMediaReceiptID(ctx), keyID, requestID)
+		if err != nil {
+			return false, err
+		}
+		if p != nil {
+			return p.State == "settled", nil
+		}
+	}
 	lookup, ok := s.usageBillingRepo.(interface {
 		HasUsageCharge(context.Context, string, int64) (bool, error)
 	})

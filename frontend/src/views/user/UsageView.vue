@@ -668,6 +668,9 @@ const exportToCSV = async () => {
       'Rate Multiplier',
       'Billed Cost',
       'Original Cost',
+      'Billing Event',
+      'Operation Receipt ID',
+      'Related Charge Request ID',
       'First Token (ms)',
       'Duration (ms)',
     ]
@@ -687,6 +690,9 @@ const exportToCSV = async () => {
       log.rate_multiplier,
       log.actual_cost.toFixed(8),
       log.total_cost.toFixed(8),
+      log.event_type || 'charge',
+      log.operation_receipt_id || '',
+      log.related_request_id || '',
       log.first_token_ms ?? '',
       log.duration_ms ?? '',
     ].map(escapeCSVValue))

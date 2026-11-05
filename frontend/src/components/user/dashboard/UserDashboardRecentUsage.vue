@@ -20,13 +20,15 @@
             <div>
               <p class="text-sm font-medium text-gray-900 dark:text-white">{{ log.model }}</p>
               <p class="text-xs text-gray-500 dark:text-dark-400">{{ formatDateTime(log.created_at) }}</p>
+              <p v-if="log.operation_receipt_id" class="max-w-64 break-all font-mono text-[10px] text-gray-500 dark:text-dark-400">{{ t('usage.billingEvent.operation') }} {{ log.operation_receipt_id }}</p>
             </div>
           </div>
           <div class="text-right">
             <p class="text-sm font-semibold">
-              <span class="text-green-600 dark:text-green-400" :title="t('dashboard.actual')">${{ formatCost(log.actual_cost) }}</span>
+              <span class="text-green-600 dark:text-green-400" :title="t('dashboard.actual')">{{ formatUsageBalanceAmount(log, 4) }}</span>
               <span class="font-normal text-gray-400 dark:text-gray-500" :title="t('dashboard.standard')"> / ${{ formatCost(log.total_cost) }}</span>
             </p>
+            <p v-if="usageBillingEvent(log)" class="text-xs font-medium text-emerald-600 dark:text-emerald-400">{{ t(`usage.billingEvent.${usageBillingEvent(log)}`) }}</p>
             <p class="text-xs text-gray-500 dark:text-dark-400">{{ (log.input_tokens + log.output_tokens).toLocaleString() }} tokens</p>
           </div>
         </div>
@@ -46,6 +48,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
+import { formatUsageBalanceAmount, usageBillingEvent } from '@/utils/usageBillingEvent'
 import type { UsageLog } from '@/types'
 
 defineProps<{

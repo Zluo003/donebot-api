@@ -290,7 +290,12 @@
               "uniqueItems": true,
               "items": {
                 "type": "string",
-                "enum": ["text", "image", "audio", "video"]
+                "enum": [
+                  "text",
+                  "image",
+                  "audio",
+                  "video"
+                ]
               }
             },
             "context_window_tokens": {
@@ -447,6 +452,36 @@
               "method": "GET",
               "path": "/v1/videos/{task_id}/content",
               "response_kind": "binary"
+            }
+          }
+        },
+        {
+          "const": {
+            "adapter": "donebot.images.async.v1",
+            "submit": {
+              "method": "POST",
+              "path": "/v1/images/generations/async",
+              "content_type": "application/json",
+              "response_kind": "json"
+            },
+            "task_id_path": "id",
+            "poll": {
+              "method": "GET",
+              "path": "/v1/images/tasks/{task_id}",
+              "response_kind": "json",
+              "status_paths": [
+                "status"
+              ],
+              "completed_statuses": [
+                "completed"
+              ],
+              "failed_statuses": [
+                "failed",
+                "uncertain"
+              ],
+              "result_paths": [
+                "result.data"
+              ]
             }
           }
         }

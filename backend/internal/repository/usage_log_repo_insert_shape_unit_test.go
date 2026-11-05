@@ -129,7 +129,7 @@ func TestPrepareUsageLogInsert_UpstreamRequestIDArgWiring(t *testing.T) {
 	})
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
 
-	idx := len(prepared.args) - 4
+	idx := len(prepared.args) - 7
 	arg, ok := prepared.args[idx].(sql.NullString)
 	require.True(t, ok, "upstream_request_id arg should be sql.NullString, got %T", prepared.args[idx])
 	require.True(t, arg.Valid)
@@ -142,4 +142,17 @@ func TestPrepareUsageLogInsert_UpstreamRequestIDArgWiring(t *testing.T) {
 	require.False(t, nullArg.Valid, "absent upstream request id must be NULL")
 
 	require.Contains(t, usageLogSelectColumns, "upstream_request_id")
+}
+
+func TestPrepareUsageLogInsert_PreservesRefundLedgerFields(t *testing.T) {
+	receiptID := "ffe0598f-1fab-4d29-a832-c4b0380c9723"
+	chargeRequestID := "dbm:charge:" + receiptID
+	prepared := prepareUsageLogInsert(&service.UsageLog{RequestID: "dbm:refund:" + receiptID, EventType: service.UsageEventRefund,
+		OperationReceiptID: &receiptID, RelatedRequestID: &chargeRequestID, TotalCost: -0.4, ActualCost: -0.4})
+	fields := prepared.args[len(prepared.args)-3:]
+	require.Equal(t, []any{service.UsageEventRefund, sql.NullString{String: receiptID, Valid: true}, sql.NullString{String: chargeRequestID, Valid: true}}, fields)
+	require.Equal(t, -0.4, prepared.args[25])
+	require.Equal(t, -0.4, prepared.args[26])
+	ordinary := prepareUsageLogInsert(&service.UsageLog{})
+	require.Equal(t, service.UsageEventCharge, ordinary.args[len(ordinary.args)-3])
 }

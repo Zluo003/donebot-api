@@ -88,6 +88,60 @@ func (_u *UsageLogUpdate) SetNillableRequestID(v *string) *UsageLogUpdate {
 	return _u
 }
 
+// SetEventType sets the "event_type" field.
+func (_u *UsageLogUpdate) SetEventType(v string) *UsageLogUpdate {
+	_u.mutation.SetEventType(v)
+	return _u
+}
+
+// SetNillableEventType sets the "event_type" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableEventType(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetEventType(*v)
+	}
+	return _u
+}
+
+// SetOperationReceiptID sets the "operation_receipt_id" field.
+func (_u *UsageLogUpdate) SetOperationReceiptID(v string) *UsageLogUpdate {
+	_u.mutation.SetOperationReceiptID(v)
+	return _u
+}
+
+// SetNillableOperationReceiptID sets the "operation_receipt_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableOperationReceiptID(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetOperationReceiptID(*v)
+	}
+	return _u
+}
+
+// ClearOperationReceiptID clears the value of the "operation_receipt_id" field.
+func (_u *UsageLogUpdate) ClearOperationReceiptID() *UsageLogUpdate {
+	_u.mutation.ClearOperationReceiptID()
+	return _u
+}
+
+// SetRelatedRequestID sets the "related_request_id" field.
+func (_u *UsageLogUpdate) SetRelatedRequestID(v string) *UsageLogUpdate {
+	_u.mutation.SetRelatedRequestID(v)
+	return _u
+}
+
+// SetNillableRelatedRequestID sets the "related_request_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRelatedRequestID(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRelatedRequestID(*v)
+	}
+	return _u
+}
+
+// ClearRelatedRequestID clears the value of the "related_request_id" field.
+func (_u *UsageLogUpdate) ClearRelatedRequestID() *UsageLogUpdate {
+	_u.mutation.ClearRelatedRequestID()
+	return _u
+}
+
 // SetModel sets the "model" field.
 func (_u *UsageLogUpdate) SetModel(v string) *UsageLogUpdate {
 	_u.mutation.SetModel(v)
@@ -1041,6 +1095,16 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.request_id": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.EventType(); ok {
+		if err := usagelog.EventTypeValidator(v); err != nil {
+			return &ValidationError{Name: "event_type", err: fmt.Errorf(`ent: validator failed for field "UsageLog.event_type": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.RelatedRequestID(); ok {
+		if err := usagelog.RelatedRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "related_request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.related_request_id": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Model(); ok {
 		if err := usagelog.ModelValidator(v); err != nil {
 			return &ValidationError{Name: "model", err: fmt.Errorf(`ent: validator failed for field "UsageLog.model": %w`, err)}
@@ -1137,6 +1201,21 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.RequestID(); ok {
 		_spec.SetField(usagelog.FieldRequestID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.EventType(); ok {
+		_spec.SetField(usagelog.FieldEventType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OperationReceiptID(); ok {
+		_spec.SetField(usagelog.FieldOperationReceiptID, field.TypeString, value)
+	}
+	if _u.mutation.OperationReceiptIDCleared() {
+		_spec.ClearField(usagelog.FieldOperationReceiptID, field.TypeString)
+	}
+	if value, ok := _u.mutation.RelatedRequestID(); ok {
+		_spec.SetField(usagelog.FieldRelatedRequestID, field.TypeString, value)
+	}
+	if _u.mutation.RelatedRequestIDCleared() {
+		_spec.ClearField(usagelog.FieldRelatedRequestID, field.TypeString)
 	}
 	if value, ok := _u.mutation.Model(); ok {
 		_spec.SetField(usagelog.FieldModel, field.TypeString, value)
@@ -1599,6 +1678,60 @@ func (_u *UsageLogUpdateOne) SetNillableRequestID(v *string) *UsageLogUpdateOne 
 	if v != nil {
 		_u.SetRequestID(*v)
 	}
+	return _u
+}
+
+// SetEventType sets the "event_type" field.
+func (_u *UsageLogUpdateOne) SetEventType(v string) *UsageLogUpdateOne {
+	_u.mutation.SetEventType(v)
+	return _u
+}
+
+// SetNillableEventType sets the "event_type" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableEventType(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetEventType(*v)
+	}
+	return _u
+}
+
+// SetOperationReceiptID sets the "operation_receipt_id" field.
+func (_u *UsageLogUpdateOne) SetOperationReceiptID(v string) *UsageLogUpdateOne {
+	_u.mutation.SetOperationReceiptID(v)
+	return _u
+}
+
+// SetNillableOperationReceiptID sets the "operation_receipt_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableOperationReceiptID(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetOperationReceiptID(*v)
+	}
+	return _u
+}
+
+// ClearOperationReceiptID clears the value of the "operation_receipt_id" field.
+func (_u *UsageLogUpdateOne) ClearOperationReceiptID() *UsageLogUpdateOne {
+	_u.mutation.ClearOperationReceiptID()
+	return _u
+}
+
+// SetRelatedRequestID sets the "related_request_id" field.
+func (_u *UsageLogUpdateOne) SetRelatedRequestID(v string) *UsageLogUpdateOne {
+	_u.mutation.SetRelatedRequestID(v)
+	return _u
+}
+
+// SetNillableRelatedRequestID sets the "related_request_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRelatedRequestID(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRelatedRequestID(*v)
+	}
+	return _u
+}
+
+// ClearRelatedRequestID clears the value of the "related_request_id" field.
+func (_u *UsageLogUpdateOne) ClearRelatedRequestID() *UsageLogUpdateOne {
+	_u.mutation.ClearRelatedRequestID()
 	return _u
 }
 
@@ -2568,6 +2701,16 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.request_id": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.EventType(); ok {
+		if err := usagelog.EventTypeValidator(v); err != nil {
+			return &ValidationError{Name: "event_type", err: fmt.Errorf(`ent: validator failed for field "UsageLog.event_type": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.RelatedRequestID(); ok {
+		if err := usagelog.RelatedRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "related_request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.related_request_id": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Model(); ok {
 		if err := usagelog.ModelValidator(v); err != nil {
 			return &ValidationError{Name: "model", err: fmt.Errorf(`ent: validator failed for field "UsageLog.model": %w`, err)}
@@ -2681,6 +2824,21 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.RequestID(); ok {
 		_spec.SetField(usagelog.FieldRequestID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.EventType(); ok {
+		_spec.SetField(usagelog.FieldEventType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OperationReceiptID(); ok {
+		_spec.SetField(usagelog.FieldOperationReceiptID, field.TypeString, value)
+	}
+	if _u.mutation.OperationReceiptIDCleared() {
+		_spec.ClearField(usagelog.FieldOperationReceiptID, field.TypeString)
+	}
+	if value, ok := _u.mutation.RelatedRequestID(); ok {
+		_spec.SetField(usagelog.FieldRelatedRequestID, field.TypeString, value)
+	}
+	if _u.mutation.RelatedRequestIDCleared() {
+		_spec.ClearField(usagelog.FieldRelatedRequestID, field.TypeString)
 	}
 	if value, ok := _u.mutation.Model(); ok {
 		_spec.SetField(usagelog.FieldModel, field.TypeString, value)

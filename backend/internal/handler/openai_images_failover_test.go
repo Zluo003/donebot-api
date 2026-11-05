@@ -200,4 +200,17 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	require.Len(t, events, 2)
 	require.Equal(t, "failover", events[0].Kind)
 	require.Equal(t, "failover", events[1].Kind)
+
+	doneBotRecorder := httptest.NewRecorder()
+	doneBotContext, _ := gin.CreateTestContext(doneBotRecorder)
+	doneBotContext.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	doneBotContext.Request.Header.Set("Content-Type", "application/json")
+	key, _ := middleware2.GetAPIKeyFromContext(c)
+	doneBotKey := *key
+	doneBotKey.Key = "sk-donebot-isolated-test"
+	doneBotContext.Set(string(middleware2.ContextKeyAPIKey), &doneBotKey)
+	doneBotContext.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 100, Concurrency: 0})
+	handler.Images(doneBotContext)
+	require.Equal(t, http.StatusBadGateway, doneBotRecorder.Code)
+	require.Len(t, upstream.calls(), 3, "DoneBot must not repeat a paid image POST after the first provider error")
 }

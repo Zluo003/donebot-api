@@ -16,8 +16,8 @@ func (r *usageLogRepository) getPerformanceStats(ctx context.Context, userID int
 	fiveMinutesAgo := time.Now().Add(-5 * time.Minute)
 	query := `
 		SELECT
-			COUNT(*) as request_count,
-			COALESCE(SUM(input_tokens + output_tokens), 0) as token_count
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as request_count,
+			COALESCE(SUM(input_tokens + output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as token_count
 		FROM usage_logs
 		WHERE created_at >= $1`
 	args := []any{fiveMinutesAgo}
@@ -47,12 +47,12 @@ type UserStats struct {
 func (r *usageLogRepository) GetUserStats(ctx context.Context, userID int64, startTime, endTime time.Time) (*UserStats, error) {
 	query := `
 		SELECT
-			COUNT(*) as total_requests,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as total_requests,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_tokens,
 			COALESCE(SUM(actual_cost), 0) as total_cost,
-			COALESCE(SUM(input_tokens), 0) as input_tokens,
-			COALESCE(SUM(output_tokens), 0) as output_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as output_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as cache_read_tokens
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
 	`
@@ -285,6 +285,7 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 		WITH scoped AS (
 			SELECT
 				created_at,
+				event_type,
 				input_tokens,
 				output_tokens,
 				cache_creation_tokens,
@@ -298,20 +299,20 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 				AND created_at < GREATEST($2::timestamptz, $4::timestamptz)
 		)
 		SELECT
-			COUNT(*) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz) AS total_requests,
-			COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_input_tokens,
-			COALESCE(SUM(output_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_output_tokens,
-			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_cache_read_tokens,
+			COUNT(*) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz AND event_type <> 'refund') AS total_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz AND event_type <> 'refund'), 0) AS total_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz AND event_type <> 'refund'), 0) AS total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz AND event_type <> 'refund'), 0) AS total_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz AND event_type <> 'refund'), 0) AS total_cache_read_tokens,
 			COALESCE(SUM(total_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_cost,
 			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_actual_cost,
 			COALESCE(SUM(account_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_account_cost,
-			COALESCE(SUM(duration_ms) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_duration_ms,
-			COUNT(*) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz) AS today_requests,
-			COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_input_tokens,
-			COALESCE(SUM(output_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_output_tokens,
-			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_cache_read_tokens,
+			COALESCE(SUM(duration_ms) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz AND event_type <> 'refund'), 0) AS total_duration_ms,
+			COUNT(*) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz AND event_type <> 'refund') AS today_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz AND event_type <> 'refund'), 0) AS today_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz AND event_type <> 'refund'), 0) AS today_output_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz AND event_type <> 'refund'), 0) AS today_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz AND event_type <> 'refund'), 0) AS today_cache_read_tokens,
 			COALESCE(SUM(total_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_cost,
 			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_actual_cost,
 			COALESCE(SUM(account_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_account_cost
@@ -354,14 +355,14 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 	hourEnd := hourStart.Add(time.Hour)
 	activeUsersQuery := `
 		WITH scoped AS (
-			SELECT user_id, created_at
+			SELECT user_id, created_at, event_type
 			FROM usage_logs
 			WHERE created_at >= LEAST($1::timestamptz, $3::timestamptz)
 				AND created_at < GREATEST($2::timestamptz, $4::timestamptz)
 		)
 		SELECT
-			COUNT(DISTINCT CASE WHEN created_at >= $1::timestamptz AND created_at < $2::timestamptz THEN user_id END) AS active_users,
-			COUNT(DISTINCT CASE WHEN created_at >= $3::timestamptz AND created_at < $4::timestamptz THEN user_id END) AS hourly_active_users
+			COUNT(DISTINCT CASE WHEN event_type <> 'refund' AND created_at >= $1::timestamptz AND created_at < $2::timestamptz THEN user_id END) AS active_users,
+			COUNT(DISTINCT CASE WHEN event_type <> 'refund' AND created_at >= $3::timestamptz AND created_at < $4::timestamptz THEN user_id END) AS hourly_active_users
 		FROM scoped
 	`
 	if err := scanSingleRow(ctx, r.sql, activeUsersQuery, []any{todayUTC, todayEnd, hourStart, hourEnd}, &stats.ActiveUsers, &stats.HourlyActiveUsers); err != nil {
@@ -405,14 +406,14 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 	// 累计 Token 统计
 	totalStatsQuery := `
 		SELECT
-			COUNT(*) as total_requests,
-			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
-			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as total_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_read_tokens,
 			COALESCE(SUM(total_cost), 0) as total_cost,
 			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
-			COALESCE(AVG(duration_ms), 0) as avg_duration_ms
+			COALESCE(AVG(duration_ms) FILTER (WHERE event_type <> 'refund'), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE user_id = $1
 	`
@@ -437,11 +438,11 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 	// 今日 Token 统计
 	todayStatsQuery := `
 		SELECT
-			COUNT(*) as today_requests,
-			COALESCE(SUM(input_tokens), 0) as today_input_tokens,
-			COALESCE(SUM(output_tokens), 0) as today_output_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as today_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as today_cache_read_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as today_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as today_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as today_output_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) as today_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as today_cache_read_tokens,
 			COALESCE(SUM(total_cost), 0) as today_cost,
 			COALESCE(SUM(actual_cost), 0) as today_actual_cost
 		FROM usage_logs
@@ -481,17 +482,17 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 	platformQuery := `
 		SELECT
 			` + usageLogEffectivePlatformExpr + ` as platform,
-			COUNT(*) as total_requests,
-			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) as total_tokens,
+			COUNT(*) FILTER (WHERE ul.event_type <> 'refund') as total_requests,
+			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_tokens,
 			COALESCE(SUM(ul.actual_cost), 0) as total_actual_cost,
-			COUNT(*) FILTER (WHERE ul.created_at >= $2) as today_requests,
-			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens) FILTER (WHERE ul.created_at >= $2), 0) as today_tokens,
+			COUNT(*) FILTER (WHERE ul.created_at >= $2 AND ul.event_type <> 'refund') as today_requests,
+			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens) FILTER (WHERE ul.created_at >= $2 AND event_type <> 'refund'), 0) as today_tokens,
 			COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= $2), 0) as today_actual_cost
 		FROM usage_logs ul
 		LEFT JOIN groups g ON g.id = ul.group_id
 		LEFT JOIN accounts a ON a.id = ul.account_id
 		WHERE ul.user_id = $1
-		  AND ` + usageLogSuccessFilterUL + `
+		  AND ul.actual_cost <> 0
 		GROUP BY ` + usageLogEffectivePlatformExpr + `
 		HAVING ` + usageLogEffectivePlatformExpr + ` IS NOT NULL AND ` + usageLogEffectivePlatformExpr + ` <> ''
 		ORDER BY total_actual_cost DESC
@@ -531,8 +532,8 @@ func (r *usageLogRepository) getPerformanceStatsByAPIKey(ctx context.Context, ap
 	fiveMinutesAgo := time.Now().Add(-5 * time.Minute)
 	query := `
 		SELECT
-			COUNT(*) as request_count,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as token_count
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as request_count,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as token_count
 		FROM usage_logs
 		WHERE created_at >= $1 AND api_key_id = $2`
 	args := []any{fiveMinutesAgo, apiKeyID}
@@ -557,14 +558,14 @@ func (r *usageLogRepository) GetAPIKeyDashboardStats(ctx context.Context, apiKey
 	// 累计 Token 统计
 	totalStatsQuery := `
 		SELECT
-			COUNT(*) as total_requests,
-			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
-			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as total_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as total_cache_read_tokens,
 			COALESCE(SUM(total_cost), 0) as total_cost,
 			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
-			COALESCE(AVG(duration_ms), 0) as avg_duration_ms
+			COALESCE(AVG(duration_ms) FILTER (WHERE event_type <> 'refund'), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE api_key_id = $1
 	`
@@ -589,11 +590,11 @@ func (r *usageLogRepository) GetAPIKeyDashboardStats(ctx context.Context, apiKey
 	// 今日 Token 统计
 	todayStatsQuery := `
 		SELECT
-			COUNT(*) as today_requests,
-			COALESCE(SUM(input_tokens), 0) as today_input_tokens,
-			COALESCE(SUM(output_tokens), 0) as today_output_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as today_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as today_cache_read_tokens,
+			COUNT(*) FILTER (WHERE event_type <> 'refund') as today_requests,
+			COALESCE(SUM(input_tokens) FILTER (WHERE event_type <> 'refund'), 0) as today_input_tokens,
+			COALESCE(SUM(output_tokens) FILTER (WHERE event_type <> 'refund'), 0) as today_output_tokens,
+			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE event_type <> 'refund'), 0) as today_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens) FILTER (WHERE event_type <> 'refund'), 0) as today_cache_read_tokens,
 			COALESCE(SUM(total_cost), 0) as today_cost,
 			COALESCE(SUM(actual_cost), 0) as today_actual_cost
 		FROM usage_logs

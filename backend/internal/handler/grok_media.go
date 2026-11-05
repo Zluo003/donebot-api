@@ -12,6 +12,7 @@ import (
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -404,7 +405,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				h.errorResponse(c, 503, "api_error", "Seedance model has no configured price for this resolution and reference-video tier")
 				return
 			}
-			if h.cfg == nil || h.cfg.RunMode != config.RunModeSimple {
+			if service.DoneBotMediaReceiptID(requestCtx) == "" && (h.cfg == nil || h.cfg.RunMode != config.RunModeSimple) {
 				var reservation *service.InflightReservation
 				reservation, inflightErr = h.billingCacheService.ReserveFixedCharge(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, amount)
 				subscriptionMode := apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && subscription != nil
@@ -475,6 +476,12 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
+		if endpoint == service.SeedanceEndpointCreate {
+			if err := h.gatewayService.PrepayDoneBotSeedance(requestCtx, apiKey, account, routingModel, requestInfo); response.ErrorFrom(c, err) {
+				releaseAccount()
+				return
+			}
+		}
 		forwardStart := time.Now()
 		writerSizeBeforeForward := c.Writer.Size()
 		result, err := func() (*service.OpenAIForwardResult, error) {
@@ -498,8 +505,16 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, responseLatencyMs)
 
 		if err != nil {
+			if endpoint == service.SeedanceEndpointCreate && service.IsResponseCommitted(c) {
+				h.refundDoneBotRejectedMedia(c, c.Writer.Status())
+			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
+				if endpoint == service.SeedanceEndpointCreate && service.DoneBotMediaReceiptID(requestCtx) != "" {
+					h.refundDoneBotRejectedMedia(c, failoverErr.StatusCode)
+					h.handleFailoverExhausted(c, failoverErr, false)
+					return
+				}
 				if failoverClientGone(c) {
 					reqLog.Info("grok_media.failover_aborted_client_disconnected",
 						zap.Int64("account_id", account.ID),
@@ -587,6 +602,10 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			c.Set(middleware2.DoneBotMediaUsageRequestID, service.StableGrokVideoBillingRequestID(result.ResponseID))
 			persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(requestCtx), 15*time.Second)
 			defer persistCancel()
+			if err := h.gatewayService.BindDoneBotMediaTask(persistCtx, apiKey.ID, result.ResponseID); err != nil {
+				h.errorResponse(c, 503, "api_error", "Accepted task "+taskID+" could not be bound; do not resubmit")
+				return
+			}
 			// Defer billing until status polling observes video.url. Persist create-time
 			// model/duration/resolution so status can still price if upstream omits them.
 			// Retry once: missing pending causes silent underpricing (status omits resolution).

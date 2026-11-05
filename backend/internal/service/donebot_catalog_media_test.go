@@ -65,7 +65,7 @@ func TestDoneBotPublicCatalogMediaUnknownChoicesAndMixedAdaptersStayHidden(t *te
 	catalog, err := buildDoneBotPublicCatalog(group, 42, "one", rows[:1], accounts, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, catalog.Models, 1)
-	require.Equal(t, "openai.images.v1", catalog.Models[0].MediaParameters.Protocol.Adapter)
+	require.Equal(t, "donebot.images.async.v1", catalog.Models[0].MediaParameters.Protocol.Adapter)
 	require.Empty(t, catalog.Models[0].MediaParameters.Sizes)
 	require.Empty(t, catalog.Models[0].MediaParameters.Formats)
 	_, _, conflicting := doneBotMediaCatalogFixture()
@@ -75,6 +75,22 @@ func TestDoneBotPublicCatalogMediaUnknownChoicesAndMixedAdaptersStayHidden(t *te
 	catalog, err = buildDoneBotPublicCatalog(group, 42, "one", rows, nil, nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, catalog.Models)
+}
+
+func TestDoneBotCatalogHidesAsyncImagesUntilTaskStorageIsEnabled(t *testing.T) {
+	group, rows, accounts := doneBotMediaCatalogFixture()
+	inputs := &doneBotCatalogInputs{group: group, rows: rows, accounts: accounts}
+	available, err := doneBotRowsWithoutUnavailableImageTasks(inputs)
+	require.NoError(t, err)
+	require.Len(t, available, len(rows), "provider-native asynchronous images remain available")
+	mapping := accounts[0].Credentials["model_mapping"].(map[string]any)
+	mapping["image"] = "gpt-image-1"
+	available, err = doneBotRowsWithoutUnavailableImageTasks(inputs)
+	require.NoError(t, err)
+	require.Len(t, available, len(rows)-1)
+	for _, row := range available {
+		require.NotEqual(t, "image", row.Model)
+	}
 }
 
 func TestDoneBotPublicCatalogSeedanceParametersIntersectSpecAccountAndPrice(t *testing.T) {
@@ -142,7 +158,7 @@ func TestDoneBotPublicCatalogMediaMetadataRejectsUnsafeAdaptersAndMalformedChoic
 		_, err := parseDoneBotCatalogCapabilities(raw)
 		require.Error(t, err)
 	}
-	for _, adapter := range []string{"openai.images.v1", "apimart.images.v1", "apimart.music.v1", "apimart.speech.v1", "seedance.videos.v1"} {
+	for _, adapter := range []string{"openai.images.v1", "donebot.images.async.v1", "apimart.images.v1", "apimart.music.v1", "apimart.speech.v1", "seedance.videos.v1"} {
 		data, err := json.Marshal(map[string]any{"m": map[string]any{"media_parameters": map[string]any{"protocol": doneBotMediaProtocol(adapter)}}})
 		require.NoError(t, err)
 		_, err = parseDoneBotCatalogCapabilities(string(data))

@@ -73,14 +73,14 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 	media := model.MediaParameters
 	protocol := media.Protocol
 	known := doneBotMediaProtocol(protocol.Adapter)
-	if known == nil || !reflect.DeepEqual(known, protocol) || path != "" && path != protocol.Submit.Path {
+	if known == nil || !reflect.DeepEqual(known, protocol) || path != "" && !doneBotAdapterAllowsPath(protocol.Adapter, path) {
 		return ErrDoneBotMediaInvalid
 	}
 	var mediaType, iface string
 	var adapters []string
 	switch kind {
 	case "image":
-		mediaType, iface, adapters = "image", "openai.images", []string{"openai.images.v1", "apimart.images.v1"}
+		mediaType, iface, adapters = "image", "openai.images", []string{"openai.images.v1", "donebot.images.async.v1", "apimart.images.v1"}
 	case "video":
 		mediaType, iface, adapters = "video", "openai.videos", []string{"seedance.videos.v1"}
 	case "music":
@@ -97,11 +97,12 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 		return ErrDoneBotMediaInvalid
 	}
 	controlFields := map[string][]string{
-		"openai.images.v1":   {"size", "response_format", "output_format"},
-		"apimart.images.v1":  {"size", "resolution", "output_format"},
-		"seedance.videos.v1": {"resolution", "ratio", "duration"},
-		"apimart.music.v1":   {"version", "audio_format", "duration", "custom", "max_mode", "instrumental"},
-		"apimart.speech.v1":  {"voice", "response_format"},
+		"openai.images.v1":        {"size", "response_format", "output_format"},
+		"donebot.images.async.v1": {"size", "response_format", "output_format"},
+		"apimart.images.v1":       {"size", "resolution", "output_format"},
+		"seedance.videos.v1":      {"resolution", "ratio", "duration"},
+		"apimart.music.v1":        {"version", "audio_format", "duration", "custom", "max_mode", "instrumental"},
+		"apimart.speech.v1":       {"voice", "response_format"},
 	}
 	for _, field := range []string{"size", "resolution", "ratio", "aspect_ratio", "duration", "voice", "response_format", "output_format", "audio_format", "version", "custom", "max_mode", "instrumental"} {
 		if _, exists := parameters[field]; exists && !slices.Contains(controlFields[protocol.Adapter], field) {
@@ -117,14 +118,14 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 	} {
 		if value, exists := parameters[field.name]; exists {
 			selected, ok := value.(string)
-			if !ok || !slices.Contains(field.choices, selected) {
+			if !ok || (len(field.choices) > 0 || protocol.Adapter != "donebot.images.async.v1") && !slices.Contains(field.choices, selected) {
 				return ErrDoneBotMediaInvalid
 			}
 		}
 	}
 	if value, exists := parameters["size"]; exists {
 		selected, ok := value.(string)
-		if !ok || !slices.Contains(media.Sizes, selected) && !slices.Contains(media.Resolutions, selected) && !slices.Contains(media.AspectRatios, selected) {
+		if !ok || (len(media.Sizes)+len(media.Resolutions)+len(media.AspectRatios) > 0 || protocol.Adapter != "donebot.images.async.v1") && !slices.Contains(media.Sizes, selected) && !slices.Contains(media.Resolutions, selected) && !slices.Contains(media.AspectRatios, selected) {
 			return ErrDoneBotMediaInvalid
 		}
 	}
@@ -202,6 +203,20 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 		}
 	}
 	return nil
+}
+
+func doneBotAdapterAllowsPath(adapter, path string) bool {
+	switch adapter {
+	case "openai.images.v1":
+		return path == "/v1/images/generations" || path == "/v1/images/edits"
+	case "donebot.images.async.v1":
+		return path == "/v1/images/generations/async" || path == "/v1/images/edits/async"
+	case "seedance.videos.v1":
+		return path == "/v1/videos" || path == "/v1/videos/edits" || path == "/v1/videos/extensions"
+	default:
+		protocol := doneBotMediaProtocol(adapter)
+		return protocol != nil && path == protocol.Submit.Path
+	}
 }
 
 func doneBotMediaInteger(value any) (int, bool) {

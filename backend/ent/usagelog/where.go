@@ -75,6 +75,21 @@ func RequestID(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldRequestID, v))
 }
 
+// EventType applies equality check predicate on the "event_type" field. It's identical to EventTypeEQ.
+func EventType(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldEventType, v))
+}
+
+// OperationReceiptID applies equality check predicate on the "operation_receipt_id" field. It's identical to OperationReceiptIDEQ.
+func OperationReceiptID(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldOperationReceiptID, v))
+}
+
+// RelatedRequestID applies equality check predicate on the "related_request_id" field. It's identical to RelatedRequestIDEQ.
+func RelatedRequestID(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRelatedRequestID, v))
+}
+
 // Model applies equality check predicate on the "model" field. It's identical to ModelEQ.
 func Model(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldModel, v))
@@ -408,6 +423,221 @@ func RequestIDEqualFold(v string) predicate.UsageLog {
 // RequestIDContainsFold applies the ContainsFold predicate on the "request_id" field.
 func RequestIDContainsFold(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldContainsFold(FieldRequestID, v))
+}
+
+// EventTypeEQ applies the EQ predicate on the "event_type" field.
+func EventTypeEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldEventType, v))
+}
+
+// EventTypeNEQ applies the NEQ predicate on the "event_type" field.
+func EventTypeNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldEventType, v))
+}
+
+// EventTypeIn applies the In predicate on the "event_type" field.
+func EventTypeIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldEventType, vs...))
+}
+
+// EventTypeNotIn applies the NotIn predicate on the "event_type" field.
+func EventTypeNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldEventType, vs...))
+}
+
+// EventTypeGT applies the GT predicate on the "event_type" field.
+func EventTypeGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldEventType, v))
+}
+
+// EventTypeGTE applies the GTE predicate on the "event_type" field.
+func EventTypeGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldEventType, v))
+}
+
+// EventTypeLT applies the LT predicate on the "event_type" field.
+func EventTypeLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldEventType, v))
+}
+
+// EventTypeLTE applies the LTE predicate on the "event_type" field.
+func EventTypeLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldEventType, v))
+}
+
+// EventTypeContains applies the Contains predicate on the "event_type" field.
+func EventTypeContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldEventType, v))
+}
+
+// EventTypeHasPrefix applies the HasPrefix predicate on the "event_type" field.
+func EventTypeHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldEventType, v))
+}
+
+// EventTypeHasSuffix applies the HasSuffix predicate on the "event_type" field.
+func EventTypeHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldEventType, v))
+}
+
+// EventTypeEqualFold applies the EqualFold predicate on the "event_type" field.
+func EventTypeEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldEventType, v))
+}
+
+// EventTypeContainsFold applies the ContainsFold predicate on the "event_type" field.
+func EventTypeContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldEventType, v))
+}
+
+// OperationReceiptIDEQ applies the EQ predicate on the "operation_receipt_id" field.
+func OperationReceiptIDEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldOperationReceiptID, v))
+}
+
+// OperationReceiptIDNEQ applies the NEQ predicate on the "operation_receipt_id" field.
+func OperationReceiptIDNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldOperationReceiptID, v))
+}
+
+// OperationReceiptIDIn applies the In predicate on the "operation_receipt_id" field.
+func OperationReceiptIDIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldOperationReceiptID, vs...))
+}
+
+// OperationReceiptIDNotIn applies the NotIn predicate on the "operation_receipt_id" field.
+func OperationReceiptIDNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldOperationReceiptID, vs...))
+}
+
+// OperationReceiptIDGT applies the GT predicate on the "operation_receipt_id" field.
+func OperationReceiptIDGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldOperationReceiptID, v))
+}
+
+// OperationReceiptIDGTE applies the GTE predicate on the "operation_receipt_id" field.
+func OperationReceiptIDGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldOperationReceiptID, v))
+}
+
+// OperationReceiptIDLT applies the LT predicate on the "operation_receipt_id" field.
+func OperationReceiptIDLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldOperationReceiptID, v))
+}
+
+// OperationReceiptIDLTE applies the LTE predicate on the "operation_receipt_id" field.
+func OperationReceiptIDLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldOperationReceiptID, v))
+}
+
+// OperationReceiptIDContains applies the Contains predicate on the "operation_receipt_id" field.
+func OperationReceiptIDContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldOperationReceiptID, v))
+}
+
+// OperationReceiptIDHasPrefix applies the HasPrefix predicate on the "operation_receipt_id" field.
+func OperationReceiptIDHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldOperationReceiptID, v))
+}
+
+// OperationReceiptIDHasSuffix applies the HasSuffix predicate on the "operation_receipt_id" field.
+func OperationReceiptIDHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldOperationReceiptID, v))
+}
+
+// OperationReceiptIDIsNil applies the IsNil predicate on the "operation_receipt_id" field.
+func OperationReceiptIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldOperationReceiptID))
+}
+
+// OperationReceiptIDNotNil applies the NotNil predicate on the "operation_receipt_id" field.
+func OperationReceiptIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldOperationReceiptID))
+}
+
+// OperationReceiptIDEqualFold applies the EqualFold predicate on the "operation_receipt_id" field.
+func OperationReceiptIDEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldOperationReceiptID, v))
+}
+
+// OperationReceiptIDContainsFold applies the ContainsFold predicate on the "operation_receipt_id" field.
+func OperationReceiptIDContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldOperationReceiptID, v))
+}
+
+// RelatedRequestIDEQ applies the EQ predicate on the "related_request_id" field.
+func RelatedRequestIDEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRelatedRequestID, v))
+}
+
+// RelatedRequestIDNEQ applies the NEQ predicate on the "related_request_id" field.
+func RelatedRequestIDNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldRelatedRequestID, v))
+}
+
+// RelatedRequestIDIn applies the In predicate on the "related_request_id" field.
+func RelatedRequestIDIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldRelatedRequestID, vs...))
+}
+
+// RelatedRequestIDNotIn applies the NotIn predicate on the "related_request_id" field.
+func RelatedRequestIDNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldRelatedRequestID, vs...))
+}
+
+// RelatedRequestIDGT applies the GT predicate on the "related_request_id" field.
+func RelatedRequestIDGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldRelatedRequestID, v))
+}
+
+// RelatedRequestIDGTE applies the GTE predicate on the "related_request_id" field.
+func RelatedRequestIDGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldRelatedRequestID, v))
+}
+
+// RelatedRequestIDLT applies the LT predicate on the "related_request_id" field.
+func RelatedRequestIDLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldRelatedRequestID, v))
+}
+
+// RelatedRequestIDLTE applies the LTE predicate on the "related_request_id" field.
+func RelatedRequestIDLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldRelatedRequestID, v))
+}
+
+// RelatedRequestIDContains applies the Contains predicate on the "related_request_id" field.
+func RelatedRequestIDContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldRelatedRequestID, v))
+}
+
+// RelatedRequestIDHasPrefix applies the HasPrefix predicate on the "related_request_id" field.
+func RelatedRequestIDHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldRelatedRequestID, v))
+}
+
+// RelatedRequestIDHasSuffix applies the HasSuffix predicate on the "related_request_id" field.
+func RelatedRequestIDHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldRelatedRequestID, v))
+}
+
+// RelatedRequestIDIsNil applies the IsNil predicate on the "related_request_id" field.
+func RelatedRequestIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldRelatedRequestID))
+}
+
+// RelatedRequestIDNotNil applies the NotNil predicate on the "related_request_id" field.
+func RelatedRequestIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldRelatedRequestID))
+}
+
+// RelatedRequestIDEqualFold applies the EqualFold predicate on the "related_request_id" field.
+func RelatedRequestIDEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldRelatedRequestID, v))
+}
+
+// RelatedRequestIDContainsFold applies the ContainsFold predicate on the "related_request_id" field.
+func RelatedRequestIDContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldRelatedRequestID, v))
 }
 
 // ModelEQ applies the EQ predicate on the "model" field.

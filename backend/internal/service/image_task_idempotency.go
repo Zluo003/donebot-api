@@ -9,7 +9,6 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/google/uuid"
 )
 
 var ErrImageTaskIdempotencyConflict = infraerrors.Conflict("IDEMPOTENCY_KEY_CONFLICT", "idempotency key was already used for a different image request")
@@ -82,8 +81,10 @@ func (s *ImageTaskService) CreateIdempotent(ctx context.Context, owner ImageTask
 	}
 	now := time.Now().UTC()
 	task := &ImageTaskRecord{
-		ID:     "imgtask_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
-		UserID: owner.UserID, APIKeyID: owner.APIKeyID,
+		ID:                  newImageTaskID(ctx),
+		ReceiptID:           imageTaskReceiptID(ctx),
+		ExecutionDeadlineAt: now.Add(s.ExecutionTimeout()).Unix(),
+		UserID:              owner.UserID, APIKeyID: owner.APIKeyID,
 		Status: ImageTaskStatusProcessing, CreatedAt: now.Unix(), ExpiresAt: now.Add(ttl).Unix(),
 		IdempotencyExpiresAt: now.Add(retention).Unix(),
 	}

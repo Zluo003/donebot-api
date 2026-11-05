@@ -590,6 +590,7 @@ func TestAPIContracts(t *testing.T) {
 							"api_key_id": 100,
 							"account_id": 200,
 								"request_id": "req_123",
+								"event_type": "charge",
 								"model": "claude-3",
 								"request_type": "stream",
 								"native_compaction_v2": false,

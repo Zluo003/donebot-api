@@ -57,6 +57,9 @@ func doneBotMediaProtocol(adapter string) *DoneBotCatalogMediaProtocol {
 	switch adapter {
 	case "openai.images.v1":
 		protocol.Submit.Path = "/v1/images/generations"
+	case "donebot.images.async.v1":
+		protocol.Submit.Path, protocol.TaskIDPath = "/v1/images/generations/async", "id"
+		protocol.Poll = &DoneBotCatalogMediaPoll{DoneBotCatalogMediaEndpoint: DoneBotCatalogMediaEndpoint{Method: "GET", Path: "/v1/images/tasks/{task_id}", ResponseKind: "json"}, StatusPaths: []string{"status"}, CompletedStatuses: []string{"completed"}, FailedStatuses: []string{"failed", "uncertain"}, ResultPaths: []string{"result.data"}}
 	case "apimart.images.v1", "apimart.music.v1":
 		protocol.Submit.Path, protocol.TaskIDPath = "/v1/images/generations", "data.0.task_id"
 		protocol.Poll = &DoneBotCatalogMediaPoll{DoneBotCatalogMediaEndpoint: DoneBotCatalogMediaEndpoint{Method: "GET", Path: "/v1/tasks/{task_id}", ResponseKind: "json"}, StatusPaths: []string{"data.status", "status"}, CompletedStatuses: []string{"success"}, FailedStatuses: []string{"failed", "cancelled"}, ResultPaths: []string{"data.result.images", "result.images"}}
@@ -205,7 +208,7 @@ func doneBotAccountMediaParameters(account *Account, model string, row DoneBotMo
 			}
 			return media
 		}
-		return &DoneBotCatalogMediaParameters{Protocol: doneBotMediaProtocol("openai.images.v1")}
+		return &DoneBotCatalogMediaParameters{Protocol: doneBotMediaProtocol("donebot.images.async.v1")}
 	case "video":
 		if !account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilitySeedance) {
 			return nil

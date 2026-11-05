@@ -9,8 +9,49 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/stretchr/testify/require"
 )
+
+func TestImageTaskRecoversCompletedResultAndNeverResubmitsInterruptedExecution(t *testing.T) {
+	store := &imageTaskMemoryStore{}
+	owner := ImageTaskOwner{UserID: 1, APIKeyID: 2}
+	const receipt = "b88c25d5-ad6a-457b-a068-87efcbebaa23"
+	ctx := WithDoneBotMediaReceipt(context.Background(), receipt)
+	svc := NewImageTaskServiceWithOptions(store, time.Hour, time.Minute)
+	task, err := svc.Create(ctx, owner)
+	require.NoError(t, err)
+	require.Equal(t, DoneBotImageTaskID(receipt), task.ID)
+	require.Equal(t, receipt, task.ReceiptID)
+	store.task.ExecutionDeadlineAt = time.Now().Add(-time.Second).Unix()
+	restarted := NewImageTaskServiceWithOptions(store, time.Hour, time.Minute)
+	interrupted, err := restarted.Get(ctx, owner, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, ImageTaskStatusUncertain, interrupted.Status)
+	require.Equal(t, ImageTaskStatusProcessing, store.task.Status)
+	require.NoError(t, svc.Complete(ctx, task.ID, 200, json.RawMessage(`{"data":[{"url":"https://cdn.example/result.png"}]}`)))
+	completed, err := restarted.Get(ctx, owner, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, ImageTaskStatusCompleted, completed.Status)
+	require.Equal(t, receipt, completed.ReceiptID)
+	require.Equal(t, "https://cdn.example/result.png", completed.ImageURL)
+	_, err = restarted.Get(ctx, ImageTaskOwner{UserID: 3, APIKeyID: 2}, task.ID)
+	require.ErrorIs(t, err, ErrImageTaskNotFound)
+	require.NoError(t, svc.Fail(ctx, task.ID, 502, json.RawMessage(`{"code":"upstream_disconnected"}`)))
+	uncertain, err := restarted.Get(ctx, owner, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, ImageTaskStatusUncertain, uncertain.Status)
+}
+
+func TestImageTaskClientRequestHeaderCannotChooseStorageIdentity(t *testing.T) {
+	store := &imageTaskMemoryStore{}
+	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "b88c25d5-ad6a-457b-a068-87efcbebaa23")
+	svc := NewImageTaskServiceWithOptions(store, time.Hour, time.Minute)
+	task, err := svc.Create(ctx, ImageTaskOwner{UserID: 1, APIKeyID: 2})
+	require.NoError(t, err)
+	require.NotEqual(t, DoneBotImageTaskID("b88c25d5-ad6a-457b-a068-87efcbebaa23"), task.ID)
+	require.Empty(t, task.ReceiptID)
+}
 
 type imageTaskMemoryStore struct {
 	task    *ImageTaskRecord

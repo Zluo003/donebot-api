@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -337,10 +338,33 @@ func buildAPIMartURL(base string, e APIMartEndpoint, id string) (string, error) 
 
 type APIMartResponse struct {
 	Body    []byte
+	Stream  io.ReadCloser
 	Headers http.Header
 	Status  int
 	Result  *OpenAIForwardResult
 	TaskID  string
+}
+
+type apimartSpeechStream struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+	result *OpenAIForwardResult
+	start  time.Time
+}
+
+func (s *apimartSpeechStream) Read(p []byte) (int, error) {
+	n, err := s.ReadCloser.Read(p)
+	if err != nil {
+		s.result.Duration = time.Since(s.start)
+	}
+	return n, err
+}
+
+func (s *apimartSpeechStream) Close() error {
+	s.result.Duration = time.Since(s.start)
+	err := s.ReadCloser.Close()
+	s.cancel()
+	return err
 }
 
 func (r *APIMartResponse) IsFailure() bool {
@@ -390,7 +414,16 @@ func (s *OpenAIGatewayService) ForwardAPIMart(ctx context.Context, c *gin.Contex
 		method = http.MethodGet
 	}
 	requestCtx, release := mediaUpstreamContext(ctx)
-	defer release()
+	if e == APIMartTTS {
+		release()
+		requestCtx, release = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+	}
+	streamTransferred := false
+	defer func() {
+		if !streamTransferred {
+			release()
+		}
+	}()
 
 	req, err := http.NewRequestWithContext(requestCtx, method, target, bytes.NewReader(body))
 	if err != nil {
@@ -418,6 +451,15 @@ func (s *OpenAIGatewayService) ForwardAPIMart(ctx context.Context, c *gin.Contex
 	if err != nil {
 		return nil, err
 	}
+	if e == APIMartTTS && resp.StatusCode >= 200 && resp.StatusCode < 300 &&
+		(strings.HasPrefix(resp.Header.Get("Content-Type"), "audio/") || strings.HasPrefix(resp.Header.Get("Content-Type"), "application/octet-stream")) {
+		result.RequestID = apimartSpeechBillingRequestID(ctx, resp.Header.Get("x-request-id"))
+		result.ResponseID = result.RequestID
+		result.UpstreamHeaders = resp.Header
+		streamTransferred = true
+		return &APIMartResponse{Headers: resp.Header, Status: resp.StatusCode, Result: result,
+			Stream: &apimartSpeechStream{ReadCloser: resp.Body, cancel: release, result: result, start: started}}, nil
+	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
@@ -434,10 +476,17 @@ func (s *OpenAIGatewayService) ForwardAPIMart(ctx context.Context, c *gin.Contex
 		result.ResponseID = APIMartTaskKey(e, response.TaskID)
 	}
 	if e == APIMartTTS {
-		result.RequestID = "apimart:tts:" + StableGrokAudioBillingRequestID(resp.Header.Get("x-request-id"))
+		result.RequestID = apimartSpeechBillingRequestID(ctx, resp.Header.Get("x-request-id"))
 		result.ResponseID = result.RequestID
 	}
 	return response, nil
+}
+
+func apimartSpeechBillingRequestID(ctx context.Context, upstreamID string) string {
+	if receipt := imageTaskReceiptID(ctx); receipt != "" {
+		return DoneBotSpeechBillingRequestID(receipt)
+	}
+	return "apimart:tts:" + StableGrokAudioBillingRequestID(upstreamID)
 }
 
 type APIMartPending struct {
@@ -504,7 +553,10 @@ func APIMartCompletionResult(p *APIMartPending, body []byte, key string) *OpenAI
 					size = v.Get(fmt.Sprintf("layers.%d.size", i)).String()
 				}
 				tier := p.Tier
-				if w, h, ok := parseImageBillingDimensions(size); ok && w > 0 && h > 0 {
+				if !p.LayerDecomposition && size != "" {
+					tier = NormalizeImageBillingTierOrDefault(size)
+				}
+				if w, h, ok := parseImageBillingDimensions(size); p.LayerDecomposition && ok && w > 0 && h > 0 {
 					tier = "1K"
 					if int64(w)*int64(h) > 2601124 {
 						tier = "2K"

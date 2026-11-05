@@ -11,6 +11,7 @@ import (
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -144,7 +145,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	}
 
 	// 余额模式在途预留（与计费同口径估算；计费任务扣减余额缓存后才释放）。
-	inflightDone, inflightErr := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, service.InflightEstimateRequest{Model: routingModel, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: parsed.N})
+	inflightDone := func() {}
+	var inflightErr error
+	if service.DoneBotMediaReceiptID(c.Request.Context()) == "" {
+		inflightDone, inflightErr = reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, service.InflightEstimateRequest{Model: routingModel, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: parsed.N})
+	}
 	if inflightErr != nil {
 		status, code, message, retryAfter := billingErrorDetailsForRequest(c, inflightErr)
 		if retryAfter > 0 {
@@ -230,6 +235,17 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		)
 
 		account := selection.Account
+		mappedImageModel := channelMapping.MappedModel
+		if mappedImageModel == "" {
+			mappedImageModel = routingModel
+		}
+		if strings.HasPrefix(apiKey.Key, "sk-donebot-") && parsed.HasMask && strings.HasPrefix(strings.ToLower(account.GetMappedModel(mappedImageModel)), "gpt-image") {
+			if selection.Acquired && selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "GPT Image mask editing is not supported by DoneBot")
+			return
+		}
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
@@ -245,6 +261,26 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		}
 		if slotResult != openAISlotAcquireOK {
 			return
+		}
+		billingModel := h.gatewayService.APIMartBillingModel(requestCtx, apiKey, routingModel, clientRequestedModel(c, requestModel))
+		if err := h.gatewayService.PrepayDoneBotImage(requestCtx, apiKey, account, billingModel, parsed.N); response.ErrorFrom(c, err) {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			return
+		}
+		if receipt := service.DoneBotMediaReceiptID(requestCtx); receipt != "" {
+			if err := h.gatewayService.BindDoneBotMediaTask(requestCtx, apiKey.ID, service.DoneBotImageTaskID(receipt)); response.ErrorFrom(c, err) {
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(requestCtx), 15*time.Second)
+				if refundErr := h.gatewayService.RejectDoneBotMediaReceipt(ctx); refundErr != nil {
+					_ = c.Error(refundErr)
+				}
+				cancel()
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				return
+			}
 		}
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
@@ -282,6 +318,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			} else {
 				var imageUpstreamErr *service.OpenAIImagesUpstreamError
 				if errors.As(err, &imageUpstreamErr) {
+					h.refundDoneBotRejectedMedia(c, imageUpstreamErr.StatusCode)
 					retryableServerError := service.IsOpenAIImagesRetryableUpstreamError(imageUpstreamErr)
 					if retryableServerError {
 						h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, requestModel, false, result), false, nil, err)
@@ -304,6 +341,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, requestModel, false, result), false, nil, err)
+					if strings.HasPrefix(apiKey.Key, "sk-donebot-") {
+						h.refundDoneBotRejectedMedia(c, failoverErr.StatusCode)
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					if service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
 						reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
 							zap.Int64("account_id", account.ID),
@@ -404,7 +446,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			upstreamModel = result.UpstreamModel
 		}
 		sessionID := service.ExtractClientSessionID(c)
-		h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+		recordUsage := func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
@@ -421,6 +463,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				SessionID:          sessionID,
 				ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, requestModel, upstreamModel),
 			}); err != nil {
+				if service.DoneBotMediaReceiptID(ctx) != "" {
+					c.Set(doneBotImageSettlementPending, true)
+				}
 				logger.L().With(
 					zap.String("component", "handler.openai_gateway.images"),
 					zap.Int64("user_id", subject.UserID),
@@ -430,7 +475,14 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					zap.Int64("account_id", account.ID),
 				).Error("openai.images.record_usage_failed", zap.Error(err))
 			}
-		})
+		}
+		if service.DoneBotMediaReceiptID(c.Request.Context()) != "" {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 30*time.Second)
+			recordUsage(ctx)
+			cancel()
+		} else {
+			h.submitMandatoryUsageRecordTask(c.Request.Context(), recordUsage)
+		}
 
 		reqLog.Debug("openai.images.request_completed",
 			zap.Int64("account_id", account.ID),

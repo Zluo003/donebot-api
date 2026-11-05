@@ -317,7 +317,7 @@ func TestDoneBotMediaRecoveryBypassesRegularKeysAndRejectsBeforeProvider(t *test
 
 func TestDoneBotMediaRecoveryRejectsLegacyCreationAliases(t *testing.T) {
 	for _, path := range []string{
-		"/v1/videos/generations", "/videos", "/videos/edits", "/images/generations", "/v1/images/generations/async", "/v1/images/edits/async",
+		"/v1/videos/generations", "/videos", "/videos/edits", "/images/generations",
 		"/api/v3/contents/generations/tasks", "/v1/contents/generations/tasks", "/tts", "/v1/tts",
 	} {
 		t.Run(path, func(t *testing.T) {
@@ -329,6 +329,56 @@ func TestDoneBotMediaRecoveryRejectsLegacyCreationAliases(t *testing.T) {
 			require.Empty(t, recovery.begin)
 		})
 	}
+}
+
+func TestDoneBotMediaRecoveryAsyncImagesReplayAndKeepReceiptMoneyIdentity(t *testing.T) {
+	for _, path := range []string{"/v1/images/generations/async", "/v1/images/edits/async"} {
+		t.Run(path, func(t *testing.T) {
+			recovery := newDoneBotMediaRecoveryStub()
+			calls := 0
+			router := doneBotMediaTestRouter(t, recovery, true, func(c *gin.Context) {
+				calls++
+				receipt := c.Writer.Header().Get("X-DoneBot-Receipt-ID")
+				task := service.DoneBotImageTaskID(receipt)
+				c.Set(DoneBotMediaProvider, "donebot")
+				c.Set(DoneBotMediaTaskID, task)
+				c.JSON(202, gin.H{"id": task, "status": "processing", "receipt_id": receipt})
+			})
+			w := doneBotMediaTestRequest(router, "POST", path, "application/json", "same", []byte(`{"model":"gpt-image-1","prompt":"waves"}`))
+			require.Equal(t, 202, w.Code, w.Body.String())
+			receipt := w.Header().Get("X-DoneBot-Receipt-ID")
+			require.Len(t, recovery.completion, 1)
+			completion := recovery.completion[0]
+			require.Equal(t, service.DoneBotImageTaskID(receipt), completion.TaskKey)
+			require.Equal(t, "client:"+receipt, completion.UsageRequestID)
+			w = doneBotMediaTestRequest(router, "POST", path, "application/json", "same", []byte(`{"prompt":"waves","model":"gpt-image-1"}`))
+			require.Equal(t, 202, w.Code)
+			require.Equal(t, "true", w.Header().Get("Idempotency-Replayed"))
+			require.Equal(t, receipt, w.Header().Get("X-DoneBot-Receipt-ID"))
+			require.Equal(t, 1, calls)
+		})
+	}
+}
+
+func TestDoneBotSpeechIncompleteStreamCannotReplayPartialAudio(t *testing.T) {
+	recovery := newDoneBotMediaRecoveryStub()
+	calls := 0
+	router := doneBotMediaTestRouter(t, recovery, true, func(c *gin.Context) {
+		calls++
+		c.Set(DoneBotMediaProvider, "apimart")
+		c.Set(DoneBotMediaUsageRequestID, "apimart:tts:provider-request")
+		c.Set(DoneBotMediaStreamStatus, "uncertain")
+		c.Set(DoneBotMediaStreamDelivered, false)
+		c.Data(200, "audio/opus", []byte("partial"))
+	})
+	body := []byte(`{"model":"speech","input":"hello","voice":"alloy"}`)
+	w := doneBotMediaTestRequest(router, "POST", "/v1/audio/speech", "application/json", "tts", body)
+	require.Equal(t, 200, w.Code)
+	require.Equal(t, "uncertain", recovery.completion[0].Status)
+	require.Empty(t, recovery.completion[0].Body)
+	w = doneBotMediaTestRequest(router, "POST", "/v1/audio/speech", "application/json", "tts", body)
+	require.Equal(t, 409, w.Code)
+	require.Equal(t, 1, calls)
 }
 
 type doneBotMediaPathEstimatorStub struct {

@@ -145,6 +145,8 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 	}
 
 	pollURL := imageTaskPollURL(c.Request.URL.Path, task.ID)
+	c.Set(middleware2.DoneBotMediaProvider, "donebot")
+	c.Set(middleware2.DoneBotMediaTaskID, task.ID)
 	c.Header("Cache-Control", "no-store")
 	c.Header("Location", pollURL)
 	c.Header("Retry-After", "3")
@@ -156,6 +158,7 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 		"created_at": task.CreatedAt,
 		"expires_at": task.ExpiresAt,
 		"poll_url":   pollURL,
+		"receipt_id": task.ReceiptID,
 	})
 
 	if created {
@@ -248,6 +251,10 @@ func (h *AsyncImageHandler) validateRequest(c *gin.Context, platform string, bod
 	if parsed.Stream {
 		return errors.New("streaming image requests cannot be submitted as asynchronous tasks")
 	}
+	key, _ := middleware2.GetAPIKeyFromContext(c)
+	if key != nil && strings.HasPrefix(key.Key, "sk-donebot-") && parsed.HasMask && strings.HasPrefix(strings.ToLower(parsed.Model), "gpt-image") {
+		return errors.New("GPT Image mask editing is not supported by DoneBot")
+	}
 	return nil
 }
 
@@ -277,6 +284,10 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 
 	h.execute(platform, taskCtx)
 	body := bytes.TrimSpace(recorder.Body.Bytes())
+	if pending, _ := taskCtx.Get(doneBotImageSettlementPending); pending == true {
+		h.failTask(taskID, http.StatusBadGateway, imageTaskErrorPayload("settlement_pending", "image settlement needs reconciliation; do not resubmit"))
+		return
+	}
 	if err := taskCtx.Request.Context().Err(); err != nil && len(body) == 0 {
 		h.failTask(taskID, http.StatusGatewayTimeout, imageTaskErrorPayload("timeout_error", "image generation task timed out"))
 		return
@@ -300,6 +311,9 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 			pending.finish(true)
 		}
 		return
+	}
+	if h.openAI != nil {
+		h.openAI.refundDoneBotRejectedMedia(taskCtx, statusCode)
 	}
 	h.failTask(taskID, statusCode, extractImageTaskError(body))
 }

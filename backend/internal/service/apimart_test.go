@@ -75,11 +75,20 @@ func TestAPIMartNativeForwardingAndNoMutation(t *testing.T) {
 		{APIMartTTS, `{"model":"gpt-4o-mini-tts","input":"x","voice":"alloy","response_format":"pcm","future":{"keep":true}}`, "/v1/audio/speech", "\x00\x01\x02audio"},
 	} {
 		upstream := &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(tc.response)}
+		if tc.endpoint == APIMartTTS {
+			upstream.response.Header.Set("Content-Type", "audio/pcm")
+		}
 		svc := &OpenAIGatewayService{httpUpstream: upstream}
 		c, _ := grokMediaContentTestContext(http.MethodPost, tc.path, nil)
 		response, err := svc.ForwardAPIMart(context.Background(), c, apimartTestAccount(), tc.endpoint, "", []byte(tc.body))
 		require.NoError(t, err)
-		require.Equal(t, tc.response, string(response.Body))
+		data := response.Body
+		if response.Stream != nil {
+			data, err = io.ReadAll(response.Stream)
+			require.NoError(t, err)
+			require.NoError(t, response.Stream.Close())
+		}
+		require.Equal(t, tc.response, string(data))
 		require.Equal(t, tc.path, upstream.request.URL.Path)
 		require.Equal(t, "Bearer mart-secret", upstream.request.Header.Get("Authorization"))
 		body, err := io.ReadAll(upstream.request.Body)

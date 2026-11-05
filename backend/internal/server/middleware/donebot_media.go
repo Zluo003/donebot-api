@@ -29,6 +29,8 @@ import (
 const DoneBotMediaUsageRequestID = "donebot.media.usage_request_id"
 const DoneBotMediaProvider = "donebot.media.provider"
 const DoneBotMediaTaskID = "donebot.media.task_id"
+const DoneBotMediaStreamStatus = "donebot.media.stream_status"
+const DoneBotMediaStreamDelivered = "donebot.media.stream_delivered"
 
 type DoneBotMediaRecovery interface {
 	ResolveMediaOwner(context.Context, int64, int64, int64) (service.DoneBotMediaOwner, error)
@@ -116,10 +118,14 @@ func DoneBotMediaRecoveryMiddleware(recovery DoneBotMediaRecovery) gin.HandlerFu
 		c.Header("Cache-Control", "no-store")
 		c.Header(clientRequestIDHeader, op.ReceiptID)
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.ClientRequestID, op.ReceiptID))
+		c.Request = c.Request.WithContext(service.WithDoneBotMediaReceipt(c.Request.Context(), op.ReceiptID))
 		if result.Replay {
 			c.Header("Idempotency-Replayed", "true")
 			if op.ReplayRetryAfter != "" {
 				c.Header("Retry-After", op.ReplayRetryAfter)
+			}
+			if kind == "speech" && op.Status == "completed" {
+				c.Header("X-DoneBot-Stream-Status", "completed")
 			}
 			c.Data(op.ReplayStatus, op.ReplayContentType, op.ReplayBody)
 			c.Abort()
@@ -153,6 +159,15 @@ func DoneBotMediaRecoveryMiddleware(recovery DoneBotMediaRecovery) gin.HandlerFu
 			c.Next()
 		}
 		completion := doneBotMediaCompletion(kind, writer)
+		if streamStatus, exists := c.Get(DoneBotMediaStreamStatus); exists {
+			completion.Status, _ = streamStatus.(string)
+			if completion.Status != "completed" {
+				completion.Status = "uncertain"
+			}
+			if delivered, _ := c.Get(DoneBotMediaStreamDelivered); delivered != true || completion.Status != "completed" {
+				completion.Body = nil
+			}
+		}
 		if provider, exists := c.Get(DoneBotMediaProvider); exists {
 			completion.Provider, _ = provider.(string)
 		}
@@ -168,6 +183,10 @@ func DoneBotMediaRecoveryMiddleware(recovery DoneBotMediaRecovery) gin.HandlerFu
 		}
 		if completion.TaskID != "" && (completion.Status == "failed" || completion.Status == "uncertain") {
 			completion.Status = "uncertain"
+		}
+		if completion.TaskID != "" && completion.Provider == "donebot" {
+			completion.TaskKey = completion.TaskID
+			completion.UsageRequestID = "client:" + op.ReceiptID
 		}
 		if completion.TaskID != "" && (kind == "image" || kind == "music") && completion.UsageRequestID == "" {
 			prefix := "apimart:" + kind + ":"
@@ -185,7 +204,7 @@ func doneBotLegacyMediaCreate(method, path string) bool {
 	if method != http.MethodPost {
 		return false
 	}
-	if strings.HasSuffix(path, "/contents/generations/tasks") || strings.HasSuffix(path, "/images/generations/async") || strings.HasSuffix(path, "/images/edits/async") {
+	if strings.HasSuffix(path, "/contents/generations/tasks") {
 		return true
 	}
 	if path == "/v1/videos/generations" || path == "/videos" || strings.HasPrefix(path, "/videos/") || strings.HasPrefix(path, "/images/") || path == "/tts" || path == "/v1/tts" {
@@ -217,7 +236,7 @@ func (w *doneBotMediaCapture) WriteString(data string) (int, error) { return w.W
 func doneBotMediaRequest(method, path string) (kind, taskID string) {
 	if method == http.MethodPost {
 		switch path {
-		case "/v1/images/generations", "/v1/images/edits":
+		case "/v1/images/generations", "/v1/images/edits", "/v1/images/generations/async", "/v1/images/edits/async":
 			return "image", ""
 		case "/v1/videos", "/v1/videos/edits", "/v1/videos/extensions":
 			return "video", ""
@@ -314,7 +333,7 @@ func doneBotMediaCompletion(kind string, writer *doneBotMediaCapture) service.Do
 		c.Body = bytes.Clone(body)
 	}
 	if status < 200 || status >= 300 {
-		if status >= 400 && status < 500 {
+		if status >= 400 && status < 500 && status != http.StatusRequestTimeout && status != 499 {
 			c.Status = "failed"
 		}
 		return c
