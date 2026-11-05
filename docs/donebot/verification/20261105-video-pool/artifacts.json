@@ -1,0 +1,28 @@
+[
+  {
+    "sha": "59b3a34002eab55019fa3e1a6fa9b85890b9de58",
+    "version": "0.4.8",
+    "target": {
+      "goos": "linux",
+      "goarch": "amd64"
+    },
+    "archive": "sub2api_0.4.8_linux_amd64.tar.gz",
+    "sha256": "859c11ad82e5efd06b2c52d8d0c38d84b56c7de39d3c3230fe80ea0f75605471",
+    "bytes": 40189873,
+    "binaryElfMachine": 62,
+    "commitEmbedded": true
+  },
+  {
+    "sha": "59b3a34002eab55019fa3e1a6fa9b85890b9de58",
+    "version": "0.4.8",
+    "target": {
+      "goos": "linux",
+      "goarch": "arm64"
+    },
+    "archive": "sub2api_0.4.8_linux_arm64.tar.gz",
+    "sha256": "a0a89d92fc41ec6a1cb8bd90a77c0f761540d94f5480da64aacf8f7db13e8e1b",
+    "bytes": 36377019,
+    "binaryElfMachine": 183,
+    "commitEmbedded": true
+  }
+]

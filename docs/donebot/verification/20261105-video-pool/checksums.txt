@@ -1,0 +1,2 @@
+859c11ad82e5efd06b2c52d8d0c38d84b56c7de39d3c3230fe80ea0f75605471  sub2api_0.4.8_linux_amd64.tar.gz
+a0a89d92fc41ec6a1cb8bd90a77c0f761540d94f5480da64aacf8f7db13e8e1b  sub2api_0.4.8_linux_arm64.tar.gz
