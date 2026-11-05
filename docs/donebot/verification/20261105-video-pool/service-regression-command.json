@@ -1,0 +1,14 @@
+{
+  "cwd": "/Users/zluo/Dev/donebot-api/backend",
+  "command": [
+    "go",
+    "test",
+    "-tags=unit",
+    "./internal/service",
+    "-run",
+    "^(TestDoneBot|TestSeedance)",
+    "-count=1",
+    "-v"
+  ],
+  "exit_code": 0
+}

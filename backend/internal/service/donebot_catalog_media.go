@@ -141,6 +141,12 @@ func doneBotPublicMediaParameters(groupID int64, row DoneBotModel, accounts []Ac
 		if profile == nil {
 			return nil, nil
 		}
+		if row.Kind == "video" {
+			if len(profile.Resolutions) == 0 {
+				continue
+			}
+			profile.Resolutions = doneBotVideoResolutionUnion(nil, profile.Resolutions)
+		}
 		if common == nil {
 			common = profile
 			continue
@@ -150,7 +156,11 @@ func doneBotPublicMediaParameters(groupID int64, row DoneBotModel, accounts []Ac
 		}
 		common.Sizes = doneBotMediaIntersection(common.Sizes, profile.Sizes)
 		common.AspectRatios = doneBotMediaIntersection(common.AspectRatios, profile.AspectRatios)
-		common.Resolutions = doneBotMediaIntersection(common.Resolutions, profile.Resolutions)
+		if row.Kind == "video" {
+			common.Resolutions = doneBotVideoResolutionUnion(common.Resolutions, profile.Resolutions)
+		} else {
+			common.Resolutions = doneBotMediaIntersection(common.Resolutions, profile.Resolutions)
+		}
 		common.Voices = doneBotMediaIntersection(common.Voices, profile.Voices)
 		common.Formats = doneBotMediaIntersection(common.Formats, profile.Formats)
 		common.MusicVersions = doneBotMediaIntersection(common.MusicVersions, profile.MusicVersions)
@@ -239,6 +249,16 @@ func doneBotAccountMediaParameters(account *Account, model string, row DoneBotMo
 		}
 	}
 	return nil
+}
+
+func doneBotVideoResolutionUnion(left, right []string) []string {
+	result := []string{}
+	for _, resolution := range []string{"480p", "720p", "1080p", "4k"} {
+		if slices.Contains(left, resolution) || slices.Contains(right, resolution) {
+			result = append(result, resolution)
+		}
+	}
+	return result
 }
 
 func doneBotMediaIntersection(left, right []string) []string {

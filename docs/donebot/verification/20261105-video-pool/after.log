@@ -1,0 +1,23 @@
+2026/11/05 02:47:48 Timezone initialized: UTC (UTC offset: +00:00)
+=== RUN   TestDoneBotPublicCatalogSeedanceResolutionPool
+--- PASS: TestDoneBotPublicCatalogSeedanceResolutionPool (0.00s)
+=== RUN   TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts
+=== RUN   TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/empty_first
+=== RUN   TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/empty_last
+=== RUN   TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/inactive
+=== RUN   TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/unschedulable
+=== RUN   TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/other_group
+=== RUN   TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/no_native_adapter
+--- PASS: TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts (0.00s)
+    --- PASS: TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/empty_first (0.00s)
+    --- PASS: TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/empty_last (0.00s)
+    --- PASS: TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/inactive (0.00s)
+    --- PASS: TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/unschedulable (0.00s)
+    --- PASS: TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/other_group (0.00s)
+    --- PASS: TestDoneBotPublicCatalogSeedanceResolutionPoolExcludesIneligibleAccounts/no_native_adapter (0.00s)
+=== RUN   TestDoneBotPublicCatalogSeedanceResolutionPoolKeepsConservativeParameters
+--- PASS: TestDoneBotPublicCatalogSeedanceResolutionPoolKeepsConservativeParameters (0.00s)
+=== RUN   TestDoneBotPublicCatalogSeedanceResolutionPoolRequiresStandardPrice
+--- PASS: TestDoneBotPublicCatalogSeedanceResolutionPoolRequiresStandardPrice (0.00s)
+PASS
+ok  	github.com/Wei-Shaw/sub2api/internal/service	0.973s

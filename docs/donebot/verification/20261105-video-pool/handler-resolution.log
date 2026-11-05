@@ -1,0 +1,19 @@
+=== RUN   TestSeedanceResolutionAccountAdmission
+=== RUN   TestSeedanceResolutionAccountAdmission/skip_ineligible_account
+2026/11/05 10:45:16 [OpenAI WS Mode][openai_ws_mode=true] bootstrap enabled=false oauth_enabled=false apikey_enabled=false force_http=false responses_websockets_v2=false responses_websockets=false payload_log_sample_rate=0.000 event_flush_batch_size=0 event_flush_interval_ms=0 prewarm_cooldown_ms=0 retry_backoff_initial_ms=0 retry_backoff_max_ms=0 retry_jitter_ratio=0.000 retry_total_budget_ms=0 ws_read_limit_bytes=16777216
+=== RUN   TestSeedanceResolutionAccountAdmission/skip_four_ineligible_accounts
+2026/11/05 10:45:16 [OpenAI WS Mode][openai_ws_mode=true] bootstrap enabled=false oauth_enabled=false apikey_enabled=false force_http=false responses_websockets_v2=false responses_websockets=false payload_log_sample_rate=0.000 event_flush_batch_size=0 event_flush_interval_ms=0 prewarm_cooldown_ms=0 retry_backoff_initial_ms=0 retry_backoff_max_ms=0 retry_jitter_ratio=0.000 retry_total_budget_ms=0 ws_read_limit_bytes=16777216
+=== RUN   TestSeedanceResolutionAccountAdmission/skip_eight_ineligible_accounts
+2026/11/05 10:45:16 [OpenAI WS Mode][openai_ws_mode=true] bootstrap enabled=false oauth_enabled=false apikey_enabled=false force_http=false responses_websockets_v2=false responses_websockets=false payload_log_sample_rate=0.000 event_flush_batch_size=0 event_flush_interval_ms=0 prewarm_cooldown_ms=0 retry_backoff_initial_ms=0 retry_backoff_max_ms=0 retry_jitter_ratio=0.000 retry_total_budget_ms=0 ws_read_limit_bytes=16777216
+=== RUN   TestSeedanceResolutionAccountAdmission/all_blocked
+2026/11/05 10:45:16 [OpenAI WS Mode][openai_ws_mode=true] bootstrap enabled=false oauth_enabled=false apikey_enabled=false force_http=false responses_websockets_v2=false responses_websockets=false payload_log_sample_rate=0.000 event_flush_batch_size=0 event_flush_interval_ms=0 prewarm_cooldown_ms=0 retry_backoff_initial_ms=0 retry_backoff_max_ms=0 retry_jitter_ratio=0.000 retry_total_budget_ms=0 ws_read_limit_bytes=16777216
+=== RUN   TestSeedanceResolutionAccountAdmission/all_blocked_many
+2026/11/05 10:45:16 [OpenAI WS Mode][openai_ws_mode=true] bootstrap enabled=false oauth_enabled=false apikey_enabled=false force_http=false responses_websockets_v2=false responses_websockets=false payload_log_sample_rate=0.000 event_flush_batch_size=0 event_flush_interval_ms=0 prewarm_cooldown_ms=0 retry_backoff_initial_ms=0 retry_backoff_max_ms=0 retry_jitter_ratio=0.000 retry_total_budget_ms=0 ws_read_limit_bytes=16777216
+--- PASS: TestSeedanceResolutionAccountAdmission (0.00s)
+    --- PASS: TestSeedanceResolutionAccountAdmission/skip_ineligible_account (0.00s)
+    --- PASS: TestSeedanceResolutionAccountAdmission/skip_four_ineligible_accounts (0.00s)
+    --- PASS: TestSeedanceResolutionAccountAdmission/skip_eight_ineligible_accounts (0.00s)
+    --- PASS: TestSeedanceResolutionAccountAdmission/all_blocked (0.00s)
+    --- PASS: TestSeedanceResolutionAccountAdmission/all_blocked_many (0.00s)
+PASS
+ok  	github.com/Wei-Shaw/sub2api/internal/handler	0.948s

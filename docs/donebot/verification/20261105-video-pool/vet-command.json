@@ -1,0 +1,11 @@
+{
+  "cwd": "/Users/zluo/Dev/donebot-api/backend",
+  "command": [
+    "go",
+    "vet",
+    "-tags=unit",
+    "./internal/service",
+    "./internal/handler"
+  ],
+  "exit_code": 0
+}
