@@ -1,0 +1,16 @@
+{
+  "command": "docker buildx imagetools inspect ghcr.io/zluo003/donebot-api:0.4.10",
+  "image": "ghcr.io/zluo003/donebot-api:0.4.10",
+  "digest": "sha256:3acc70cc6cd1923debc5bddaba440a74764c78a2825d986d68b8a80ddf8e0b59",
+  "manifests": [
+    {
+      "platform": "linux/amd64",
+      "digest": "sha256:6981edd385fbd305b7b5e25c02ee43cd79f1f2c9c69896d7cc9b7fb175eaeddb"
+    },
+    {
+      "platform": "linux/arm64",
+      "digest": "sha256:f8fb0afd892dd94421759d426e0931eb84d6181fb8a7ea8ece1d514417ccce22"
+    }
+  ],
+  "runtimeExecuted": false
+}

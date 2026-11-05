@@ -1,0 +1,72 @@
+[
+  {
+    "sha": "05b942ee63d880040d9afb48e74885971c98f930",
+    "version": "0.4.10",
+    "target": {
+      "goos": "linux",
+      "goarch": "amd64"
+    },
+    "archive": "sub2api_0.4.10_linux_amd64.tar.gz",
+    "sha256": "2bcfda76ee2195805d0ec9bb9688d134a24cde21e68883b1e7e41c9e5c02d16e",
+    "bytes": 40261637,
+    "binaryBytes": 127676576,
+    "binaryElfMachine": 62,
+    "commitEmbedded": true,
+    "versionEmbedded": true,
+    "releaseChecksumMatched": true,
+    "releaseAssetDigestMatched": true,
+    "releaseWorkflowBytesIdentical": true,
+    "goVersion": "go1.27.3",
+    "buildSettings": {
+      "-buildmode": "exe",
+      "-compiler": "gc",
+      "-ldflags": "\"-s -w -X main.Commit=05b942ee63d880040d9afb48e74885971c98f930 -X main.Date=2026-11-05T20:40:20Z -X main.BuildType=release\"",
+      "-tags": "embed",
+      "CGO_ENABLED": "0",
+      "GOARCH": "amd64",
+      "GOOS": "linux",
+      "GOAMD64": "v1",
+      "vcs": "git",
+      "vcs.revision": "05b942ee63d880040d9afb48e74885971c98f930",
+      "vcs.time": "2026-11-05T20:39:56Z",
+      "vcs.modified": "false"
+    },
+    "releaseAssetUrl": "https://github.com/Zluo003/donebot-api/releases/download/v0.4.10/sub2api_0.4.10_linux_amd64.tar.gz",
+    "fileType": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, Go BuildID=ajCvIshcu3HqzWDDaoGi/kLMJEUnzW5LAxEt8vxNm/17UojiJre47usX47GjDi/CbPEKAsqT1Eu-Qfu3InD, BuildID[sha1]=0dba37ad201d9dfbf4bedc576a12e75c3ed804bc, stripped"
+  },
+  {
+    "sha": "05b942ee63d880040d9afb48e74885971c98f930",
+    "version": "0.4.10",
+    "target": {
+      "goos": "linux",
+      "goarch": "arm64"
+    },
+    "archive": "sub2api_0.4.10_linux_arm64.tar.gz",
+    "sha256": "1cee1d59d8e24a385c4c4dd46ec6b2380eb751231cdca2f2c02d8eb8970fb956",
+    "bytes": 36449621,
+    "binaryBytes": 118096032,
+    "binaryElfMachine": 183,
+    "commitEmbedded": true,
+    "versionEmbedded": true,
+    "releaseChecksumMatched": true,
+    "releaseAssetDigestMatched": true,
+    "releaseWorkflowBytesIdentical": true,
+    "goVersion": "go1.27.3",
+    "buildSettings": {
+      "-buildmode": "exe",
+      "-compiler": "gc",
+      "-ldflags": "\"-s -w -X main.Commit=05b942ee63d880040d9afb48e74885971c98f930 -X main.Date=2026-11-05T20:40:20Z -X main.BuildType=release\"",
+      "-tags": "embed",
+      "CGO_ENABLED": "0",
+      "GOARCH": "arm64",
+      "GOOS": "linux",
+      "GOARM64": "v8.0",
+      "vcs": "git",
+      "vcs.revision": "05b942ee63d880040d9afb48e74885971c98f930",
+      "vcs.time": "2026-11-05T20:39:56Z",
+      "vcs.modified": "false"
+    },
+    "releaseAssetUrl": "https://github.com/Zluo003/donebot-api/releases/download/v0.4.10/sub2api_0.4.10_linux_arm64.tar.gz",
+    "fileType": "ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, Go BuildID=zMDfN8-qmWIZFczs1RDD/Q6eqU_HqZ6UMk8gexOUr/ev-FnXu3850Thmnu9dip/I87C7-HnQObgh_9-gi6w, BuildID[sha1]=1592d1527f9741282363c3bc8d82ee2f1476cfe7, stripped"
+  }
+]

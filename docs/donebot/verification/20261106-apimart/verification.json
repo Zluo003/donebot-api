@@ -1,0 +1,11 @@
+{
+  "checkedAt": "2026-11-05T20:48:09.741055+00:00",
+  "result": "passed",
+  "releaseUrl": "https://github.com/Zluo003/donebot-api/releases/tag/v0.4.10",
+  "workflowUrl": "https://github.com/Zluo003/donebot-api/actions/runs/42105512692",
+  "sha": "05b942ee63d880040d9afb48e74885971c98f930",
+  "checksumsSha256": "e8cefd8efa7071406d971a1e87eb96229b4c14a063ce4138979b6f157c2fe282",
+  "linuxBinariesExecuted": false,
+  "sourceOrProductionMutated": false,
+  "artifactsEvidence": "artifacts.json"
+}
