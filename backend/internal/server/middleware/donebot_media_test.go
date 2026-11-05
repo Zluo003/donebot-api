@@ -198,6 +198,69 @@ func TestDoneBotMediaRecoveryRequiresIdempotencyAndDoesNotRetryUnknown(t *testin
 	}
 }
 
+func TestDoneBotMediaRecoveryFailsOnlyConfirmedUndispatched503(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		flag       any
+		taskID     string
+		usageID    string
+		usageSet   bool
+		httpStatus int
+		wantStatus string
+	}{
+		{name: "confirmed undispatched", flag: true, wantStatus: "failed"},
+		{name: "unconfirmed same error message", wantStatus: "uncertain"},
+		{name: "false marker", flag: false, wantStatus: "uncertain"},
+		{name: "nonboolean marker", flag: "true", wantStatus: "uncertain"},
+		{name: "task already recorded", flag: true, taskID: "accepted-task", wantStatus: "uncertain"},
+		{name: "billing already recorded", flag: true, usageID: "accepted-usage", wantStatus: "uncertain"},
+		{name: "empty billing marker", flag: true, usageSet: true, wantStatus: "uncertain"},
+		{name: "other server failure", flag: true, httpStatus: http.StatusBadGateway, wantStatus: "uncertain"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			status := tc.httpStatus
+			if status == 0 {
+				status = http.StatusServiceUnavailable
+			}
+			recovery := newDoneBotMediaRecoveryStub()
+			dispatched := 0
+			router := doneBotMediaTestRouter(t, recovery, true, func(c *gin.Context) {
+				dispatched++
+				if tc.flag != nil {
+					c.Set(DoneBotMediaNotDispatched, tc.flag)
+				}
+				if tc.taskID != "" {
+					c.Set(DoneBotMediaTaskID, tc.taskID)
+				}
+				if tc.usageSet || tc.usageID != "" {
+					c.Set(DoneBotMediaUsageRequestID, tc.usageID)
+				}
+				c.Data(status, "application/json", []byte(`{"error":{"type":"api_error","message":"No eligible APIMart accounts"}}`))
+			})
+			body := []byte(`{"model":"image-model","prompt":"waves"}`)
+			first := doneBotMediaTestRequest(router, http.MethodPost, "/v1/images/generations", "application/json", "not-dispatched", body)
+			require.Equal(t, status, first.Code)
+			require.Len(t, recovery.completion, 1)
+			completion := recovery.completion[0]
+			require.Equal(t, tc.wantStatus, completion.Status)
+			require.Equal(t, tc.taskID, completion.TaskID)
+			wantUsageID := tc.usageID
+			if tc.taskID != "" && wantUsageID == "" {
+				wantUsageID = "apimart:image:" + tc.taskID
+			}
+			require.Equal(t, wantUsageID, completion.UsageRequestID)
+			second := doneBotMediaTestRequest(router, http.MethodPost, "/v1/images/generations", "application/json", "not-dispatched", body)
+			if tc.wantStatus == "failed" {
+				require.Equal(t, http.StatusServiceUnavailable, second.Code)
+				require.Equal(t, "true", second.Header().Get("Idempotency-Replayed"))
+			} else {
+				require.Equal(t, http.StatusConflict, second.Code)
+			}
+			require.Equal(t, 1, dispatched)
+		})
+	}
+}
+
 func TestDoneBotMediaRecoveryKeepsRejectionStatusAndRetryAfter(t *testing.T) {
 	for _, status := range []int{http.StatusPaymentRequired, http.StatusTooManyRequests} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {

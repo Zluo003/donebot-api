@@ -11,10 +11,12 @@ describe('account creation actions', () => {
     expect(wrapper.emitted('create')).toBeUndefined()
     expect(wrapper.text()).toContain('admin.accounts.createAccount')
   })
-  it('opens a dedicated APIMart panel', async () => {
+  it.each(['image', 'music', 'tts'])('opens the separate APIMart %s entry', async kind => {
     const wrapper = mount(AccountTableActions, { props: { loading: false } })
-    await wrapper.get('[data-testid="create-apimart-account"]').trigger('click')
-    expect(wrapper.emitted('create-apimart')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="create-apimart-account"]').exists()).toBe(false)
+    await wrapper.get(`[data-testid="create-apimart-${kind}-account"]`).trigger('click')
+    expect(wrapper.emitted('create-apimart')).toEqual([[kind]])
+    expect(wrapper.text()).toContain(`admin.accounts.apimartAccount.services.${kind}.createTitle`)
     expect(wrapper.emitted('create')).toBeUndefined()
   })
 })

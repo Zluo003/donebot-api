@@ -108,6 +108,8 @@ func TestAPIMartHandlerQueueFailureCannotSpendUpstream(t *testing.T) {
 	require.Contains(t, w.Body.String(), "task-accepted")
 	require.Contains(t, w.Body.String(), "do not resubmit")
 	require.Equal(t, 1, upstream.calls)
+	_, notDispatched := c.Get(middleware.DoneBotMediaNotDispatched)
+	require.False(t, notDispatched)
 	slots.assertReleased(t)
 }
 
@@ -131,6 +133,22 @@ func TestAPIMartHandlerRejectsMissingPriceBeforeUpstream(t *testing.T) {
 	require.Equal(t, 503, w.Code, w.Body.String())
 	require.Contains(t, w.Body.String(), "price")
 	require.Zero(t, upstream.calls)
+	slots.assertReleased(t)
+}
+
+func TestAPIMartHandlerNoEligibleAccountConfirmsNoDispatch(t *testing.T) {
+	h, slots, bindings, upstream := newGrokMediaSlotHandler(t, false, false, service.PlatformOpenAI)
+	c, w := apimartHandlerContext(`{"model":"seedream-5-0-flash","prompt":"waves"}`, false)
+	h.APIMartImages(c)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "No eligible APIMart accounts")
+	notDispatched, _ := c.Get(middleware.DoneBotMediaNotDispatched)
+	require.Equal(t, true, notDispatched)
+	require.Zero(t, upstream.calls)
+	require.Empty(t, bindings.pending)
+	require.Empty(t, bindings.jobs)
+	_, hasUsage := c.Get(middleware.DoneBotMediaUsageRequestID)
+	require.False(t, hasUsage)
 	slots.assertReleased(t)
 }
 

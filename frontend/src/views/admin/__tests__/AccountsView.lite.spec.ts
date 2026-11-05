@@ -88,6 +88,11 @@ const VideoAccountModalStub = defineComponent({
   template: '<div data-test="video-account">{{ show ? (account?.name || "new-video") : "" }}</div>'
 })
 
+const ApimartAccountModalStub = defineComponent({
+  props: { show: Boolean, kind: String, account: { type: Object, default: null } },
+  template: '<div data-test="apimart-account" :data-kind="kind">{{ show ? (account?.name || "new-apimart") : "" }}</div>'
+})
+
 const AccountTestModalStub = defineComponent({
   props: { show: Boolean, account: { type: Object, default: null } },
   template: '<div data-test="test-account">{{ show ? account?.name : "" }}</div>'
@@ -106,7 +111,7 @@ function mountView(stubActionMenu = true) {
         AppLayout: { template: '<div><slot /></div>' },
         TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
         DataTable: DataTableStub,
-        AccountTableActions: { template: '<div><button data-test="create-video" @click="$emit(\'create-video\')">video</button><slot name="after" /></div>' },
+        AccountTableActions: { template: '<div><button data-test="create-video" @click="$emit(\'create-video\')">video</button><button v-for="kind in [\'image\', \'music\', \'tts\']" :key="kind" :data-test="`create-apimart-${kind}`" @click="$emit(\'create-apimart\', kind)">{{ kind }}</button><slot name="after" /></div>' },
         AccountTableFilters: true,
         AccountBulkActionsBar: true,
         Pagination: true,
@@ -123,6 +128,7 @@ function mountView(stubActionMenu = true) {
         TLSFingerprintProfilesModal: true,
         CreateAccountModal: true,
         VideoAccountModal: VideoAccountModalStub,
+        ApimartAccountModal: ApimartAccountModalStub,
         EditAccountModal: EditAccountModalStub,
         BulkEditAccountModal: true,
         PlatformTypeBadge: true,
@@ -199,6 +205,29 @@ describe('admin AccountsView lite account list', () => {
     await edit.trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="video-account"]').text()).toBe(fullAccount.name)
+    expect(wrapper.get('[data-test="edit-account"]').text()).toBe('')
+    wrapper.unmount()
+  })
+
+  it.each(['image', 'music', 'tts'])('passes the APIMart %s entry to the dedicated creation form', async kind => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get(`[data-test="create-apimart-${kind}"]`).trigger('click')
+    expect(wrapper.get('[data-test="apimart-account"]').text()).toBe('new-apimart')
+    expect(wrapper.get('[data-test="apimart-account"]').attributes('data-kind')).toBe(kind)
+    expect(wrapper.get('[data-test="edit-account"]').text()).toBe('')
+    wrapper.unmount()
+  })
+
+  it('opens an existing APIMart music account in its own service tab', async () => {
+    getById.mockResolvedValueOnce({ ...fullAccount, type: 'apikey', credentials: { openai_capabilities: ['apimart_suno', 'apimart_tts'], model_mapping: { 'song-alias': 'suno' } } })
+    const wrapper = mountView()
+    await flushPromises()
+    const edit = wrapper.findAll('button').find(button => button.text().includes('common.edit'))!
+    await edit.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="apimart-account"]').text()).toBe(fullAccount.name)
+    expect(wrapper.get('[data-test="apimart-account"]').attributes('data-kind')).toBe('music')
     expect(wrapper.get('[data-test="edit-account"]').text()).toBe('')
     wrapper.unmount()
   })

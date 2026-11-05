@@ -38,7 +38,7 @@ func TestAPIMartSpeechFlushesBeforeUpstreamCompletes(t *testing.T) {
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Post(server.URL+"/speech", "application/json", nil)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { require.NoError(t, resp.Body.Close()) }()
 	first := make([]byte, 5)
 	_, err = io.ReadFull(resp.Body, first)
 	require.NoError(t, err)

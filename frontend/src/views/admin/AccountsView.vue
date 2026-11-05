@@ -457,7 +457,7 @@
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
     <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
-    <ApimartAccountModal :show="showApimartAccount" :account="apimartAccount" :proxies="proxies" :groups="groups" @close="showApimartAccount = false" @created="reload" @updated="handleAccountUpdated" />
+    <ApimartAccountModal :show="showApimartAccount" :account="apimartAccount" :kind="apimartKind" :proxies="proxies" :groups="groups" @close="showApimartAccount = false" @created="reload" @updated="handleAccountUpdated" />
     <VideoAccountModal :show="showVideoAccount" :account="videoAccount" :proxies="proxies" :groups="groups" @close="showVideoAccount = false" @created="reload" @updated="handleAccountUpdated" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
@@ -513,7 +513,7 @@ import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { CreateAccountModal, ApimartAccountModal, VideoAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
-import { isApimartAccount } from '@/components/account/apimartAccount'
+import { apimartAccountKind, isApimartAccount, type ApimartServiceKind } from '@/components/account/apimartAccount'
 import { isSeedanceVideoAccount } from '@/components/account/videoAccount'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
@@ -602,8 +602,10 @@ const selTypes = computed<AccountType[]>(() => {
 const showCreate = ref(false)
 const showApimartAccount = ref(false)
 const apimartAccount = ref<Account | null>(null)
-const openApimartAccountCreate = () => {
+const apimartKind = ref<ApimartServiceKind>('image')
+const openApimartAccountCreate = (kind: ApimartServiceKind) => {
   apimartAccount.value = null
+  apimartKind.value = kind
   showApimartAccount.value = true
 }
 const showVideoAccount = ref(false)
@@ -1903,6 +1905,7 @@ const handleEdit = async (a: AccountListItem) => {
   if (!account) return
   if (isApimartAccount(account)) {
     apimartAccount.value = account
+    apimartKind.value = apimartAccountKind(account)
     showApimartAccount.value = true
     return
   }

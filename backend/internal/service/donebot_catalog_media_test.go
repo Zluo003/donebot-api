@@ -83,7 +83,8 @@ func TestDoneBotCatalogHidesAsyncImagesUntilTaskStorageIsEnabled(t *testing.T) {
 	available, err := doneBotRowsWithoutUnavailableImageTasks(inputs)
 	require.NoError(t, err)
 	require.Len(t, available, len(rows), "provider-native asynchronous images remain available")
-	mapping := accounts[0].Credentials["model_mapping"].(map[string]any)
+	mapping, ok := accounts[0].Credentials["model_mapping"].(map[string]any)
+	require.True(t, ok)
 	mapping["image"] = "gpt-image-1"
 	available, err = doneBotRowsWithoutUnavailableImageTasks(inputs)
 	require.NoError(t, err)

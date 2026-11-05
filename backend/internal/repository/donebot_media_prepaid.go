@@ -73,7 +73,7 @@ func (r *usageBillingRepository) PrepayDoneBotMedia(ctx context.Context, p *serv
 	if exists {
 		return service.ErrDoneBotMediaPending
 	}
-	if opStatus != "dispatching" && !(opStatus == "accepted" && opKind == "image" && opProvider == "donebot") {
+	if opStatus != "dispatching" && (opStatus != "accepted" || opKind != "image" || opProvider != "donebot") {
 		return service.ErrDoneBotMediaPending
 	}
 	limit := concurrency / 2
@@ -267,7 +267,7 @@ func (r *usageBillingRepository) TakeDoneBotMediaRecovery(ctx context.Context, l
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := []service.DoneBotMediaPrecharge{}
 	for rows.Next() {
 		p := service.DoneBotMediaPrecharge{}

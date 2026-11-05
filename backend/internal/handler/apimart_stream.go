@@ -22,7 +22,7 @@ func streamAPIMartSpeech(c *gin.Context, response *service.APIMartResponse, sett
 	c.Header("X-Accel-Buffering", "no")
 	c.Header("Trailer", "X-DoneBot-Stream-Status, X-DoneBot-Stream-Error")
 	c.Status(response.Status)
-	defer response.Stream.Close()
+	defer func() { _ = response.Stream.Close() }()
 	buffer := make([]byte, 32<<10)
 	delivered, readBytes := true, int64(0)
 	var upstreamErr error

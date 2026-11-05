@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -35,6 +36,48 @@ func TestFilterSchedulerCredentialsKeepsGeminiExplicitCacheKeys(t *testing.T) {
 	require.Equal(t, true, filtered[service.GeminiExplicitCacheUpstreamCredentialKey])
 	require.Equal(t, 3600, filtered[service.GeminiExplicitCacheUpstreamMaxTTLCredentialKey])
 	require.NotContains(t, filtered, "service_account_json")
+}
+
+func TestSchedulerMetadataRoundTripPreservesExplicitMediaCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		capabilities any
+	}{
+		{name: "array", capabilities: []string{"apimart_images", "apimart_suno", "apimart_tts", "seedance"}},
+		{name: "object", capabilities: map[string]any{"apimart_images": true, "apimart_suno": true, "apimart_tts": true, "seedance": true, "chat_completions": false}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			account := service.Account{
+				ID: 7, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+				Status: service.StatusActive, Schedulable: true, Concurrency: 250,
+				Credentials: map[string]any{
+					"base_url":            "https://media.example",
+					"openai_capabilities": tc.capabilities,
+					"model_mapping":       map[string]any{"seedream-5-0-flash": "seedream-5-0-flash", "suno": "suno", "gpt-4o-mini-tts": "gpt-4o-mini-tts"},
+					"access_token":        "fixture-token",
+				},
+			}
+			_, metadata, err := marshalSchedulerCacheAccount(account)
+			require.NoError(t, err)
+			var restored service.Account
+			require.NoError(t, json.Unmarshal(metadata, &restored))
+			for _, capability := range []service.OpenAIEndpointCapability{
+				service.OpenAIEndpointCapabilityAPIMartImages,
+				service.OpenAIEndpointCapabilityAPIMartSuno,
+				service.OpenAIEndpointCapabilityAPIMartTTS,
+				service.OpenAIEndpointCapabilitySeedance,
+			} {
+				require.True(t, account.SupportsOpenAIEndpointCapability(capability))
+				require.True(t, restored.SupportsOpenAIEndpointCapability(capability), capability)
+			}
+			require.False(t, restored.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityChatCompletions))
+			require.False(t, restored.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityResponses))
+			require.True(t, restored.IsModelSupported("seedream-5-0-flash"))
+			require.Equal(t, "seedream-5-0-flash", restored.GetMappedModel("seedream-5-0-flash"))
+			require.False(t, restored.IsModelSupported("unconfigured-model"))
+			require.NotContains(t, restored.Credentials, "access_token")
+		})
+	}
 }
 
 func TestSchedulerMetadataAccountKeepsOpenAISubscriptionIdentity(t *testing.T) {

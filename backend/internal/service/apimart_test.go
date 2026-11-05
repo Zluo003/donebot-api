@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -103,15 +104,71 @@ func TestAPIMartCapabilityOptInAndPathIsolation(t *testing.T) {
 	delete(a.Credentials, "openai_capabilities")
 	require.False(t, a.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAPIMartImages))
 	for _, id := range []string{"", "..", "a/b", "a?b", "%2e%2e"} {
-		_, err := buildAPIMartURL("https://api.apimart.ai", APIMartImageTask, id)
+		_, err := apimartOperations[APIMartImageTask].url("https://api.apimart.ai", id)
 		require.Error(t, err, id)
 	}
 	for _, base := range []string{"https://api.apimart.ai", "https://api.apimart.ai/v1/"} {
-		u, err := buildAPIMartURL(base, APIMartMusicTask, "task-1")
+		u, err := apimartOperations[APIMartMusicTask].url(base, "task-1")
 		require.NoError(t, err)
 		require.Equal(t, "https://api.apimart.ai/v1/music/tasks/task-1", u)
 	}
 	require.NotEqual(t, APIMartTaskKey(APIMartImages, "same"), APIMartTaskKey(APIMartSuno, "same"))
+}
+
+func TestAPIMartSchedulerPreservesNativeModelAndHonorsPrivacyGate(t *testing.T) {
+	for _, advanced := range []string{"false", "true"} {
+		for _, explicitMapping := range []bool{false, true} {
+			for _, requirePrivacy := range []bool{false, true} {
+				t.Run(fmt.Sprintf("advanced=%s/mapping=%t/privacy=%t", advanced, explicitMapping, requirePrivacy), func(t *testing.T) {
+					const model = "seedream-5-0-flash"
+					groupID := int64(24)
+					account := apimartTestAccount()
+					account.Status, account.Schedulable, account.Concurrency = StatusActive, true, 250
+					account.GroupIDs = []int64{groupID}
+					if explicitMapping {
+						account.Credentials["model_mapping"] = map[string]any{model: model}
+					}
+					require.True(t, supportsOpenAIRequestModel(account, model, false))
+					require.Equal(t, model, resolveOpenAIAccountUpstreamModelForRequest(account, model, false))
+					repo := schedulerGroupAwareOpenAIAccountRepo{schedulerTestOpenAIAccountRepo{accounts: []Account{*account}}}
+					svc := &OpenAIGatewayService{
+						accountRepo:        repo,
+						cfg:                &config.Config{},
+						rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService(advanced),
+						concurrencyService: NewConcurrencyService(&schedulerTestConcurrencyCache{}),
+						schedulerSnapshot: &SchedulerSnapshotService{
+							accountRepo: repo,
+							groupRepo: guardianAffinityGroupRepo{group: &Group{
+								ID: groupID, Platform: PlatformComposite, RequirePrivacySet: requirePrivacy,
+							}},
+						},
+					}
+					ctx := WithOpenAIProfitControlSuppressed(context.Background())
+					scheduler := &defaultOpenAIAccountScheduler{service: svc}
+					compatible, reason := scheduler.isAccountRequestCompatibleReason(ctx, account, OpenAIAccountScheduleRequest{
+						GroupID: &groupID, RequestedModel: model, RequiredCapability: OpenAIEndpointCapabilityAPIMartImages, RequirePrivacySet: requirePrivacy,
+					})
+					require.Equal(t, !requirePrivacy, compatible)
+					if requirePrivacy {
+						require.Equal(t, "privacy_not_set", reason)
+					}
+					selection, _, err := svc.SelectAccountWithSchedulerForCapability(ctx, &groupID, "", "", model, nil,
+						OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityAPIMartImages, false, false, false, PlatformOpenAI)
+					if requirePrivacy {
+						require.ErrorIs(t, err, ErrNoAvailableAccounts)
+						require.Nil(t, selection)
+						return
+					}
+					require.NoError(t, err)
+					require.NotNil(t, selection)
+					require.Equal(t, account.ID, selection.Account.ID)
+					if selection.ReleaseFunc != nil {
+						selection.ReleaseFunc()
+					}
+				})
+			}
+		}
+	}
 }
 
 func TestAPIMartCompletionOnlyBillsSuccessfulOutputs(t *testing.T) {

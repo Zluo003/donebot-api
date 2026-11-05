@@ -31,6 +31,7 @@ const DoneBotMediaProvider = "donebot.media.provider"
 const DoneBotMediaTaskID = "donebot.media.task_id"
 const DoneBotMediaStreamStatus = "donebot.media.stream_status"
 const DoneBotMediaStreamDelivered = "donebot.media.stream_delivered"
+const DoneBotMediaNotDispatched = "donebot.media.not_dispatched"
 
 type DoneBotMediaRecovery interface {
 	ResolveMediaOwner(context.Context, int64, int64, int64) (service.DoneBotMediaOwner, error)
@@ -171,11 +172,18 @@ func DoneBotMediaRecoveryMiddleware(recovery DoneBotMediaRecovery) gin.HandlerFu
 		if provider, exists := c.Get(DoneBotMediaProvider); exists {
 			completion.Provider, _ = provider.(string)
 		}
-		if usageID, exists := c.Get(DoneBotMediaUsageRequestID); exists {
+		usageID, usageRecorded := c.Get(DoneBotMediaUsageRequestID)
+		if usageRecorded {
 			completion.UsageRequestID, _ = usageID.(string)
 		}
-		if task, exists := c.Get(DoneBotMediaTaskID); exists {
+		task, taskRecorded := c.Get(DoneBotMediaTaskID)
+		if taskRecorded {
 			completion.TaskID, _ = task.(string)
+		}
+		if notDispatched, _ := c.Get(DoneBotMediaNotDispatched); notDispatched == true &&
+			completion.HTTPStatus == http.StatusServiceUnavailable && completion.Status == "uncertain" &&
+			!taskRecorded && !usageRecorded && completion.TaskID == "" && completion.UsageRequestID == "" {
+			completion.Status = "failed"
 		}
 		if completion.TaskID != "" && completion.Provider == "seedance" {
 			completion.TaskKey = service.SeedanceTaskKey(completion.TaskID)

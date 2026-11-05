@@ -168,6 +168,9 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 		defer selection.ReleaseFunc()
 	}
 	if err != nil || selection == nil || selection.Account == nil {
+		if !lookup {
+			c.Set(middleware.DoneBotMediaNotDispatched, true)
+		}
 		h.errorResponse(c, 503, "api_error", "No eligible APIMart accounts")
 		return
 	}

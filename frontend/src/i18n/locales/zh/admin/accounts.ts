@@ -4,12 +4,29 @@ export default {
       description: '管理 AI 平台账号和 Cookie',
       createAccount: '添加账号',
       apimartAccount: {
-        createTitle: '添加 APIMart 账号',
         editTitle: '编辑 APIMart 账号',
-        description: 'Seedream 5.0 Flash 支持文生图、参考图与图层编辑；Suno 仅接入歌曲和音乐生成；TTS 支持文字转语音。音频请求需开启 DoneBot 音频功能。',
+        serviceTabs: 'APIMart 服务',
+        existingServices: '此账号已启用多类服务。各标签页分别维护对应模型，保存时保留未修改的服务。新增账号请分别使用图片、音乐或 TTS 入口。',
+        preservedModels: '保留已有自定义模型：{models}。在此编辑不会删除这些模型映射。',
+        services: {
+          image: {
+            label: '图片', createTitle: '添加 APIMart 图片账号',
+            description: '图片专用账号，仅启用 Seedream 图片接口。Seedream 5.0 Flash 支持文生图、参考图与图层编辑。',
+            pricingHint: '绑定 DoneBot 分组后，在渠道管理中配置图片模型价格，再到 DoneBot 页面同步模型。'
+          },
+          music: {
+            label: '音乐', createTitle: '添加 APIMart 音乐账号',
+            description: '音乐专用账号，仅启用 Suno 歌曲和音乐生成接口。',
+            pricingHint: '绑定 DoneBot 分组后，在渠道管理中按 Suno 版本配置每次生成价格，再到 DoneBot 页面同步模型。'
+          },
+          tts: {
+            label: 'TTS 语音', createTitle: '添加 APIMart TTS 账号',
+            description: '文字转语音专用账号，仅启用 TTS 接口。',
+            pricingHint: '绑定 DoneBot 分组后，在渠道管理中配置 TTS 每百万字符价格，再到 DoneBot 页面同步模型。'
+          }
+        },
         baseUrl: '上游地址', apiKey: '上游 API Key',
         keepKey: '留空保留现有密钥。已保存的密钥不会显示。', models: '允许的模型',
-        pricingHint: '绑定 DoneBot 分组后，在渠道管理中配置模型价格，再到 DoneBot 页面同步模型。Suno 按版本配置每次生成价格；TTS 配置每百万字符价格。',
         proxy: '代理', noProxy: '直连', concurrency: '并发数',
         selectModel: '请至少选择一个模型', invalidFields: '请填写账号名称、密钥和有效的并发数',
         invalidURL: '请输入不含认证信息、查询参数或片段的 HTTP(S) 上游地址',

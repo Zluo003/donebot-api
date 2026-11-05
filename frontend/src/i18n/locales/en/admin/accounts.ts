@@ -4,12 +4,29 @@ export default {
       description: 'Manage AI platform accounts and credentials',
       createAccount: 'Create Account',
       apimartAccount: {
-        createTitle: 'Add APIMart account',
         editTitle: 'Edit APIMart account',
-        description: 'Seedream 5.0 Flash supports text-to-image, image references and layer editing. Suno supports song and music generation. TTS converts text to speech. Audio requests require the DoneBot audio feature.',
+        serviceTabs: 'APIMart services',
+        existingServices: 'This account has multiple services. Edit their models in separate tabs; saving preserves services you have not changed. Use the image, music or TTS action to create separate accounts.',
+        preservedModels: 'Existing custom models are retained: {models}. Editing here does not remove these mappings.',
+        services: {
+          image: {
+            label: 'Images', createTitle: 'Add APIMart image account',
+            description: 'An image account enables only the Seedream image interface. Seedream 5.0 Flash supports text-to-image, image references and layer editing.',
+            pricingHint: 'Bind the DoneBot group, configure image model prices in Channels, then sync models on the DoneBot page.'
+          },
+          music: {
+            label: 'Music', createTitle: 'Add APIMart music account',
+            description: 'A music account enables only Suno song and music generation.',
+            pricingHint: 'Bind the DoneBot group, set Suno prices per generation and version in Channels, then sync models on the DoneBot page.'
+          },
+          tts: {
+            label: 'TTS speech', createTitle: 'Add APIMart TTS account',
+            description: 'A text-to-speech account enables only the TTS interface.',
+            pricingHint: 'Bind the DoneBot group, set TTS prices per million characters in Channels, then sync models on the DoneBot page.'
+          }
+        },
         baseUrl: 'Upstream URL', apiKey: 'Upstream API key',
         keepKey: 'Leave blank to keep the existing key. Saved keys are never displayed.', models: 'Allowed models',
-        pricingHint: 'Bind the DoneBot group, configure model prices in Channels, then sync models on the DoneBot page. Set Suno prices per generation and version, and TTS prices per million characters.',
         proxy: 'Proxy', noProxy: 'Direct connection', concurrency: 'Concurrency',
         selectModel: 'Select at least one model', invalidFields: 'Enter an account name, key and valid concurrency',
         invalidURL: 'Enter an HTTP(S) upstream URL without credentials, query parameters or fragments',
