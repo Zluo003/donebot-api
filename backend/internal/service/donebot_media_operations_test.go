@@ -70,6 +70,28 @@ func (r *doneBotMediaMemoryRepository) Complete(_ context.Context, owner DoneBot
 		op.ReplayBody, op.ReplayContentType, op.ReplayStatus = bytes.Clone(c.Body), c.ContentType, c.HTTPStatus
 		op.ReplayRetryAfter = c.RetryAfter
 	}
+	if c.Diagnostic != nil {
+		var body map[string]any
+		_ = json.Unmarshal(op.ReplayBody, &body)
+		if body == nil {
+			body = map[string]any{}
+		}
+		diagnostic, _ := body["diagnostic"].(map[string]any)
+		if diagnostic == nil {
+			diagnostic = map[string]any{}
+		}
+		var incoming map[string]any
+		_ = json.Unmarshal(doneBotMediaDiagnosticJSON(c.Diagnostic), &incoming)
+		for key, value := range incoming {
+			if (key == "code" || key == "type") && (value == "api_error" || value == "upstream_error") && diagnostic[key] != nil {
+				continue
+			}
+			diagnostic[key] = value
+		}
+		body["diagnostic"] = diagnostic
+		op.ReplayBody, _ = json.Marshal(body)
+		op.ReplayContentType = "application/json"
+	}
 	return cloneDoneBotMedia(op), nil
 }
 
@@ -328,7 +350,7 @@ func TestDoneBotMediaRetryAfterAndSafeFailureReplay(t *testing.T) {
 	s, input, _ := doneBotMediaFixture(t)
 	result, err := s.Begin(context.Background(), input)
 	require.NoError(t, err)
-	op, err := s.Complete(context.Background(), input.Owner, result.Operation.ReceiptID, DoneBotMediaCompletion{Status: "failed", HTTPStatus: 429, RetryAfter: "30", ContentType: "application/json", Body: []byte(`{"error":{"code":"rate_limited","type":"limit_error","message":"private upstream prompt or key"}}`)})
+	op, err := s.Complete(context.Background(), input.Owner, result.Operation.ReceiptID, DoneBotMediaCompletion{Status: "failed", HTTPStatus: 429, RetryAfter: "30", ContentType: "application/json", Body: []byte(`{"error":{"code":"rate_limited","type":"limit_error","message":"Rate limit exceeded; api_key=fixture-private"}}`)})
 	require.NoError(t, err)
 	require.Equal(t, "30", op.ReplayRetryAfter)
 	replay, err := s.Begin(context.Background(), input)
@@ -336,7 +358,9 @@ func TestDoneBotMediaRetryAfterAndSafeFailureReplay(t *testing.T) {
 	require.True(t, replay.Replay)
 	require.Equal(t, "30", replay.Operation.ReplayRetryAfter)
 	require.Equal(t, 429, replay.Operation.ReplayStatus)
-	require.JSONEq(t, `{"error":{"code":"rate_limited","type":"limit_error","message":"Media request could not be completed."}}`, string(replay.Operation.ReplayBody))
+	require.Contains(t, string(replay.Operation.ReplayBody), "Rate limit exceeded")
+	require.NotContains(t, string(replay.Operation.ReplayBody), "fixture-private")
+	require.Equal(t, "rate_limited", DoneBotMediaErrorDiagnostic(op.ReplayStatus, "", op.ReplayBody).Code)
 	for _, invalid := range []string{"sk-donebot-secret", "12\r\nAuthorization: value", "-1", strings.Repeat("1", 65)} {
 		require.Empty(t, doneBotMediaRetryAfter(invalid))
 	}

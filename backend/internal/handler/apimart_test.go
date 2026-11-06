@@ -120,6 +120,8 @@ func TestAPIMartHandlerMissingQueueRejectsBeforePOST(t *testing.T) {
 	require.Equal(t, 503, w.Code, w.Body.String())
 	require.Contains(t, w.Body.String(), "settlement")
 	require.Zero(t, upstream.calls)
+	notDispatched, _ := c.Get(middleware.DoneBotMediaNotDispatched)
+	require.Equal(t, true, notDispatched)
 	slots.assertReleased(t)
 }
 
@@ -133,6 +135,8 @@ func TestAPIMartHandlerRejectsMissingPriceBeforeUpstream(t *testing.T) {
 	require.Equal(t, 503, w.Code, w.Body.String())
 	require.Contains(t, w.Body.String(), "price")
 	require.Zero(t, upstream.calls)
+	notDispatched, _ := c.Get(middleware.DoneBotMediaNotDispatched)
+	require.Equal(t, true, notDispatched)
 	slots.assertReleased(t)
 }
 
@@ -163,6 +167,31 @@ func TestAPIMartHandlerDoesNotRetryChargedPOST(t *testing.T) {
 	require.Equal(t, "30", w.Header().Get("Retry-After"))
 	require.Equal(t, 1, upstream.calls)
 	slots.assertReleased(t)
+}
+
+func TestAPIMartUpstreamErrorsDoNotProveNoDispatch(t *testing.T) {
+	for _, test := range []struct {
+		name, body string
+		status     int
+	}{
+		{name: "upstream server failure", status: http.StatusBadGateway, body: `{"error":{"code":"upstream_error","not_dispatched":true}}`},
+		{name: "application error with successful HTTP status", status: http.StatusOK, body: `{"code":402,"error":{"code":"insufficient_balance","not_dispatched":true}}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h, slots, _, upstream := newGrokMediaSlotHandler(t, false, false, service.PlatformOpenAI, "apimart")
+			upstream.call = func(*http.Request, int64) (*http.Response, error) {
+				return &http.Response{StatusCode: test.status, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(test.body))}, nil
+			}
+			c, w := apimartHandlerContext(`{"model":"seedream-5-0-flash","prompt":"waves"}`, false)
+			c.Request.Header.Set("X-DoneBot-Media-Not-Dispatched", "true")
+			h.APIMartImages(c)
+			require.Equal(t, test.status, w.Code, w.Body.String())
+			require.Equal(t, 1, upstream.calls)
+			_, marked := c.Get(middleware.DoneBotMediaNotDispatched)
+			require.False(t, marked)
+			slots.assertReleased(t)
+		})
+	}
 }
 
 func TestAPIMartFixedChargeAdmissionUsesExactConfiguredTariff(t *testing.T) {

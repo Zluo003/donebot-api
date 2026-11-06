@@ -68,6 +68,13 @@ func (h *DoneBotHandler) ObserveMedia(ctx context.Context, owner service.DoneBot
 	return h.media.Observe(ctx, owner, task, kind, status)
 }
 
+func (h *DoneBotHandler) ObserveMediaResult(ctx context.Context, owner service.DoneBotMediaOwner, task, kind, status string, completion service.DoneBotMediaCompletion) (*service.DoneBotMediaOperation, error) {
+	if h.media == nil {
+		return nil, service.ErrDoneBotMediaNotFound
+	}
+	return h.media.ObserveResult(ctx, owner, task, kind, status, completion)
+}
+
 func (h *DoneBotHandler) ValidateMedia(ctx context.Context, owner service.DoneBotMediaOwner, kind, model string, parameters map[string]any) error {
 	if h == nil {
 		return service.ErrDoneBotGroupUnavailable

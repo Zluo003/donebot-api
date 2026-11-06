@@ -91,6 +91,7 @@ type DoneBotMediaCompletion struct {
 	ContentType    string
 	RetryAfter     string
 	Body           []byte
+	Diagnostic     *DoneBotMediaDiagnostic
 }
 
 type DoneBotMediaOperationRepository interface {
@@ -296,6 +297,10 @@ func (s *DoneBotMediaService) Complete(ctx context.Context, owner DoneBotMediaOw
 	if completion.HTTPStatus == 408 || completion.HTTPStatus == 499 {
 		completion.Status = "uncertain"
 	}
+	if completion.Diagnostic == nil {
+		completion.Diagnostic = DoneBotMediaErrorDiagnostic(completion.HTTPStatus, "", completion.Body)
+	}
+	completion.Diagnostic = doneBotMediaStoredDiagnostic(completion.Diagnostic)
 	completion.RetryAfter = doneBotMediaRetryAfter(completion.RetryAfter)
 	if completion.Body != nil {
 		body, contentType, ok := doneBotMediaSafeResponse(completion.ContentType, completion.Body)
@@ -383,6 +388,10 @@ func (s *DoneBotMediaService) LookupAcceptedTask(ctx context.Context, owner Done
 }
 
 func (s *DoneBotMediaService) Observe(ctx context.Context, owner DoneBotMediaOwner, taskID, kind, status string) (*DoneBotMediaOperation, error) {
+	return s.ObserveResult(ctx, owner, taskID, kind, status, DoneBotMediaCompletion{})
+}
+
+func (s *DoneBotMediaService) ObserveResult(ctx context.Context, owner DoneBotMediaOwner, taskID, kind, status string, completion DoneBotMediaCompletion) (*DoneBotMediaOperation, error) {
 	op, err := s.LookupAcceptedTask(ctx, owner, taskID, kind)
 	if err != nil {
 		return nil, err
@@ -405,26 +414,28 @@ func (s *DoneBotMediaService) Observe(ctx context.Context, owner DoneBotMediaOwn
 	default:
 		return op, nil
 	}
-	return s.Complete(ctx, op.Owner, op.ReceiptID, DoneBotMediaCompletion{Status: status})
+	completion.Status = status
+	return s.Complete(ctx, op.Owner, op.ReceiptID, completion)
 }
 
 // DoneBotMediaReceipt separates pending prepayment from confirmed settlement.
 type DoneBotMediaReceipt struct {
-	PaymentState       string       `json:"payment_state,omitempty"`
-	PrepaidCents       *json.Number `json:"prepaid_cents,omitempty"`
-	RefundedCents      *json.Number `json:"refunded_cents,omitempty"`
-	ReceiptID          string       `json:"receipt_id"`
-	RequestID          string       `json:"request_id"`
-	InstallationID     string       `json:"installation_id"`
-	Status             string       `json:"status"`
-	MediaType          string       `json:"media_type"`
-	Model              string       `json:"model"`
-	TaskID             string       `json:"task_id,omitempty"`
-	Currency           string       `json:"currency"`
-	EstimatedCents     *json.Number `json:"estimated_cents"`
-	ActualCents        *json.Number `json:"actual_cents"`
-	RequestedReasoning *string      `json:"requested_reasoning"`
-	EffectiveReasoning *string      `json:"effective_reasoning"`
+	Diagnostic         *DoneBotMediaDiagnostic `json:"diagnostic,omitempty"`
+	PaymentState       string                  `json:"payment_state,omitempty"`
+	PrepaidCents       *json.Number            `json:"prepaid_cents,omitempty"`
+	RefundedCents      *json.Number            `json:"refunded_cents,omitempty"`
+	ReceiptID          string                  `json:"receipt_id"`
+	RequestID          string                  `json:"request_id"`
+	InstallationID     string                  `json:"installation_id"`
+	Status             string                  `json:"status"`
+	MediaType          string                  `json:"media_type"`
+	Model              string                  `json:"model"`
+	TaskID             string                  `json:"task_id,omitempty"`
+	Currency           string                  `json:"currency"`
+	EstimatedCents     *json.Number            `json:"estimated_cents"`
+	ActualCents        *json.Number            `json:"actual_cents"`
+	RequestedReasoning *string                 `json:"requested_reasoning"`
+	EffectiveReasoning *string                 `json:"effective_reasoning"`
 }
 
 func (s *DoneBotMediaService) Receipt(ctx context.Context, userID int64, installationID, receiptID string) (*DoneBotMediaReceipt, error) {
@@ -448,6 +459,7 @@ func (s *DoneBotMediaService) Receipt(ctx context.Context, userID int64, install
 	}
 	receipt := &DoneBotMediaReceipt{ReceiptID: op.ReceiptID, RequestID: op.UsageRequestID, InstallationID: owner.InstallationID, Status: op.Status,
 		MediaType: op.Kind, Model: op.Model, TaskID: op.TaskID, Currency: "CNY", EstimatedCents: op.EstimatedCents}
+	receipt.Diagnostic = DoneBotMediaErrorDiagnostic(op.ReplayStatus, "", op.ReplayBody)
 	if s.prepaid != nil {
 		p, err := s.prepaid.LookupDoneBotMediaPrecharge(ctx, receiptID, owner.APIKeyID, "")
 		if err != nil {
@@ -517,7 +529,7 @@ func doneBotMediaSafeResponse(contentType string, body []byte) ([]byte, string, 
 	if strings.HasPrefix(mediaType, "audio/") || mediaType == "application/octet-stream" {
 		return bytes.Clone(body), mediaType, true
 	}
-	if mediaType != "application/json" || bytes.Contains(bytes.ToLower(body), []byte("sk-donebot-")) {
+	if mediaType != "application/json" {
 		return nil, "", false
 	}
 	var value any
@@ -548,13 +560,23 @@ func doneBotMediaSafeJSON(value any, depth int) any {
 				case json.Number, bool, nil:
 					clean[key] = scalar
 				case string:
-					if len(scalar) <= 600 && !doneBotMediaCredential.MatchString(scalar) {
+					if (key == "code" || key == "type" || key == "request_id") && doneBotMediaDiagnosticID(scalar) != "" {
+						clean[key] = scalar
+					} else if key != "code" && key != "type" && key != "request_id" && safeMediaIdentifier(scalar, 600) && !doneBotMediaDiagnosticSecret.MatchString(scalar) {
 						clean[key] = scalar
 					}
 				}
+			case "http_status":
+				if status, ok := item.(json.Number); ok {
+					if code, err := status.Int64(); err == nil && code >= 100 && code <= 599 {
+						clean[key] = status
+					}
+				}
 			case "message":
-				clean[key] = "Media request could not be completed."
-			case "data", "result", "error", "images", "videos", "audio", "music", "outputs":
+				if message, ok := item.(string); ok {
+					clean[key] = doneBotMediaDiagnosticMessage(message)
+				}
+			case "data", "result", "error", "diagnostic", "images", "videos", "audio", "music", "outputs":
 				if child := doneBotMediaSafeJSON(item, depth+1); child != nil {
 					clean[key] = child
 				}

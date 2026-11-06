@@ -260,18 +260,28 @@ func (s *ImageTaskService) CompleteDelivered(ctx context.Context, id string, sta
 		}
 		result = rewritten
 	}
-	err := s.finish(ctx, id, ImageTaskStatusCompleted, statusCode, result, nil)
+	err := s.finish(ctx, id, ImageTaskStatusCompleted, statusCode, result, nil, false)
 	return err == nil, err
 }
 
 func (s *ImageTaskService) Fail(ctx context.Context, id string, statusCode int, taskErr json.RawMessage) error {
+	return s.fail(ctx, id, statusCode, taskErr, false)
+}
+
+// FailNotDispatched requires the caller to have confirmed internally that no
+// upstream request was attempted; response fields and caller headers are not proof.
+func (s *ImageTaskService) FailNotDispatched(ctx context.Context, id string, statusCode int, taskErr json.RawMessage) error {
+	return s.fail(ctx, id, statusCode, taskErr, true)
+}
+
+func (s *ImageTaskService) fail(ctx context.Context, id string, statusCode int, taskErr json.RawMessage, notDispatched bool) error {
 	if !json.Valid(taskErr) {
 		taskErr = imageTaskErrorJSON("api_error", "image generation failed")
 	}
-	return s.finish(ctx, id, ImageTaskStatusFailed, statusCode, nil, taskErr)
+	return s.finish(ctx, id, ImageTaskStatusFailed, statusCode, nil, taskErr, notDispatched)
 }
 
-func (s *ImageTaskService) finish(ctx context.Context, id, status string, statusCode int, result, taskErr json.RawMessage) error {
+func (s *ImageTaskService) finish(ctx context.Context, id, status string, statusCode int, result, taskErr json.RawMessage, notDispatched bool) error {
 	if s == nil || s.store == nil {
 		return ErrImageTaskUnavailable
 	}
@@ -282,7 +292,7 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 		}
 		return ErrImageTaskUnavailable.WithCause(err)
 	}
-	if task.ReceiptID != "" && status == ImageTaskStatusFailed && statusCode >= http.StatusInternalServerError {
+	if task.ReceiptID != "" && status == ImageTaskStatusFailed && !notDispatched && (statusCode >= http.StatusInternalServerError || statusCode == http.StatusRequestTimeout || statusCode == 499) {
 		status = ImageTaskStatusUncertain
 	}
 	now := time.Now().UTC()

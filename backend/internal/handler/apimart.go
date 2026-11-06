@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"mime"
+	"net/http"
 	"strings"
 	"time"
 
@@ -42,6 +43,13 @@ func (h *OpenAIGatewayHandler) IsAPIMartImageRequest(c *gin.Context, model strin
 }
 
 func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.APIMartEndpoint) {
+	lookup := endpoint.IsLookup()
+	forwardStarted := false
+	defer func() {
+		if !lookup && !forwardStarted && c.Writer.Status() >= http.StatusInternalServerError {
+			c.Set(middleware.DoneBotMediaNotDispatched, true)
+		}
+	}()
 	key, ok := middleware.GetAPIKeyFromContext(c)
 	if !ok || key.Group == nil {
 		h.errorResponse(c, 401, "authentication_error", "Invalid API key")
@@ -60,7 +68,6 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 	if !h.ensureResponsesDependencies(c, log) {
 		return
 	}
-	lookup := endpoint.IsLookup()
 	var body []byte
 	var err error
 	var info service.APIMartRequestInfo
@@ -168,9 +175,6 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 		defer selection.ReleaseFunc()
 	}
 	if err != nil || selection == nil || selection.Account == nil {
-		if !lookup {
-			c.Set(middleware.DoneBotMediaNotDispatched, true)
-		}
 		h.errorResponse(c, 503, "api_error", "No eligible APIMart accounts")
 		return
 	}
@@ -247,6 +251,7 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 			return
 		}
 	}
+	forwardStarted = true
 	response, err := h.gatewayService.ForwardAPIMart(ctx, c, account, endpoint, taskID, body)
 	if err != nil {
 		log.Warn("apimart.forward_failed")

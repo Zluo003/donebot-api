@@ -117,15 +117,30 @@ func (r *doneBotMediaOperationRepository) SetEstimate(ctx context.Context, owner
 }
 
 func (r *doneBotMediaOperationRepository) Complete(ctx context.Context, owner service.DoneBotMediaOwner, receiptID string, c service.DoneBotMediaCompletion) (*service.DoneBotMediaOperation, error) {
-	args := append(doneBotMediaOwnerArgs(owner), receiptID, c.Status, c.TaskID, c.TaskKey, c.Provider, c.UsageRequestID, c.HTTPStatus, c.ContentType, c.Body, c.RetryAfter)
+	var diagnostic any
+	if c.Diagnostic != nil {
+		encoded, err := json.Marshal(c.Diagnostic)
+		if err != nil {
+			return nil, err
+		}
+		diagnostic = string(encoded)
+	}
+	args := append(doneBotMediaOwnerArgs(owner), receiptID, c.Status, c.TaskID, c.TaskKey, c.Provider, c.UsageRequestID, c.HTTPStatus, c.ContentType, c.Body, c.RetryAfter, diagnostic)
 	result, err := clientFromContext(ctx, r.client).ExecContext(ctx, `UPDATE donebot_media_operations SET
  status=CASE WHEN status='processing' AND $6='accepted' THEN status ELSE $6 END,
  task_id=COALESCE(NULLIF($7,''),task_id),provider_task_key=COALESCE(NULLIF($8,''),provider_task_key),
  provider=COALESCE(NULLIF($9,''),provider),usage_request_id=CASE WHEN usage_request_id LIKE 'dbm:charge:%' THEN usage_request_id ELSE COALESCE(NULLIF($10,''),usage_request_id) END,
  replay_status=CASE WHEN replay_body IS NULL AND $13::bytea IS NOT NULL THEN NULLIF($11,0) ELSE replay_status END,
- replay_content_type=CASE WHEN replay_body IS NULL AND $13::bytea IS NOT NULL THEN $12 ELSE replay_content_type END,
+ replay_content_type=CASE WHEN replay_body IS NULL AND $13::bytea IS NOT NULL THEN $12 WHEN replay_body IS NULL AND $15::jsonb IS NOT NULL THEN 'application/json' ELSE replay_content_type END,
  replay_retry_after=CASE WHEN replay_body IS NULL AND $13::bytea IS NOT NULL THEN $14 ELSE replay_retry_after END,
- replay_body=COALESCE(replay_body,$13::bytea),updated_at=NOW()
+ replay_body=CASE WHEN $15::jsonb IS NOT NULL AND
+   ((replay_body IS NOT NULL AND replay_content_type='application/json') OR (replay_body IS NULL AND ($13::bytea IS NULL OR $12='application/json')))
+ THEN convert_to((COALESCE(convert_from(COALESCE(replay_body,$13::bytea),'UTF8')::jsonb,'{}'::jsonb) ||
+   jsonb_build_object('diagnostic',COALESCE(convert_from(replay_body,'UTF8')::jsonb->'diagnostic','{}'::jsonb) ||
+   jsonb_strip_nulls($15::jsonb || jsonb_build_object(
+     'code',CASE WHEN $15::jsonb->>'code' IN ('api_error','upstream_error') AND COALESCE(convert_from(replay_body,'UTF8')::jsonb->'diagnostic'->>'code','')<>'' THEN NULL ELSE $15::jsonb->'code' END,
+     'type',CASE WHEN $15::jsonb->>'type' IN ('api_error','upstream_error') AND COALESCE(convert_from(replay_body,'UTF8')::jsonb->'diagnostic'->>'type','')<>'' THEN NULL ELSE $15::jsonb->'type' END))))::text,'UTF8')
+ ELSE COALESCE(replay_body,$13::bytea) END,updated_at=NOW()
  WHERE `+doneBotMediaOwnerWhere+` AND receipt_id=$5::uuid
  AND (status IN ('dispatching','accepted','processing','uncertain') OR status=$6 OR ($6='refunded' AND status IN ('completed','failed','cancelled')))
  AND (task_id='' OR $7='' OR task_id=$7)

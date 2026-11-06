@@ -1105,6 +1105,9 @@ func buildOpenAIImagesStreamErrorBodyFromUpstream(err *OpenAIImagesUpstreamError
 	if param := strings.TrimSpace(err.Param); param != "" {
 		body, _ = sjson.SetBytes(body, "error.param", param)
 	}
+	if requestID := doneBotMediaDiagnosticID(err.UpstreamRequestID); requestID != "" {
+		body, _ = sjson.SetBytes(body, "error.request_id", requestID)
+	}
 	return body
 }
 
@@ -1125,6 +1128,9 @@ func writeOpenAIImagesUpstreamErrorResponse(c *gin.Context, err *OpenAIImagesUps
 	}
 	if param := strings.TrimSpace(err.Param); param != "" {
 		errorObj["param"] = param
+	}
+	if requestID := doneBotMediaDiagnosticID(err.UpstreamRequestID); requestID != "" {
+		errorObj["request_id"] = requestID
 	}
 	c.JSON(err.clientStatusCode(), gin.H{
 		"error": errorObj,

@@ -260,6 +260,7 @@ func (h *AsyncImageHandler) validateRequest(c *gin.Context, platform string, bod
 
 func (h *AsyncImageHandler) executeWithGateway(platform string, c *gin.Context) {
 	if h.openAI == nil {
+		c.Set(middleware2.DoneBotMediaNotDispatched, true)
 		imageTaskJSONError(c, http.StatusServiceUnavailable, "api_error", "image gateway is unavailable")
 		return
 	}
@@ -282,6 +283,7 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 		}
 	}()
 
+	taskCtx.Set(middleware2.DoneBotMediaNotDispatched, false)
 	h.execute(platform, taskCtx)
 	body := bytes.TrimSpace(recorder.Body.Bytes())
 	if pending, _ := taskCtx.Get(doneBotImageSettlementPending); pending == true {
@@ -315,7 +317,21 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 	if h.openAI != nil {
 		h.openAI.refundDoneBotRejectedMedia(taskCtx, statusCode)
 	}
-	h.failTask(taskID, statusCode, extractImageTaskError(body))
+	taskError := extractImageTaskError(body)
+	if service.DoneBotMediaReceiptID(taskCtx.Request.Context()) != "" {
+		if diagnostic := service.DoneBotMediaErrorDiagnostic(statusCode, recorder.Header().Get("X-Request-Id"), body); diagnostic != nil {
+			taskError, _ = json.Marshal(diagnostic)
+		}
+	}
+	if notDispatched, _ := taskCtx.Get(middleware2.DoneBotMediaNotDispatched); notDispatched == true && statusCode >= http.StatusInternalServerError {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := h.tasks.FailNotDispatched(ctx, taskID, statusCode, taskError); err != nil {
+			logger.L().Error("image_task.failure_store_failed", zap.String("task_id", taskID), zap.Error(err))
+		}
+		return
+	}
+	h.failTask(taskID, statusCode, taskError)
 }
 
 func (h *AsyncImageHandler) failTask(taskID string, statusCode int, taskErr json.RawMessage) {

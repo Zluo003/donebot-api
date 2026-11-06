@@ -73,3 +73,32 @@ go test -tags unit ./internal/service ./internal/repository -run 'TestDoneBotSto
 
 切换到新驱动不会自动迁移旧文件；旧文件保留原存储快照。已保存的错误公网域名
 不会按名称猜测修正，需要在对应驱动的地址字段中填写实际可访问地址。
+
+## 媒体诊断与状态
+
+用户随后提供的客户端截图只有固定的未确认提示。只读查询本机最新
+`gpt-image-2.5-flare` 任务及网关管理页，其任务
+`imgtask_6a49f9ec901b456283f3982fb4e49fed` 为 `uncertain`。现场没有取得足以
+判断该次上游最终成功或失败的诊断，不能把用户描述或 HTTP 码单独作为退款依据。
+
+客户端任务轮询曾用固定英文覆盖网关的 `error` 和 `http_status`，失败分支也只保留
+通用提示。网关回执恢复的 replay sanitizer 另外会将具体 message 替换成固定提示，
+且原回执没有诊断字段。两端修复统一使用可选的
+`diagnostic: {http_status, code, type, request_id, message}`，保留脱敏、限长的原因，
+不把原始供应商正文、URL、凭据或用户输入复制进诊断。
+
+明确尚未进入上游 Forward 的本地错误使用内部可信的未派发标记；普通超时和
+连接中断仍保守核对。诊断仅用于解释，不授予重新提交、退款或改变任务归属的权限。
+完整详情展示须使用更新后的客户端；存储与下载修复仅部署新版网关即可生效。
+
+定向 service、handler 和 middleware 回归通过，覆盖可信内部标记与 body/header 伪造、
+408/499 原生任务轮询到回执仍保留预扣且不退款、可信未派发 503 的幂等退款、具体诊断
+进入 Bot 输入、未知任务恢复不增加付费 POST。真实隔离 PostgreSQL 回归验证诊断增量
+合并不改写原接受响应、跨账号/安装拒绝、重建服务后回执仍带具体原因、泛化错误不擦除
+既有原因，以及原始凭据、供应商 URL 与请求正文不进入诊断。全量 golangci-lint 通过。
+
+```sh
+cd backend
+go test -tags unit ./internal/service -run 'TestDoneBotMedia|TestOpenAIImages|TestForwardImages|TestImageTask' -count=1
+go test -tags integration ./internal/repository -run 'TestDoneBotMediaDatabase' -count=1 -timeout 5m
+```

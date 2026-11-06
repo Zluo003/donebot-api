@@ -79,8 +79,16 @@ func DoneBotMediaRecoveryMiddleware(recovery DoneBotMediaRecovery) gin.HandlerFu
 				}
 				if status != "" {
 					ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 5*time.Second)
-					if _, err := recovery.ObserveMedia(ctx, owner, taskID, kind, status); err != nil && !errors.Is(err, service.ErrDoneBotMediaNotFound) {
-						_ = c.Error(err)
+					var observeErr error
+					if observer, ok := recovery.(interface {
+						ObserveMediaResult(context.Context, service.DoneBotMediaOwner, string, string, string, service.DoneBotMediaCompletion) (*service.DoneBotMediaOperation, error)
+					}); ok {
+						_, observeErr = observer.ObserveMediaResult(ctx, owner, taskID, kind, status, service.DoneBotMediaCompletion{Diagnostic: service.DoneBotMediaErrorDiagnostic(writer.Status(), writer.Header().Get("X-Request-Id"), writer.body.Bytes())})
+					} else {
+						_, observeErr = recovery.ObserveMedia(ctx, owner, taskID, kind, status)
+					}
+					if observeErr != nil && !errors.Is(observeErr, service.ErrDoneBotMediaNotFound) {
+						_ = c.Error(observeErr)
 					}
 					cancel()
 				}
@@ -155,6 +163,7 @@ func DoneBotMediaRecoveryMiddleware(recovery DoneBotMediaRecovery) gin.HandlerFu
 			}
 		}
 		if response.ErrorFrom(c, validationErr) {
+			c.Set(DoneBotMediaNotDispatched, true)
 			c.Abort()
 		} else {
 			c.Next()
@@ -181,7 +190,7 @@ func DoneBotMediaRecoveryMiddleware(recovery DoneBotMediaRecovery) gin.HandlerFu
 			completion.TaskID, _ = task.(string)
 		}
 		if notDispatched, _ := c.Get(DoneBotMediaNotDispatched); notDispatched == true &&
-			completion.HTTPStatus == http.StatusServiceUnavailable && completion.Status == "uncertain" &&
+			completion.HTTPStatus >= http.StatusInternalServerError && completion.Status == "uncertain" &&
 			!taskRecorded && !usageRecorded && completion.TaskID == "" && completion.UsageRequestID == "" {
 			completion.Status = "failed"
 		}

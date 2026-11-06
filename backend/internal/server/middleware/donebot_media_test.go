@@ -198,7 +198,7 @@ func TestDoneBotMediaRecoveryRequiresIdempotencyAndDoesNotRetryUnknown(t *testin
 	}
 }
 
-func TestDoneBotMediaRecoveryFailsOnlyConfirmedUndispatched503(t *testing.T) {
+func TestDoneBotMediaRecoveryFailsOnlyConfirmedUndispatchedServerErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		flag       any
@@ -215,7 +215,9 @@ func TestDoneBotMediaRecoveryFailsOnlyConfirmedUndispatched503(t *testing.T) {
 		{name: "task already recorded", flag: true, taskID: "accepted-task", wantStatus: "uncertain"},
 		{name: "billing already recorded", flag: true, usageID: "accepted-usage", wantStatus: "uncertain"},
 		{name: "empty billing marker", flag: true, usageSet: true, wantStatus: "uncertain"},
-		{name: "other server failure", flag: true, httpStatus: http.StatusBadGateway, wantStatus: "uncertain"},
+		{name: "confirmed undispatched bad gateway", flag: true, httpStatus: http.StatusBadGateway, wantStatus: "failed"},
+		{name: "confirmed undispatched internal error", flag: true, httpStatus: http.StatusInternalServerError, wantStatus: "failed"},
+		{name: "unconfirmed bad gateway", httpStatus: http.StatusBadGateway, wantStatus: "uncertain"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			status := tc.httpStatus
@@ -251,7 +253,7 @@ func TestDoneBotMediaRecoveryFailsOnlyConfirmedUndispatched503(t *testing.T) {
 			require.Equal(t, wantUsageID, completion.UsageRequestID)
 			second := doneBotMediaTestRequest(router, http.MethodPost, "/v1/images/generations", "application/json", "not-dispatched", body)
 			if tc.wantStatus == "failed" {
-				require.Equal(t, http.StatusServiceUnavailable, second.Code)
+				require.Equal(t, status, second.Code)
 				require.Equal(t, "true", second.Header().Get("Idempotency-Replayed"))
 			} else {
 				require.Equal(t, http.StatusConflict, second.Code)
@@ -259,6 +261,26 @@ func TestDoneBotMediaRecoveryFailsOnlyConfirmedUndispatched503(t *testing.T) {
 			require.Equal(t, 1, dispatched)
 		})
 	}
+}
+
+func TestDoneBotMediaValidationUnavailableConfirmsNoDispatch(t *testing.T) {
+	recovery := newDoneBotMediaRecoveryStub()
+	recovery.validateErr = infraerrors.ServiceUnavailable("CATALOG_UNAVAILABLE", "catalog is unavailable")
+	dispatched := 0
+	router := doneBotMediaTestRouter(t, recovery, true, func(c *gin.Context) {
+		dispatched++
+		c.Status(http.StatusAccepted)
+	})
+	body := []byte(`{"model":"image-model","prompt":"waves"}`)
+	first := doneBotMediaTestRequest(router, http.MethodPost, "/v1/images/generations", "application/json", "unavailable-catalog", body)
+	require.Equal(t, http.StatusServiceUnavailable, first.Code)
+	require.Zero(t, dispatched)
+	require.Len(t, recovery.completion, 1)
+	require.Equal(t, "failed", recovery.completion[0].Status)
+	second := doneBotMediaTestRequest(router, http.MethodPost, "/v1/images/generations", "application/json", "unavailable-catalog", body)
+	require.Equal(t, http.StatusServiceUnavailable, second.Code)
+	require.Equal(t, "true", second.Header().Get("Idempotency-Replayed"))
+	require.Zero(t, dispatched)
 }
 
 func TestDoneBotMediaRecoveryKeepsRejectionStatusAndRetryAfter(t *testing.T) {
@@ -336,6 +358,31 @@ func TestDoneBotMediaRecoveryPollObservesNativeStatusWithoutChangingResponse(t *
 			require.Empty(t, recovery.completion)
 		})
 	}
+}
+
+type doneBotMediaDiagnosticObserver struct {
+	*doneBotMediaRecoveryStub
+	diagnostic *service.DoneBotMediaDiagnostic
+}
+
+func (s *doneBotMediaDiagnosticObserver) ObserveMediaResult(ctx context.Context, owner service.DoneBotMediaOwner, task, kind, status string, completion service.DoneBotMediaCompletion) (*service.DoneBotMediaOperation, error) {
+	s.diagnostic = completion.Diagnostic
+	return s.ObserveMedia(ctx, owner, task, kind, status)
+}
+
+func TestDoneBotMediaRecoveryPollPreservesSafeDiagnostic(t *testing.T) {
+	recovery := &doneBotMediaDiagnosticObserver{doneBotMediaRecoveryStub: newDoneBotMediaRecoveryStub()}
+	native := `{"status":"uncertain","http_status":502,"error":{"code":"provider_capacity","request_id":"req-provider","message":"No image workers available; https://private.invalid/?key=secret"}}`
+	router := doneBotMediaTestRouter(t, recovery, true, func(c *gin.Context) { c.Data(200, "application/json", []byte(native)) })
+	w := doneBotMediaTestRequest(router, http.MethodGet, "/v1/images/tasks/image-task", "application/json", "", nil)
+	require.Equal(t, native, w.Body.String())
+	require.Len(t, recovery.observed, 1)
+	require.Equal(t, "uncertain", recovery.observed[0].status)
+	require.Equal(t, 502, recovery.diagnostic.HTTPStatus)
+	require.Equal(t, "provider_capacity", recovery.diagnostic.Code)
+	require.Equal(t, "req-provider", recovery.diagnostic.RequestID)
+	require.Contains(t, recovery.diagnostic.Message, "No image workers available")
+	require.NotContains(t, recovery.diagnostic.Message, "private")
 }
 
 func TestDoneBotMediaRecoveryOverflowForwardsAllBytesWithoutReplayCache(t *testing.T) {

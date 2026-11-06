@@ -22,6 +22,12 @@ import (
 // POST /v1/images/generations
 // POST /v1/images/edits
 func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
+	forwardStarted := false
+	defer func() {
+		if !forwardStarted && c.Writer.Status() >= http.StatusInternalServerError {
+			c.Set(middleware2.DoneBotMediaNotDispatched, true)
+		}
+	}()
 	streamStarted := false
 	defer h.recoverResponsesPanic(c, &streamStarted)
 
@@ -290,6 +296,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		}
 		forwardStart := time.Now()
 		writerSizeBeforeForward := service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
+		forwardStarted = true
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
 				if accountReleaseFunc != nil {
