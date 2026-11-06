@@ -1,0 +1,17 @@
+{
+  "image": "ghcr.io/zluo003/donebot-api:0.4.13",
+  "indexDigest": "sha256:231593c6a4b21c48e30294c48a64e807cd14058c614ff1c052ab9b168640dca4",
+  "platforms": {
+    "linux/amd64": "sha256:3378ff725e8350613b4954386e67715ea5a05a1830070bac21c694afd069e793",
+    "linux/arm64": "sha256:dd4d5e013473f7a1a3cc56c29c2da2a51d8ac77c414dd8374bb28c74f99b2d72"
+  },
+  "sourceSHA": "0eb2f07f8b246043be21719d8a581b820152995f",
+  "version": "0.4.13",
+  "workflowURL": "https://github.com/Zluo003/donebot-api/actions/runs/42221993083",
+  "workflowConclusion": "success",
+  "workflowLogContainsPlatformDigests": {
+    "sha256:3378ff725e8350613b4954386e67715ea5a05a1830070bac21c694afd069e793": true,
+    "sha256:dd4d5e013473f7a1a3cc56c29c2da2a51d8ac77c414dd8374bb28c74f99b2d72": true
+  },
+  "executedContainer": false
+}

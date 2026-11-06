@@ -1,0 +1,79 @@
+{
+  "release": "https://github.com/Zluo003/donebot-api/releases/tag/v0.4.13",
+  "publishedAt": "2026-11-06T13:07:55Z",
+  "sourceSHA": "0eb2f07f8b246043be21719d8a581b820152995f",
+  "artifacts": [
+    {
+      "arch": "amd64",
+      "archive": "sub2api_0.4.13_linux_amd64.tar.gz",
+      "archiveBytes": 40296582,
+      "sha256": "4620e850f74eb09b53250aec1b829dbbc8a81d8544ed807cf9bf75a213751841",
+      "binaryBytes": 127807648,
+      "elfMachine": 62,
+      "goVersion": "go1.27.3",
+      "settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "-ldflags": "\"-s -w -X main.Commit=0eb2f07f8b246043be21719d8a581b820152995f -X main.Date=2026-11-06T13:00:35Z -X main.BuildType=release\"",
+        "-tags": "embed",
+        "CGO_ENABLED": "0",
+        "GOARCH": "amd64",
+        "GOOS": "linux",
+        "GOAMD64": "v1",
+        "vcs": "git",
+        "vcs.revision": "0eb2f07f8b246043be21719d8a581b820152995f",
+        "vcs.time": "2026-11-06T12:47:51Z",
+        "vcs.modified": "false"
+      },
+      "dependencies": {
+        "github.com/andybalholm/brotli": "v1.2.7",
+        "github.com/klauspost/compress": "v1.20.2",
+        "golang.org/x/net": "v0.62.0",
+        "golang.org/x/crypto": "v0.58.0",
+        "google.golang.org/grpc": "v1.83.2",
+        "google.golang.org/protobuf": "v1.36.11"
+      },
+      "dependencyCount": 147,
+      "versionEmbedded": true,
+      "url": "https://github.com/Zluo003/donebot-api/releases/download/v0.4.13/sub2api_0.4.13_linux_amd64.tar.gz",
+      "fileType": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, Go BuildID=YlsTBU938v33pDYaTK28/TqIvaM6dUgUfdIP83GB8/V_fOaOnUObBQyqtNmWMW/6XlZD30X9EBehX04_G6Z, BuildID[sha1]=80b17cff38032abf4192c7bb0537c32778db0bed, stripped"
+    },
+    {
+      "arch": "arm64",
+      "archive": "sub2api_0.4.13_linux_arm64.tar.gz",
+      "archiveBytes": 36466109,
+      "sha256": "2fc41cbb26967d0c4051cdda2e0ca1fcd021caaee9206e90756650d4ba816bbf",
+      "binaryBytes": 118227104,
+      "elfMachine": 183,
+      "goVersion": "go1.27.3",
+      "settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "-ldflags": "\"-s -w -X main.Commit=0eb2f07f8b246043be21719d8a581b820152995f -X main.Date=2026-11-06T13:00:35Z -X main.BuildType=release\"",
+        "-tags": "embed",
+        "CGO_ENABLED": "0",
+        "GOARCH": "arm64",
+        "GOOS": "linux",
+        "GOARM64": "v8.0",
+        "vcs": "git",
+        "vcs.revision": "0eb2f07f8b246043be21719d8a581b820152995f",
+        "vcs.time": "2026-11-06T12:47:51Z",
+        "vcs.modified": "false"
+      },
+      "dependencies": {
+        "github.com/andybalholm/brotli": "v1.2.7",
+        "github.com/klauspost/compress": "v1.20.2",
+        "golang.org/x/net": "v0.62.0",
+        "golang.org/x/crypto": "v0.58.0",
+        "google.golang.org/grpc": "v1.83.2",
+        "google.golang.org/protobuf": "v1.36.11"
+      },
+      "dependencyCount": 147,
+      "versionEmbedded": true,
+      "url": "https://github.com/Zluo003/donebot-api/releases/download/v0.4.13/sub2api_0.4.13_linux_arm64.tar.gz",
+      "fileType": "ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, Go BuildID=2HrspDs8ASEfUKMfS2c1/NzKP2nnotnePAga3ggkx/Mmr_QJlwfZoLQ5pW6dIG/RITJMTK0Ve0F_LrVR_WS, BuildID[sha1]=99c7a20e099a79e0c7f76293fc081a58d175a4fa, stripped"
+    }
+  ],
+  "checksumsSHA256": "8fdf8cbbb080fe1a2bb81fdc935859063416efb510d2462a0cfa21997095852c",
+  "executedLinuxBinary": false
+}

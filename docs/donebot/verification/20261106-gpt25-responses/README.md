@@ -64,13 +64,15 @@ go test -tags unit ./internal/service -run 'TestGPTImage25|TestCodexDirectImages
 ```
 
 All passed. The four-package image regression passed 351 top-level tests and
-638 leaf cases. `gofmt` and `git diff --check` passed. CI and public release
-artifact verification will be recorded separately after publication.
+638 leaf cases. `gofmt` and `git diff --check` passed. Full CI, security and
+release evidence is in `release-verification.md`; public archive and container
+verification is in `release-artifacts.md`.
 
 ## Deployment boundary
 
-Release v0.4.13 must be deployed and the gateway restarted before new tasks use
-this route. This change does not regenerate historical results. No live request
+Release [v0.4.13](https://github.com/Zluo003/donebot-api/releases/tag/v0.4.13)
+is published and its public artifacts are verified. It must be deployed and the
+gateway restarted before new tasks use this route. This change does not regenerate historical results. No live request
 has yet verified transparency or dimensions on the new deployed route; real
 outputs must be decoded to check alpha and actual size before those tests can
 be considered passed. Reference Yingzo API was read-only throughout.
