@@ -19,14 +19,15 @@
         </div>
         <div class="grid gap-4 sm:grid-cols-2">
           <label class="block text-sm"><span class="mb-1 block">存储方式</span><select v-model="drafts[kind.id].policy.driver" class="input" :data-testid="`${kind.id}-driver`" :disabled="busy"><option value="local">本地存储</option><option value="s3">S3 兼容存储</option></select></label>
-          <label class="block text-sm"><span class="mb-1 block">公网访问地址</span><input v-model.trim="drafts[kind.id].policy.public_base_url" type="url" class="input" placeholder="https://media.example.com" :data-testid="`${kind.id}-public-url`" :disabled="busy"><span class="mt-1 block text-xs text-gray-500">{{ kind.id === 'upload' ? '上传存储可留空，使用上传请求的网关地址。' : '本地生成产物必须填写可公开访问的网关地址。' }}</span></label>
-          <label v-if="drafts[kind.id].policy.driver === 'local'" class="block text-sm sm:col-span-2"><span class="mb-1 block">本地目录</span><input v-model.trim="drafts[kind.id].policy.local_path" class="input" :data-testid="`${kind.id}-local-path`" :disabled="busy" placeholder="data/media"></label>
+          <label v-if="drafts[kind.id].policy.driver === 'local'" class="block text-sm"><span class="mb-1 block">本地网关地址</span><input v-model.trim="drafts[kind.id].policy.local_public_base_url" type="url" class="input" placeholder="https://donebot.cn" :data-testid="`${kind.id}-public-url`" :disabled="busy"><span class="mt-1 block text-xs text-gray-500">{{ kind.id === 'upload' ? '可留空，使用上传请求的网关地址。' : '填写可公开访问的网关地址。' }}与 S3 / R2 的公网地址分别保存。</span></label>
+          <label v-else class="block text-sm"><span class="mb-1 block">S3 / R2 公网地址</span><input v-model.trim="drafts[kind.id].policy.s3.public_base_url" type="url" class="input" placeholder="https://media.example.com" :data-testid="`${kind.id}-public-url`" :disabled="busy"><span class="mt-1 block text-xs text-gray-500">填写存储桶的公网域名，留空使用预签名链接。与本地网关地址分别保存。</span></label>
+          <label v-if="drafts[kind.id].policy.driver === 'local'" class="block text-sm sm:col-span-2"><span class="mb-1 block">本地根目录</span><input v-model.trim="drafts[kind.id].policy.local_path" class="input" :data-testid="`${kind.id}-local-path`" :disabled="busy" placeholder="data/media"><span class="mt-1 block text-xs text-gray-500">文件保存在此根目录的 {{ kind.id }} 子目录中；此目录与 S3 / R2 对象前缀分别保存。</span></label>
         </div>
         <div v-if="drafts[kind.id].policy.driver === 's3'" class="grid gap-4 sm:grid-cols-2">
           <label class="block text-sm"><span class="mb-1 block">S3 Endpoint</span><input v-model.trim="drafts[kind.id].policy.s3.endpoint" type="url" class="input" placeholder="留空使用 AWS S3" :disabled="busy"></label>
           <label class="block text-sm"><span class="mb-1 block">Region</span><input v-model.trim="drafts[kind.id].policy.s3.region" class="input" placeholder="auto" :disabled="busy"></label>
           <label class="block text-sm"><span class="mb-1 block">Bucket</span><input v-model.trim="drafts[kind.id].policy.s3.bucket" class="input" :data-testid="`${kind.id}-bucket`" :disabled="busy"></label>
-          <label class="block text-sm"><span class="mb-1 block">对象前缀</span><input v-model.trim="drafts[kind.id].policy.s3.prefix" class="input" placeholder="media/" :disabled="busy"></label>
+          <label class="block text-sm"><span class="mb-1 block">对象前缀</span><input v-model.trim="drafts[kind.id].policy.s3.prefix" class="input" placeholder="media/" :data-testid="`${kind.id}-s3-prefix`" :disabled="busy"></label>
           <label class="block text-sm"><span class="mb-1 block">Access Key ID</span><input v-model.trim="drafts[kind.id].policy.s3.access_key_id" class="input" autocomplete="off" :disabled="busy"></label>
           <label class="block text-sm"><span class="mb-1 block">Secret Access Key</span><input v-model="drafts[kind.id].policy.s3.secret_access_key" type="password" class="input" autocomplete="new-password" :data-testid="`${kind.id}-secret`" :placeholder="drafts[kind.id].secretConfigured ? '已配置，留空保留原值' : '填写 S3 Secret Access Key'" :disabled="busy"></label>
           <label class="flex items-center gap-2 text-sm sm:col-span-2"><input v-model="drafts[kind.id].policy.s3.force_path_style" type="checkbox" :disabled="busy">使用 Path Style（MinIO 等）</label>
@@ -68,8 +69,9 @@ function toDraft(value: StoragePolicy): PolicyDraft {
   return {
     policy: {
       enabled: value.enabled, driver: value.driver, local_path: value.local_path, public_base_url: value.public_base_url,
+      local_public_base_url: value.local_public_base_url ?? (value.driver === 'local' ? value.public_base_url : ''),
       max_storage_bytes: value.max_storage_bytes, ttl_hours: value.ttl_hours, cleanup_threshold_percent: value.cleanup_threshold_percent, max_file_bytes: value.max_file_bytes,
-      s3: { ...value.s3, secret_access_key: '' }
+      s3: { ...value.s3, public_base_url: value.s3.public_base_url ?? (value.driver === 's3' ? value.public_base_url : ''), secret_access_key: '' }
     },
     capacityGiB: value.max_storage_bytes / GiB, maxFileMiB: value.max_file_bytes / MiB,
     usage: value.usage_bytes ?? 0, fileCount: value.file_count ?? 0, secretConfigured: value.secret_configured ?? false
@@ -77,6 +79,7 @@ function toDraft(value: StoragePolicy): PolicyDraft {
 }
 function apply(value: StorageSettings) { drafts.value = { upload: toDraft(value.upload), generated: toDraft(value.generated) } }
 function httpURL(value: string) { try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false } }
+function publicURL(policy: StoragePolicyInput) { return (policy.driver === 'local' ? policy.local_public_base_url : policy.s3.public_base_url) ?? '' }
 const validationError = computed(() => {
   if (!drafts.value) return ''
   for (const { id, title } of kinds) {
@@ -84,14 +87,15 @@ const validationError = computed(() => {
     if (![[draft.capacityGiB, GiB], [draft.maxFileMiB, MiB]].every(([value, unit]) => Number.isFinite(value) && value > 0 && Math.round(value * unit) > 0 && Number.isSafeInteger(Math.round(value * unit)))) return `${title}的容量和单文件上限必须大于 0。`
     if (!Number.isInteger(policy.ttl_hours) || policy.ttl_hours < 1 || policy.ttl_hours > 8760) return `${title}的存储时长必须为 1–8760 小时。`
     if (!Number.isInteger(policy.cleanup_threshold_percent) || policy.cleanup_threshold_percent < 1 || policy.cleanup_threshold_percent > 100) return `${title}的清理阈值必须为 1–100%。`
-    if (policy.public_base_url && !httpURL(policy.public_base_url)) return `${title}的公网地址必须是完整的 HTTP(S) URL。`
+    const activePublicURL = publicURL(policy)
+    if (activePublicURL && !httpURL(activePublicURL)) return `${title}的公网地址必须是完整的 HTTP(S) URL。`
     if (policy.driver === 'local') {
       if (!policy.local_path.trim()) return `${title}需要填写本地目录。`
-      if (id === 'generated' && policy.enabled && !httpURL(policy.public_base_url)) return '本地生成产物存储需要填写可公开访问的公网 HTTP(S) 地址。'
+      if (id === 'generated' && policy.enabled && !httpURL(activePublicURL)) return '本地生成产物存储需要填写可公开访问的公网 HTTP(S) 地址。'
     } else {
       if (policy.s3.endpoint && !httpURL(policy.s3.endpoint)) return `${title}的 S3 Endpoint 必须是完整的 HTTP(S) URL。`
       if (policy.enabled && (!policy.s3.bucket.trim() || !policy.s3.access_key_id.trim() || (!draft.secretConfigured && !policy.s3.secret_access_key))) return `${title}需要填写 S3 Bucket、Access Key ID 和 Secret Access Key。`
-      if (policy.enabled && policy.ttl_hours > 168 && !httpURL(policy.public_base_url)) return `${title}的 S3 保留时间超过 168 小时，需要填写公网访问地址。`
+      if (policy.enabled && policy.ttl_hours > 168 && !httpURL(activePublicURL)) return `${title}的 S3 保留时间超过 168 小时，需要填写公网访问地址。`
     }
   }
   return ''
@@ -117,7 +121,7 @@ async function load() {
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '加载存储设置失败' } finally { busy.value = false }
 }
 function toInput(draft: PolicyDraft): StoragePolicyInput {
-  return { ...draft.policy, max_storage_bytes: Math.round(draft.capacityGiB * GiB), max_file_bytes: Math.round(draft.maxFileMiB * MiB), s3: { ...draft.policy.s3 } }
+  return { ...draft.policy, public_base_url: publicURL(draft.policy), max_storage_bytes: Math.round(draft.capacityGiB * GiB), max_file_bytes: Math.round(draft.maxFileMiB * MiB), s3: { ...draft.policy.s3 } }
 }
 async function save() {
   if (!drafts.value || validationError.value || busy.value) return

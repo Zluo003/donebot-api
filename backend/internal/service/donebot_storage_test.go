@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -71,12 +72,22 @@ func TestDoneBotStorageLegacyPublicBaseURLDefaults(t *testing.T) {
 			policies := service.defaults()
 			require.Equal(t, tc.wantUpload, policies.Upload.PublicBaseURL)
 			require.Equal(t, tc.wantGenerated, policies.Generated.PublicBaseURL)
+			require.NotNil(t, policies.Upload.LocalPublicBaseURL)
+			require.NotNil(t, policies.Upload.S3.PublicBaseURL)
+			if tc.driver == "s3" {
+				require.Empty(t, *policies.Upload.LocalPublicBaseURL)
+				require.Equal(t, tc.wantUpload, *policies.Upload.S3.PublicBaseURL)
+			} else {
+				require.Equal(t, tc.wantUpload, *policies.Upload.LocalPublicBaseURL)
+				require.Equal(t, tc.nestedURL, *policies.Upload.S3.PublicBaseURL)
+			}
 			require.NoError(t, normalizeDoneBotStoragePolicy(&policies.Upload, AssetPurposeUpload), "validated legacy S3 settings must remain valid as a runtime policy")
 			if tc.driver == "s3" {
 				require.Equal(t, "uploads", policies.Upload.S3.Bucket)
 			}
 			if tc.generatedURL != "" {
 				require.Equal(t, "outputs", policies.Generated.S3.Bucket)
+				require.Equal(t, tc.generatedURL, *policies.Generated.S3.PublicBaseURL)
 				require.NoError(t, normalizeDoneBotStoragePolicy(&policies.Generated, AssetPurposeGenerated))
 			}
 		})
@@ -131,7 +142,7 @@ func TestDoneBotStorageNamespacesCapacityOldestAndSwitch(t *testing.T) {
 	require.NoError(t, err)
 	pol.Upload.MaxStorageBytes = 10
 	pol.Upload.CleanupThresholdPercent = 90
-	pol.Generated.PublicBaseURL = "https://gateway.example"
+	pol.Generated.LocalPublicBaseURL = doneBotStorageURL("https://gateway.example")
 	_, err = settings.Update(ctx, *pol)
 	require.NoError(t, err)
 	svc := NewAssetService(repo, &assetTestStorage{}, cfg)
@@ -168,7 +179,11 @@ func TestDoneBotStorageRejectsInvalidLimitsAndFailedDeletes(t *testing.T) {
 	s := NewDoneBotStorageService(newStubSettingRepo(), reversibleEncryptor{}, nil, cfg, nil)
 	base, err := s.Get(ctx)
 	require.NoError(t, err)
-	for _, mutate := range []func(*DoneBotStoragePolicy){func(p *DoneBotStoragePolicy) { p.MaxStorageBytes = 0 }, func(p *DoneBotStoragePolicy) { p.MaxFileBytes = -1 }, func(p *DoneBotStoragePolicy) { p.CleanupThresholdPercent = 101 }, func(p *DoneBotStoragePolicy) { p.TTLHours = 0 }, func(p *DoneBotStoragePolicy) { p.PublicBaseURL = "http://user:secret@example.com" }} {
+	for _, mutate := range []func(*DoneBotStoragePolicy){func(p *DoneBotStoragePolicy) { p.MaxStorageBytes = 0 }, func(p *DoneBotStoragePolicy) { p.MaxFileBytes = -1 }, func(p *DoneBotStoragePolicy) { p.CleanupThresholdPercent = 101 }, func(p *DoneBotStoragePolicy) { p.TTLHours = 0 }, func(p *DoneBotStoragePolicy) {
+		p.LocalPublicBaseURL = doneBotStorageURL("http://user:secret@example.com")
+	}, func(p *DoneBotStoragePolicy) {
+		p.S3.PublicBaseURL = doneBotStorageURL("https://objects.example/path?token=secret")
+	}} {
 		bad := *base
 		mutate(&bad.Upload)
 		_, err = s.Update(ctx, bad)
@@ -176,9 +191,271 @@ func TestDoneBotStorageRejectsInvalidLimitsAndFailedDeletes(t *testing.T) {
 	}
 	bad := *base
 	bad.Generated.Enabled = true
-	bad.Generated.PublicBaseURL = ""
+	bad.Generated.LocalPublicBaseURL = doneBotStorageURL("")
 	_, err = s.Update(ctx, bad)
 	require.Error(t, err)
+}
+
+func TestDoneBotStoragePublicBaseURLsStayIndependentAcrossReloads(t *testing.T) {
+	ctx := context.Background()
+	repo := newStubSettingRepo()
+	cfg := &config.Config{}
+	cfg.Totp.EncryptionKeyConfigured = true
+	cfg.AssetStorage.LocalPath = t.TempDir()
+	cfg.AssetStorage.PublicBaseURL = "https://gateway.example"
+	service := NewDoneBotStorageService(repo, reversibleEncryptor{}, nil, cfg, nil)
+	input, err := service.Get(ctx)
+	require.NoError(t, err)
+	input.Upload.Driver = "s3"
+	input.Upload.PublicBaseURL = "https://stale-mirror.example"
+	input.Upload.LocalPublicBaseURL = doneBotStorageURL(" https://local.example/ ")
+	input.Upload.S3 = DoneBotStorageS3{Bucket: "outputs", AccessKeyID: "fixture-access", SecretAccessKey: "fixture-secret", PublicBaseURL: doneBotStorageURL(" https://r2.example/ ")}
+	response, err := service.Update(ctx, *input)
+	require.NoError(t, err)
+	require.Equal(t, "https://r2.example", response.Upload.PublicBaseURL)
+	require.Equal(t, "https://local.example", *response.Upload.LocalPublicBaseURL)
+	require.Equal(t, "https://r2.example", *response.Upload.S3.PublicBaseURL)
+	require.Empty(t, response.Upload.S3.SecretAccessKey)
+	require.True(t, response.Upload.SecretConfigured)
+	require.NotContains(t, repo.values[settingKeyDoneBotStorage], `"fixture-secret"`)
+
+	service = NewDoneBotStorageService(repo, reversibleEncryptor{}, nil, cfg, nil)
+	input, err = service.Get(ctx)
+	require.NoError(t, err)
+	input.Upload.Driver = "local"
+	response, err = service.Update(ctx, *input)
+	require.NoError(t, err)
+	require.Equal(t, "https://local.example", response.Upload.PublicBaseURL)
+	require.Equal(t, "https://r2.example", *response.Upload.S3.PublicBaseURL)
+
+	service = NewDoneBotStorageService(repo, reversibleEncryptor{}, nil, cfg, nil)
+	input, err = service.Get(ctx)
+	require.NoError(t, err)
+	input.Upload.Driver = "s3"
+	response, err = service.Update(ctx, *input)
+	require.NoError(t, err)
+	require.Equal(t, "https://r2.example", response.Upload.PublicBaseURL)
+	effective, err := service.Policy(ctx, AssetPurposeUpload)
+	require.NoError(t, err)
+	require.Equal(t, "fixture-secret", effective.S3.SecretAccessKey)
+
+	response.Upload.S3.PublicBaseURL = doneBotStorageURL("")
+	response.Upload.TTLHours = 168
+	response, err = service.Update(ctx, *response)
+	require.NoError(t, err)
+	require.Empty(t, response.Upload.PublicBaseURL, "an explicit empty S3 URL selects presigned links")
+	require.Equal(t, "https://local.example", *response.Upload.LocalPublicBaseURL)
+	service = NewDoneBotStorageService(repo, reversibleEncryptor{}, nil, cfg, nil)
+	effective, err = service.Policy(ctx, AssetPurposeUpload)
+	require.NoError(t, err)
+	require.Empty(t, effective.PublicBaseURL)
+	response.Upload.TTLHours = 169
+	_, err = service.Update(ctx, *response)
+	require.ErrorContains(t, err, "S3 ttl_hours cannot exceed 168")
+}
+
+func TestDoneBotStorageLegacyUpdatesOnlyChangeSelectedPublicBaseURL(t *testing.T) {
+	ctx := context.Background()
+	repo := newStubSettingRepo()
+	cfg := &config.Config{}
+	cfg.Totp.EncryptionKeyConfigured = true
+	cfg.AssetStorage.LocalPath = t.TempDir()
+	service := NewDoneBotStorageService(repo, reversibleEncryptor{}, nil, cfg, nil)
+	input, err := service.Get(ctx)
+	require.NoError(t, err)
+	input.Upload.LocalPublicBaseURL = doneBotStorageURL("https://local.example")
+	input.Upload.S3 = DoneBotStorageS3{Bucket: "bucket", AccessKeyID: "fixture-access", SecretAccessKey: "fixture-secret", PublicBaseURL: doneBotStorageURL("https://r2.example")}
+	response, err := service.Update(ctx, *input)
+	require.NoError(t, err)
+	for _, tc := range []struct{ driver, publicURL, localURL, s3URL string }{
+		{"local", "https://new-local.example", "https://new-local.example", "https://r2.example"},
+		{"s3", "https://new-r2.example", "https://new-local.example", "https://new-r2.example"},
+		{"local", "", "", "https://new-r2.example"},
+	} {
+		response.Upload.Driver = tc.driver
+		response.Upload.PublicBaseURL = tc.publicURL
+		response.Upload.LocalPublicBaseURL = nil
+		response.Upload.S3.PublicBaseURL = nil
+		response, err = service.Update(ctx, *response)
+		require.NoError(t, err)
+		require.Equal(t, tc.publicURL, response.Upload.PublicBaseURL)
+		require.Equal(t, tc.localURL, *response.Upload.LocalPublicBaseURL)
+		require.Equal(t, tc.s3URL, *response.Upload.S3.PublicBaseURL)
+		require.Empty(t, response.Upload.S3.SecretAccessKey)
+		effective, err := service.Policy(ctx, AssetPurposeUpload)
+		require.NoError(t, err)
+		if tc.driver == "s3" {
+			require.Equal(t, "fixture-secret", effective.S3.SecretAccessKey)
+		} else {
+			require.Equal(t, "sealed:enc:fixture-secret", effective.S3.SecretAccessKey)
+		}
+	}
+}
+
+func TestDoneBotStorageGeneratedDriverSwitchKeepsLocalPathAndURL(t *testing.T) {
+	ctx := context.Background()
+	repo := newStubSettingRepo()
+	cfg := &config.Config{}
+	cfg.Totp.EncryptionKeyConfigured = true
+	cfg.AssetStorage.LocalPath = t.TempDir()
+	cfg.AssetStorage.PublicBaseURL = "https://gateway.example"
+	cfg.ImageStorage.Enabled = true
+	service := NewDoneBotStorageService(repo, reversibleEncryptor{}, nil, cfg, nil)
+	input, err := service.Get(ctx)
+	require.NoError(t, err)
+	originalPath := input.Generated.LocalPath
+	input.Generated.Driver = "s3"
+	input.Generated.S3 = DoneBotStorageS3{Bucket: "generated", Prefix: "generated/", AccessKeyID: "fixture-access", SecretAccessKey: "fixture-secret", PublicBaseURL: doneBotStorageURL("https://r2.example")}
+	_, err = service.Update(ctx, *input)
+	require.NoError(t, err)
+
+	service = NewDoneBotStorageService(repo, reversibleEncryptor{}, nil, cfg, nil)
+	input, err = service.Get(ctx)
+	require.NoError(t, err)
+	input.Generated.Driver = "local"
+	response, err := service.Update(ctx, *input)
+	require.NoError(t, err)
+	require.Equal(t, "https://gateway.example", response.Generated.PublicBaseURL)
+	require.Equal(t, "https://r2.example", *response.Generated.S3.PublicBaseURL)
+	require.Equal(t, originalPath, response.Generated.LocalPath)
+	require.Equal(t, "generated/", response.Generated.S3.Prefix)
+
+	service = NewDoneBotStorageService(repo, reversibleEncryptor{}, nil, cfg, nil)
+	input, err = service.Get(ctx)
+	require.NoError(t, err)
+	input.Generated.Driver = "s3"
+	response, err = service.Update(ctx, *input)
+	require.NoError(t, err)
+	require.Equal(t, "https://r2.example", response.Generated.PublicBaseURL)
+	require.Equal(t, originalPath, response.Generated.LocalPath)
+}
+
+func TestDoneBotStorageLegacyPoliciesAssignURLOnlyToStoredDriver(t *testing.T) {
+	for _, driver := range []string{"local", "s3"} {
+		t.Run(driver, func(t *testing.T) {
+			ctx := context.Background()
+			repo := newStubSettingRepo()
+			service := NewDoneBotStorageService(repo, nil, nil, nil, nil)
+			legacy := service.defaults()
+			legacy.Upload.Driver = driver
+			legacy.Upload.PublicBaseURL = "https://legacy.example"
+			legacy.Upload.LocalPublicBaseURL, legacy.Upload.S3.PublicBaseURL = nil, nil
+			legacy.Generated.LocalPublicBaseURL, legacy.Generated.S3.PublicBaseURL = nil, nil
+			raw, err := json.Marshal(legacy)
+			require.NoError(t, err)
+			require.NoError(t, repo.Set(ctx, settingKeyDoneBotStorage, string(raw)))
+			response, err := service.Get(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "https://legacy.example", response.Upload.PublicBaseURL)
+			if driver == "local" {
+				require.Equal(t, "https://legacy.example", *response.Upload.LocalPublicBaseURL)
+				require.Empty(t, *response.Upload.S3.PublicBaseURL)
+			} else {
+				require.Empty(t, *response.Upload.LocalPublicBaseURL)
+				require.Equal(t, "https://legacy.example", *response.Upload.S3.PublicBaseURL)
+			}
+			require.Equal(t, string(raw), repo.values[settingKeyDoneBotStorage], "reading does not rewrite persisted policies")
+		})
+	}
+}
+
+func TestDoneBotStorageSnapshotsKeepOriginalDriverAndEffectiveURL(t *testing.T) {
+	ctx := context.Background()
+	var captured DoneBotStoragePolicy
+	service := NewDoneBotStorageService(nil, reversibleEncryptor{}, func(_ context.Context, policy DoneBotStoragePolicy) (AssetStorage, error) {
+		captured = policy
+		return &assetTestStorage{}, nil
+	}, nil, nil)
+	for _, driver := range []string{"local", "s3"} {
+		t.Run(driver, func(t *testing.T) {
+			legacy := DoneBotStoragePolicy{Driver: driver, LocalPath: "original/generated", PublicBaseURL: "https://original.example", S3: DoneBotStorageS3{Bucket: "original", Prefix: "generated/", SecretAccessKey: "sealed:enc:fixture-secret"}}
+			raw, err := json.Marshal(legacy)
+			require.NoError(t, err)
+			asset := &GatewayAsset{Storage: driver, StorageConfig: raw, ObjectKey: "generated/ab/hash.png"}
+			_, err = service.originalStorage(ctx, asset)
+			require.NoError(t, err)
+			require.Equal(t, driver, captured.Driver)
+			require.Equal(t, "original/generated", captured.LocalPath)
+			require.Equal(t, "generated/", captured.S3.Prefix)
+			require.Equal(t, "https://original.example", captured.PublicBaseURL)
+			require.Equal(t, string(raw), string(asset.StorageConfig))
+
+			policy := legacy
+			policy.LocalPublicBaseURL = doneBotStorageURL("https://local.example")
+			policy.S3.PublicBaseURL = doneBotStorageURL("https://r2.example")
+			policy.S3.SecretAccessKey = "fixture-secret"
+			_, err = service.storage(ctx, policy)
+			require.NoError(t, err)
+			require.Equal(t, policy.EffectivePublicBaseURL(), captured.PublicBaseURL)
+			snapshot, err := service.snapshot(policy)
+			require.NoError(t, err)
+			require.NotContains(t, string(snapshot), `"fixture-secret"`)
+			var stored DoneBotStoragePolicy
+			require.NoError(t, json.Unmarshal(snapshot, &stored))
+			if driver == "local" {
+				require.Equal(t, "https://local.example", stored.PublicBaseURL)
+				require.Equal(t, "original/generated", stored.LocalPath)
+				require.Nil(t, stored.S3.PublicBaseURL)
+				require.Empty(t, stored.S3.SecretAccessKey)
+			} else {
+				require.Equal(t, "https://r2.example", stored.PublicBaseURL)
+				require.Empty(t, stored.LocalPath)
+				require.Nil(t, stored.LocalPublicBaseURL)
+			}
+			_, err = service.originalStorage(ctx, &GatewayAsset{StorageConfig: snapshot})
+			require.NoError(t, err)
+			require.Equal(t, stored.PublicBaseURL, captured.PublicBaseURL)
+			if driver == "s3" {
+				require.Equal(t, "fixture-secret", captured.S3.SecretAccessKey)
+			}
+		})
+	}
+}
+
+func TestDoneBotStorageLocalDoesNotDecryptInactiveS3Secret(t *testing.T) {
+	ctx := context.Background()
+	repo := newStubSettingRepo()
+	assets := &policyAssetRepo{&assetTestRepo{rows: map[string]*GatewayAsset{}, owners: map[string]map[int64]bool{}}}
+	cfg := &config.Config{}
+	cfg.DoneBot.Enabled = true
+	cfg.Totp.EncryptionKeyConfigured = true
+	cfg.JWT.Secret = "fixture-signing"
+	cfg.AssetStorage.LocalPath = t.TempDir()
+	cfg.AssetStorage.PublicBaseURL = "https://gateway.example"
+	settings := NewDoneBotStorageService(repo, reversibleEncryptor{}, func(_ context.Context, policy DoneBotStoragePolicy) (AssetStorage, error) {
+		require.Equal(t, "local", policy.Driver)
+		return &assetTestStorage{}, nil
+	}, cfg, assets)
+	stored := settings.defaults()
+	stored.Upload.S3.SecretAccessKey = "sealed:unreadable-inactive-secret"
+	raw, err := json.Marshal(stored)
+	require.NoError(t, err)
+	require.NoError(t, repo.Set(ctx, settingKeyDoneBotStorage, string(raw)))
+	input, err := settings.Get(ctx)
+	require.NoError(t, err)
+	require.Empty(t, input.Upload.S3.SecretAccessKey)
+	require.True(t, input.Upload.SecretConfigured)
+	_, err = settings.Update(ctx, *input)
+	require.NoError(t, err)
+	require.Contains(t, repo.values[settingKeyDoneBotStorage], "sealed:unreadable-inactive-secret")
+	_, err = settings.Policy(ctx, AssetPurposeUpload)
+	require.NoError(t, err)
+	svc := NewAssetService(assets, &assetTestStorage{}, cfg)
+	svc.storageSettings = settings
+	asset, err := svc.Upload(ctx, 1, "local.txt", "text/plain", []byte("local"), "")
+	require.NoError(t, err)
+	require.NotContains(t, string(asset.StorageConfig), "unreadable-inactive-secret")
+	legacyLocal, err := json.Marshal(stored.Upload)
+	require.NoError(t, err)
+	_, err = settings.originalStorage(ctx, &GatewayAsset{StorageConfig: legacyLocal})
+	require.NoError(t, err)
+	input.Upload.Driver = "s3"
+	input.Upload.S3.Bucket = "bucket"
+	input.Upload.S3.AccessKeyID = "fixture-access"
+	_, err = settings.Update(ctx, *input)
+	require.NoError(t, err)
+	_, err = settings.Policy(ctx, AssetPurposeUpload)
+	require.Error(t, err, "the active S3 driver still requires a decryptable secret")
 }
 
 type storageDeleteFailureRepo struct {

@@ -34,9 +34,9 @@ export interface AdminImageTask { task_id: string; status: string; http_status?:
 export interface Install { id: number; name: string; user_id: number; api_key_id: number; status: string; last_seen_at?: string; created_at: string }
 export interface Overview { asset_storage?: { driver: string; public_base_url_configured: boolean }; group: { id: number; name: string; platform: string }; user_count: number; model_count: number; install_count: number; today_usage: { total_requests: number; total_actual_cost: number } }
 export interface StoragePolicyInput {
- enabled: boolean; driver: 'local' | 's3'; local_path: string; public_base_url: string
+ enabled: boolean; driver: 'local' | 's3'; local_path: string; public_base_url: string; local_public_base_url?: string
  max_storage_bytes: number; ttl_hours: number; cleanup_threshold_percent: number; max_file_bytes: number
- s3: { endpoint: string; region: string; bucket: string; prefix: string; access_key_id: string; secret_access_key: string; force_path_style: boolean }
+ s3: { endpoint: string; region: string; bucket: string; prefix: string; access_key_id: string; secret_access_key: string; force_path_style: boolean; public_base_url?: string }
 }
 export interface StoragePolicy extends StoragePolicyInput { secret_configured?: boolean; usage_bytes?: number; file_count?: number }
 export interface StorageSettingsInput { upload: StoragePolicyInput; generated: StoragePolicyInput }

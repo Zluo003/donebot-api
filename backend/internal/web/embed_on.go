@@ -243,9 +243,9 @@ func injectSiteFavicon(html, settingsJSON []byte) []byte {
 	replacement := []byte(`<link rel="icon" href="` + htmlpkg.EscapeString(logoURL) + `" />`)
 
 	var buf bytes.Buffer
-	buf.Write(html[:linkStart])
-	buf.Write(replacement)
-	buf.Write(html[linkEnd:])
+	_, _ = buf.Write(html[:linkStart])
+	_, _ = buf.Write(replacement)
+	_, _ = buf.Write(html[linkEnd:])
 	return buf.Bytes()
 }
 
@@ -287,9 +287,9 @@ func injectSiteTitle(html, settingsJSON []byte) []byte {
 
 	newTitle := []byte("<title>" + htmlpkg.EscapeString(cfg.SiteName) + " - AI API Gateway</title>")
 	var buf bytes.Buffer
-	buf.Write(html[:titleStart])
-	buf.Write(newTitle)
-	buf.Write(html[titleEnd+len("</title>"):])
+	_, _ = buf.Write(html[:titleStart])
+	_, _ = buf.Write(newTitle)
+	_, _ = buf.Write(html[titleEnd+len("</title>"):])
 	return buf.Bytes()
 }
 
@@ -354,7 +354,8 @@ func tryServeOverrideFile(c *gin.Context, overrideDir, cleanPath string) bool {
 
 func shouldBypassEmbeddedFrontend(path string) bool {
 	trimmed := strings.TrimSpace(path)
-	return strings.HasPrefix(trimmed, "/api/") ||
+	return isGatewayAssetDownloadPath(trimmed) ||
+		strings.HasPrefix(trimmed, "/api/") ||
 		trimmed == "/.well-known/oauth-protected-resource" ||
 		trimmed == "/.well-known/oauth-protected-resource/api/v1/mcp" ||
 		trimmed == "/.well-known/oauth-authorization-server" ||
@@ -386,6 +387,19 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 		strings.HasPrefix(trimmed, "/images/") ||
 		trimmed == "/videos" ||
 		strings.HasPrefix(trimmed, "/videos/")
+}
+
+func isGatewayAssetDownloadPath(path string) bool {
+	const prefix = "/assets/ast_"
+	if !strings.HasPrefix(path, prefix) || len(path) != len(prefix)+32 {
+		return false
+	}
+	for _, char := range path[len(prefix):] {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func serveIndexHTML(c *gin.Context, fsys fs.FS) {

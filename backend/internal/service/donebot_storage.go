@@ -19,18 +19,20 @@ const AssetPurposeUpload = "upload"
 const AssetPurposeGenerated = "generated"
 
 type DoneBotStorageS3 struct {
-	Endpoint        string `json:"endpoint"`
-	Region          string `json:"region"`
-	Bucket          string `json:"bucket"`
-	Prefix          string `json:"prefix"`
-	AccessKeyID     string `json:"access_key_id"`
-	SecretAccessKey string `json:"secret_access_key"`
-	ForcePathStyle  bool   `json:"force_path_style"`
+	Endpoint        string  `json:"endpoint"`
+	Region          string  `json:"region"`
+	Bucket          string  `json:"bucket"`
+	Prefix          string  `json:"prefix"`
+	AccessKeyID     string  `json:"access_key_id"`
+	SecretAccessKey string  `json:"secret_access_key"`
+	ForcePathStyle  bool    `json:"force_path_style"`
+	PublicBaseURL   *string `json:"public_base_url,omitempty"`
 }
 type DoneBotStoragePolicy struct {
 	Enabled                 bool             `json:"enabled"`
 	Driver                  string           `json:"driver"`
 	LocalPath               string           `json:"local_path"`
+	LocalPublicBaseURL      *string          `json:"local_public_base_url,omitempty"`
 	PublicBaseURL           string           `json:"public_base_url"`
 	MaxStorageBytes         int64            `json:"max_storage_bytes"`
 	TTLHours                int              `json:"ttl_hours"`
@@ -45,6 +47,50 @@ type DoneBotStoragePolicies struct {
 	Upload    DoneBotStoragePolicy `json:"upload"`
 	Generated DoneBotStoragePolicy `json:"generated"`
 }
+
+// EffectivePublicBaseURL resolves driver-specific addresses while retaining the
+// public_base_url contract for policies and asset snapshots written by older clients.
+func (p DoneBotStoragePolicy) EffectivePublicBaseURL() string {
+	if p.Driver == "s3" && p.S3.PublicBaseURL != nil {
+		return *p.S3.PublicBaseURL
+	}
+	if p.Driver == "local" && p.LocalPublicBaseURL != nil {
+		return *p.LocalPublicBaseURL
+	}
+	return p.PublicBaseURL
+}
+
+func doneBotStorageURL(value string) *string { return &value }
+
+func resolveDoneBotStoragePublicBaseURL(p *DoneBotStoragePolicy) {
+	if p.LocalPublicBaseURL == nil {
+		value := ""
+		if p.Driver == "local" {
+			value = p.PublicBaseURL
+		}
+		p.LocalPublicBaseURL = doneBotStorageURL(value)
+	}
+	if p.S3.PublicBaseURL == nil {
+		value := ""
+		if p.Driver == "s3" {
+			value = p.PublicBaseURL
+		}
+		p.S3.PublicBaseURL = doneBotStorageURL(value)
+	}
+	p.PublicBaseURL = p.EffectivePublicBaseURL()
+}
+
+func mergeDoneBotStoragePublicBaseURL(p *DoneBotStoragePolicy, previous DoneBotStoragePolicy) {
+	p.Driver = strings.ToLower(strings.TrimSpace(p.Driver))
+	if p.LocalPublicBaseURL == nil && p.Driver != "local" {
+		p.LocalPublicBaseURL = previous.LocalPublicBaseURL
+	}
+	if p.S3.PublicBaseURL == nil && p.Driver != "s3" {
+		p.S3.PublicBaseURL = previous.S3.PublicBaseURL
+	}
+	resolveDoneBotStoragePublicBaseURL(p)
+}
+
 type DoneBotStorageFactory func(context.Context, DoneBotStoragePolicy) (AssetStorage, error)
 type AssetRetentionRepository interface {
 	GetByPurposeSHA256(context.Context, string, string) (*GatewayAsset, error)
@@ -86,7 +132,10 @@ func (s *DoneBotStorageService) defaults() DoneBotStoragePolicies {
 		if c.MaxBytes > 0 {
 			p.MaxFileBytes = c.MaxBytes
 		}
-		p.S3 = DoneBotStorageS3{Endpoint: c.S3.Endpoint, Region: c.S3.Region, Bucket: c.S3.Bucket, Prefix: c.S3.Prefix, AccessKeyID: c.S3.AccessKeyID, SecretAccessKey: c.S3.SecretAccessKey, ForcePathStyle: c.S3.ForcePathStyle}
+		p.S3 = DoneBotStorageS3{Endpoint: c.S3.Endpoint, Region: c.S3.Region, Bucket: c.S3.Bucket, Prefix: c.S3.Prefix, AccessKeyID: c.S3.AccessKeyID, SecretAccessKey: c.S3.SecretAccessKey, ForcePathStyle: c.S3.ForcePathStyle, PublicBaseURL: doneBotStorageURL(c.S3.PublicBaseURL)}
+		if p.Driver == "s3" {
+			p.S3.PublicBaseURL = doneBotStorageURL(p.PublicBaseURL)
+		}
 	}
 	g := p
 	g.MaxStorageBytes = 50 << 30
@@ -98,9 +147,11 @@ func (s *DoneBotStorageService) defaults() DoneBotStoragePolicies {
 		c := s.cfg.ImageStorage
 		g.Driver = "s3"
 		g.PublicBaseURL = c.PublicBaseURL
-		g.S3 = DoneBotStorageS3{Endpoint: c.Endpoint, Region: c.Region, Bucket: c.Bucket, Prefix: c.Prefix, AccessKeyID: c.AccessKeyID, SecretAccessKey: c.SecretAccessKey, ForcePathStyle: c.ForcePathStyle}
+		g.S3 = DoneBotStorageS3{Endpoint: c.Endpoint, Region: c.Region, Bucket: c.Bucket, Prefix: c.Prefix, AccessKeyID: c.AccessKeyID, SecretAccessKey: c.SecretAccessKey, ForcePathStyle: c.ForcePathStyle, PublicBaseURL: doneBotStorageURL(c.PublicBaseURL)}
 	}
 
+	resolveDoneBotStoragePublicBaseURL(&p)
+	resolveDoneBotStoragePublicBaseURL(&g)
 	return DoneBotStoragePolicies{Upload: p, Generated: g}
 }
 func (s *DoneBotStorageService) load(ctx context.Context) (DoneBotStoragePolicies, error) {
@@ -118,8 +169,14 @@ func (s *DoneBotStorageService) load(ctx context.Context) (DoneBotStoragePolicie
 	if strings.TrimSpace(raw) == "" {
 		return p, nil
 	}
-	err = json.Unmarshal([]byte(raw), &p)
-	return p, err
+	p.Upload.LocalPublicBaseURL, p.Upload.S3.PublicBaseURL = nil, nil
+	p.Generated.LocalPublicBaseURL, p.Generated.S3.PublicBaseURL = nil, nil
+	if err = json.Unmarshal([]byte(raw), &p); err != nil {
+		return p, err
+	}
+	resolveDoneBotStoragePublicBaseURL(&p.Upload)
+	resolveDoneBotStoragePublicBaseURL(&p.Generated)
+	return p, nil
 }
 func (s *DoneBotStorageService) Policy(ctx context.Context, purpose string) (DoneBotStoragePolicy, error) {
 	p, err := s.load(ctx)
@@ -132,7 +189,7 @@ func (s *DoneBotStorageService) Policy(ctx context.Context, purpose string) (Don
 	} else if purpose != AssetPurposeUpload {
 		return out, fmt.Errorf("invalid storage purpose")
 	}
-	if out.S3.SecretAccessKey != "" && s.encryptor != nil {
+	if out.Driver == "s3" && out.S3.SecretAccessKey != "" && s.encryptor != nil {
 		if v, e := s.decryptSecret(out.S3.SecretAccessKey); e == nil {
 			out.S3.SecretAccessKey = v
 		} else {
@@ -162,6 +219,10 @@ func normalizeDoneBotStoragePolicy(p *DoneBotStoragePolicy, purpose string) erro
 	p.Driver = strings.ToLower(strings.TrimSpace(p.Driver))
 	p.LocalPath = strings.TrimSpace(p.LocalPath)
 	p.PublicBaseURL = strings.TrimRight(strings.TrimSpace(p.PublicBaseURL), "/")
+	resolveDoneBotStoragePublicBaseURL(p)
+	p.LocalPublicBaseURL = doneBotStorageURL(strings.TrimRight(strings.TrimSpace(*p.LocalPublicBaseURL), "/"))
+	p.S3.PublicBaseURL = doneBotStorageURL(strings.TrimRight(strings.TrimSpace(*p.S3.PublicBaseURL), "/"))
+	p.PublicBaseURL = p.EffectivePublicBaseURL()
 	p.S3.Bucket = strings.TrimSpace(p.S3.Bucket)
 	p.S3.Endpoint = strings.TrimSpace(p.S3.Endpoint)
 	p.S3.Region = strings.TrimSpace(p.S3.Region)
@@ -188,10 +249,13 @@ func normalizeDoneBotStoragePolicy(p *DoneBotStoragePolicy, purpose string) erro
 	if p.Driver == "local" && p.LocalPath == "" {
 		return fmt.Errorf("local_path is required")
 	}
-	if p.PublicBaseURL != "" {
-		u, e := url.Parse(p.PublicBaseURL)
+	for name, baseURL := range map[string]string{"local_public_base_url": *p.LocalPublicBaseURL, "s3.public_base_url": *p.S3.PublicBaseURL} {
+		if baseURL == "" {
+			continue
+		}
+		u, e := url.Parse(baseURL)
 		if e != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return fmt.Errorf("public_base_url must be an absolute http(s) URL")
+			return fmt.Errorf("%s must be an absolute http(s) URL", name)
 		}
 	}
 	if p.Enabled && p.Driver == "local" && purpose == AssetPurposeGenerated && p.PublicBaseURL == "" {
@@ -217,6 +281,7 @@ func (s *DoneBotStorageService) Update(ctx context.Context, in DoneBotStoragePol
 		if purpose == AssetPurposeGenerated {
 			prev = old.Generated
 		}
+		mergeDoneBotStoragePublicBaseURL(pol, prev)
 		suppliedSecret := pol.S3.SecretAccessKey != "" && strings.Trim(pol.S3.SecretAccessKey, "*") != ""
 		if !suppliedSecret {
 			pol.S3.SecretAccessKey = prev.S3.SecretAccessKey
@@ -258,8 +323,12 @@ func (s *DoneBotStorageService) Update(ctx context.Context, in DoneBotStoragePol
 	return s.Get(ctx)
 }
 func (s *DoneBotStorageService) snapshot(p DoneBotStoragePolicy) (json.RawMessage, error) {
+	resolveDoneBotStoragePublicBaseURL(&p)
 	if p.Driver == "local" {
 		p.S3 = DoneBotStorageS3{}
+	} else {
+		p.LocalPath = ""
+		p.LocalPublicBaseURL = nil
 	}
 	if p.S3.SecretAccessKey != "" {
 		if s.encryptor == nil {
@@ -277,6 +346,7 @@ func (s *DoneBotStorageService) storage(ctx context.Context, p DoneBotStoragePol
 	if s.factory == nil {
 		return nil, ErrAssetStorageUnavailable
 	}
+	p.PublicBaseURL = p.EffectivePublicBaseURL()
 	return s.factory(ctx, p)
 }
 func (s *DoneBotStorageService) originalStorage(ctx context.Context, a *GatewayAsset) (AssetStorage, error) {
@@ -284,7 +354,7 @@ func (s *DoneBotStorageService) originalStorage(ctx context.Context, a *GatewayA
 	if err := json.Unmarshal(a.StorageConfig, &p); err != nil {
 		return nil, err
 	}
-	if p.S3.SecretAccessKey != "" {
+	if p.Driver == "s3" && p.S3.SecretAccessKey != "" {
 		if s.encryptor == nil {
 			return nil, ErrSecretEncryptionKeyNotConfigured
 		}
