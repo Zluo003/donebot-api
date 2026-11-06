@@ -19,3 +19,7 @@
 - 前端目标：`pnpm exec vitest run src/components/admin/donebot/__tests__/ModelPricingPanel.spec.ts`，15 项通过。
 - 前端类型检查：`pnpm exec vue-tsc --noEmit` 通过。
 - 真实网关生成结果由主任务在发布部署后另行记录；上述离线通过不代表生产部署已完成。
+
+## 发布与部署
+
+[v0.4.15 发布核验](release.md) 已归档，包含源码 CI、安全扫描、GitHub 下载产物和双架构容器镜像证据。用户已部署；三项真实模型生成结果待主任务另行补录。
