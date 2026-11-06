@@ -97,7 +97,7 @@ func apimartImageSubmission(response *APIMartResponse) error {
 }
 
 func completeAPIMartImages(p *APIMartPending, root gjson.Result, r *OpenAIForwardResult) bool {
-	if root.Get("status").String() != "success" {
+	if !slices.Contains([]string{"completed", "success"}, root.Get("status").String()) {
 		return false
 	}
 	breakdown := map[string]int{}

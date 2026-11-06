@@ -40,7 +40,7 @@ func TestDoneBotPublicCatalogMediaParametersFollowNativeParsersAndTariffs(t *tes
 	require.Equal(t, "apimart.images.v1", image.Protocol.Adapter)
 	require.Equal(t, "data.0.task_id", image.Protocol.TaskIDPath)
 	require.Equal(t, "/v1/tasks/{task_id}", image.Protocol.Poll.Path)
-	require.Equal(t, []string{"success"}, image.Protocol.Poll.CompletedStatuses)
+	require.Equal(t, []string{"completed", "success"}, image.Protocol.Poll.CompletedStatuses)
 	music := models["music"]
 	require.Equal(t, []string{"music"}, music.MediaTypes)
 	require.Equal(t, []string{"v6", "v6-mini"}, music.MediaParameters.MusicVersions)

@@ -366,3 +366,37 @@ func TestAPIMartSeedreamPromptOptimizationUsesDocumentedMode(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestAPIMartCompletedImageStatusSettlesPrepaidReceipt(t *testing.T) {
+	for _, tc := range []struct {
+		name, size, tier string
+		layer            bool
+	}{
+		{"text to image", "1536x1536", "1K", false},
+		{"image to image", "1344x1792", "1K", false},
+		{"layer decomposition", "2048x2048", "2K", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pending := &APIMartPending{Endpoint: APIMartImages, Model: "seedream-5-0-flash", Tier: tc.tier, Units: 1, LayerDecomposition: tc.layer}
+			for _, status := range []string{"completed", "success"} {
+				body := []byte(`{"code":200,"data":{"status":"` + status + `","progress":100,"cost":999,"result":{"images":[{"url":["https://provider.invalid/image.png"],"sizes":["` + tc.size + `"],"output_formats":["png"]}]}}}`)
+				result := APIMartCompletionResult(pending, body, "apimart:image:completed-fixture")
+				require.NotNil(t, result)
+				require.Equal(t, map[string]int{tc.tier: 1}, result.ImageSizeBreakdown)
+				require.Equal(t, []string{tc.size}, result.ImageOutputSizes)
+				stub := &doneBotPrepaidStub{p: &DoneBotMediaPrecharge{ReceiptID: "completed-receipt", UserID: 1, APIKeyID: 2, AccountID: 3, Kind: "image", State: "prepaid", Snapshot: DoneBotMediaPriceSnapshot{Kind: "image", MaxUnits: 17, Rates: map[string]DoneBotMediaUnitPrice{"1K": {Actual: 0.25, Total: 0.1}, "2K": {Actual: 0.5, Total: 0.2}}}}}
+				svc := &OpenAIGatewayService{usageBillingRepo: stub}
+				err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{Result: result, APIKey: &APIKey{ID: 2, UserID: 1, Key: "sk-donebot-isolated"}, User: &User{ID: 1}, Account: &Account{ID: 3}})
+				require.NoError(t, err)
+				require.NotNil(t, stub.stage)
+				require.NotNil(t, stub.settled)
+				require.Equal(t, "settled", stub.p.State)
+				want := 0.25
+				if tc.tier == "2K" {
+					want = 0.5
+				}
+				require.Equal(t, want, stub.p.SettledAmount)
+			}
+		})
+	}
+}

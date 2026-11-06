@@ -251,6 +251,7 @@
               "status"
             ],
             "completed_statuses": [
+              "completed",
               "success"
             ],
             "failed_statuses": [

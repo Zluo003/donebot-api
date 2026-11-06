@@ -221,7 +221,7 @@ export async function createFixtureGateway({ maxEffort = null, nativeMedia = fal
           }
           if (task.adapter === 'seedance.videos.v1') return json(res, 200, { id: task.id, status: completed ? 'succeeded' : 'running', ...(completed ? { content: { video_url: `https://fixture.invalid/${task.id}.mp4` } } : {}) });
           const music = task.adapter === 'apimart.music.v1';
-          return json(res, 200, { code: 200, data: { id: task.id, status: completed ? (music ? 'completed' : 'success') : 'processing', ...(completed ? { result: music ? { music: [{ audio_url: `https://fixture.invalid/${task.id}.wav` }] } : { images: [{ url: [`https://fixture.invalid/${task.id}.png`] }] } } : {}) } });
+          return json(res, 200, { code: 200, data: { id: task.id, status: completed ? 'completed' : 'processing', ...(completed ? { result: music ? { music: [{ audio_url: `https://fixture.invalid/${task.id}.wav` }] } : { images: [{ url: [`https://fixture.invalid/${task.id}.png`] }] } } : {}) } });
         }
         task.polls += 1;
         if (task.polls >= 2) {

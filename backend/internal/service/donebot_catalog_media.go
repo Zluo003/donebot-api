@@ -62,7 +62,7 @@ func doneBotMediaProtocol(adapter string) *DoneBotCatalogMediaProtocol {
 		protocol.Poll = &DoneBotCatalogMediaPoll{DoneBotCatalogMediaEndpoint: DoneBotCatalogMediaEndpoint{Method: "GET", Path: "/v1/images/tasks/{task_id}", ResponseKind: "json"}, StatusPaths: []string{"status"}, CompletedStatuses: []string{"completed"}, FailedStatuses: []string{"failed", "uncertain"}, ResultPaths: []string{"result.data"}}
 	case "apimart.images.v1", "apimart.music.v1":
 		protocol.Submit.Path, protocol.TaskIDPath = "/v1/images/generations", "data.0.task_id"
-		protocol.Poll = &DoneBotCatalogMediaPoll{DoneBotCatalogMediaEndpoint: DoneBotCatalogMediaEndpoint{Method: "GET", Path: "/v1/tasks/{task_id}", ResponseKind: "json"}, StatusPaths: []string{"data.status", "status"}, CompletedStatuses: []string{"success"}, FailedStatuses: []string{"failed", "cancelled"}, ResultPaths: []string{"data.result.images", "result.images"}}
+		protocol.Poll = &DoneBotCatalogMediaPoll{DoneBotCatalogMediaEndpoint: DoneBotCatalogMediaEndpoint{Method: "GET", Path: "/v1/tasks/{task_id}", ResponseKind: "json"}, StatusPaths: []string{"data.status", "status"}, CompletedStatuses: []string{"completed", "success"}, FailedStatuses: []string{"failed", "cancelled"}, ResultPaths: []string{"data.result.images", "result.images"}}
 		if adapter == "apimart.music.v1" {
 			protocol.Submit.Path, protocol.Poll.Path = "/v1/music/generations", "/v1/music/tasks/{task_id}"
 			protocol.Poll.CompletedStatuses = []string{"completed"}
