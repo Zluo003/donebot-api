@@ -357,6 +357,10 @@ func safeMediaIdentifier(value string, max int) bool {
 	return value == "" || (len(value) <= max && doneBotMediaIdentifier.MatchString(value) && !doneBotMediaCredential.MatchString(value))
 }
 
+func doneBotMediaReplayIdentifier(value string) bool {
+	return safeMediaIdentifier(value, 600) && !doneBotMediaDiagnosticSecret.MatchString(value) && !strings.Contains(value, ":/") && !strings.HasPrefix(value, "//")
+}
+
 func doneBotMediaState(state string) bool {
 	switch state {
 	case "accepted", "processing", "completed", "failed", "cancelled", "refunded", "uncertain":
@@ -562,7 +566,7 @@ func doneBotMediaSafeJSON(value any, depth int) any {
 				case string:
 					if (key == "code" || key == "type" || key == "request_id") && doneBotMediaDiagnosticID(scalar) != "" {
 						clean[key] = scalar
-					} else if key != "code" && key != "type" && key != "request_id" && safeMediaIdentifier(scalar, 600) && !doneBotMediaDiagnosticSecret.MatchString(scalar) {
+					} else if key != "code" && key != "type" && key != "request_id" && doneBotMediaReplayIdentifier(scalar) {
 						clean[key] = scalar
 					}
 				}

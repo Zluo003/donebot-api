@@ -334,6 +334,22 @@ func TestDoneBotMediaSafeReplayBoundedSpeechAndSecretFreeJSON(t *testing.T) {
 	require.ErrorIs(t, err, ErrDoneBotMediaPending)
 }
 
+func TestDoneBotMediaReplayRejectsURLsInIdentifiersAndRetainsArtifacts(t *testing.T) {
+	for _, target := range []string{"https://private.invalid", "HTTP://private.invalid/path", "//private.invalid/path", "s3://private.invalid/key", "file:///private/key"} {
+		t.Run(target, func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{
+				"error":   map[string]any{"id": target, "message": "Quota exhausted."},
+				"task_id": "provider/task-42", "model": "provider/model-1",
+				"data": []any{map[string]any{"url": "https://cdn.example/output.png"}},
+			})
+			require.NoError(t, err)
+			clean, _, ok := doneBotMediaSafeResponse("application/json", body)
+			require.True(t, ok)
+			require.JSONEq(t, `{"error":{"message":"Quota exhausted."},"task_id":"provider/task-42","model":"provider/model-1","data":[{"url":"https://cdn.example/output.png"}]}`, string(clean))
+		})
+	}
+}
+
 func TestDoneBotMediaFingerprintIncludesNativePathContentTypeAndExactBody(t *testing.T) {
 	base := DoneBotMediaFingerprint("POST", "/v1/videos", "application/json", []byte(`{"prompt":"a"}`))
 	require.Regexp(t, doneBotMediaHash, base)

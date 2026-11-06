@@ -1,6 +1,6 @@
 # 本地资产下载与存储驱动隔离
 
-日期：2026-11-06。发布版本：`v0.4.11`。
+日期：2026-11-06。发布版本：`v0.4.12`。
 
 ## 现场事实
 
@@ -102,3 +102,13 @@ cd backend
 go test -tags unit ./internal/service -run 'TestDoneBotMedia|TestOpenAIImages|TestForwardImages|TestImageTask' -count=1
 go test -tags integration ./internal/repository -run 'TestDoneBotMediaDatabase' -count=1 -timeout 5m
 ```
+
+`v0.4.11` 候选的安全扫描检出既有 brotli `v1.2.0` 与 klauspost/compress
+`v1.18.2` 的可达漏洞（GO-2026-6888、GO-2026-6865），该候选发布流程已取消，
+不重写已推送 tag。`v0.4.12` 将依赖升级至修复版本，并补充 replay 通用标识字段
+不能夹带 URL 的边界；生成产物的正常 URL 字段不受此限制。
+
+依赖升级后受影响五个包的完整 unit 测试通过（service、handler、middleware、
+repository、httputil），全量 lint 通过。`govulncheck ./...` exit 0：无可达符号或
+已导入包漏洞；报告的 6 个仅出现在依赖模块中、应用未调用的条目不冒充全部依赖零漏洞。
+其它依赖版本保持不变。
