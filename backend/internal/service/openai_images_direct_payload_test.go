@@ -20,7 +20,7 @@ import (
 func TestCodexDirectImagesMultipartEdit(t *testing.T) {
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
-	for key, value := range map[string]string{"model": "gpt-image-2.5-sunburst", "prompt": "编辑", "quality": "xhigh", "n": "2", "output_format": "webp", "output_compression": "75", "partial_images": "2", "input_fidelity": "high"} {
+	for key, value := range map[string]string{"model": "gpt-image-2", "prompt": "编辑", "quality": "xhigh", "n": "2", "output_format": "webp", "output_compression": "75", "partial_images": "2", "input_fidelity": "high"} {
 		require.NoError(t, w.WriteField(key, value))
 	}
 	for _, field := range []string{"image[]", "image[]", "mask"} {
