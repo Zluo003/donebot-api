@@ -80,6 +80,12 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
+	if strings.HasPrefix(apiKey.Key, "sk-donebot-") {
+		if err := parsed.ApplyDoneBotImagePolicy(parsed.Model); err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+			return
+		}
+	}
 	requestModel := parsed.Model
 	ensureCompositeTargetPlatform(c, apiKey, requestModel)
 	clientRequestModel := clientRequestedModel(c, requestModel)
@@ -245,11 +251,16 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if mappedImageModel == "" {
 			mappedImageModel = routingModel
 		}
-		if strings.HasPrefix(apiKey.Key, "sk-donebot-") && parsed.HasMask && strings.HasPrefix(strings.ToLower(account.GetMappedModel(mappedImageModel)), "gpt-image") {
+		upstreamImageModel := account.GetMappedModel(mappedImageModel)
+		optionErr := parsed.ValidateUpstreamImageOptions(upstreamImageModel)
+		if optionErr == nil && strings.HasPrefix(apiKey.Key, "sk-donebot-") {
+			optionErr = parsed.ApplyDoneBotImagePolicy(upstreamImageModel)
+		}
+		if optionErr != nil {
 			if selection.Acquired && selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "GPT Image mask editing is not supported by DoneBot")
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", optionErr.Error())
 			return
 		}
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)

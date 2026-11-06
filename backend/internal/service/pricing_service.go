@@ -49,6 +49,13 @@ var (
 		Mode:                    "image_generation",
 		SupportsPromptCaching:   true,
 	}
+	// https://developers.openai.com/api/docs/models/gpt-image-2.6-flare
+	openAIGPTImage26FallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken: 5e-06, CacheReadInputTokenCost: 1.25e-06,
+		InputCostPerImageToken: 8e-06, CacheReadInputImageTokenCost: 2e-06,
+		OutputCostPerImageToken: 3e-05, LiteLLMProvider: "openai",
+		Mode: "image_generation", SupportsPromptCaching: true,
+	}
 	openAIGPT54FallbackPricing = &LiteLLMModelPricing{
 		InputCostPerToken:       2.5e-06, // $2.5 per MTok
 		OutputCostPerToken:      1.5e-05, // $15 per MTok
@@ -1694,6 +1701,9 @@ func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
 		if model == imageModel || model == imageModel+"-2026-09-08" {
 			return openAIGPTImage25FallbackPricing
 		}
+	}
+	if isGPTImage26Model(model) {
+		return openAIGPTImage26FallbackPricing
 	}
 	if isOpenAIImageGenerationModel(model) {
 		for _, candidate := range []string{"gpt-image-2", "gpt-image-1.5", "gpt-image-1"} {

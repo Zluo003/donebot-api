@@ -135,6 +135,7 @@ func doneBotPublicMediaParameters(groupID int64, row DoneBotModel, accounts []Ac
 		}
 	}
 	var common *DoneBotCatalogMediaParameters
+	gifAvailable := false
 	for i := range accounts {
 		account := &accounts[i]
 		if account.Status != StatusActive || !account.Schedulable || !slices.Contains(account.GroupIDs, groupID) || account.Platform != row.Platform || !doneBotCatalogAccountSupports(account, upstream, endpoint) {
@@ -143,6 +144,9 @@ func doneBotPublicMediaParameters(groupID int64, row DoneBotModel, accounts []Ac
 		profile := doneBotAccountMediaParameters(account, upstream, row)
 		if profile == nil {
 			return nil, nil
+		}
+		if profile.Protocol.Adapter == "donebot.images.async.v1" && slices.Contains(profile.Formats, "gif") {
+			gifAvailable = true
 		}
 		if row.Kind == "video" {
 			if len(profile.Resolutions) == 0 {
@@ -178,6 +182,9 @@ func doneBotPublicMediaParameters(groupID int64, row DoneBotModel, accounts []Ac
 	if common.Protocol.Adapter == "apimart.images.v1" && len(common.Resolutions) == 0 {
 		return nil, nil
 	}
+	if gifAvailable && !slices.Contains(common.Formats, "gif") {
+		common.Formats = append(common.Formats, "gif")
+	}
 	if err := doneBotRestrictMediaParameters(common, configured); err != nil {
 		return nil, err
 	}
@@ -208,7 +215,14 @@ func doneBotAccountMediaParameters(account *Account, model string, row DoneBotMo
 			}
 			return media
 		}
-		return &DoneBotCatalogMediaParameters{Protocol: doneBotMediaProtocol("donebot.images.async.v1")}
+		media := &DoneBotCatalogMediaParameters{Protocol: doneBotMediaProtocol("donebot.images.async.v1")}
+		if isGPTImage26Model(native) {
+			media.Formats = []string{"png", "jpeg", "webp"}
+			if account.Type == AccountTypeAPIKey {
+				media.Formats = append(media.Formats, "gif")
+			}
+		}
+		return media
 	case "video":
 		if !account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilitySeedance) {
 			return nil

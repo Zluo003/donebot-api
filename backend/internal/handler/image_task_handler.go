@@ -252,8 +252,10 @@ func (h *AsyncImageHandler) validateRequest(c *gin.Context, platform string, bod
 		return errors.New("streaming image requests cannot be submitted as asynchronous tasks")
 	}
 	key, _ := middleware2.GetAPIKeyFromContext(c)
-	if key != nil && strings.HasPrefix(key.Key, "sk-donebot-") && parsed.HasMask && strings.HasPrefix(strings.ToLower(parsed.Model), "gpt-image") {
-		return errors.New("GPT Image mask editing is not supported by DoneBot")
+	if key != nil && strings.HasPrefix(key.Key, "sk-donebot-") {
+		if err := parsed.ApplyDoneBotImagePolicy(parsed.Model); err != nil {
+			return err
+		}
 	}
 	return nil
 }
