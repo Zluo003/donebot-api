@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -397,6 +398,37 @@ func TestAPIMartCompletedImageStatusSettlesPrepaidReceipt(t *testing.T) {
 				}
 				require.Equal(t, want, stub.p.SettledAmount)
 			}
+		})
+	}
+}
+
+func TestAPIMartCompletedLayersSettleActualCountFromSeventeenPrepaid(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		count          int
+		actual, refund float64
+	}{
+		{"portrait six files", 6, 1.5, 2.75}, {"tiger five files", 5, 1.25, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			urls, sizes := []string{}, []string{}
+			for i := 0; i < tc.count; i++ {
+				urls = append(urls, fmt.Sprintf("https://provider.invalid/layer-%d.png", i))
+				sizes = append(sizes, "1536x1536")
+			}
+			body, err := json.Marshal(map[string]any{"code": 200, "data": map[string]any{"status": "completed", "result": map[string]any{"images": []any{map[string]any{"url": urls, "sizes": sizes, "layer_decomposition": true}}}}})
+			require.NoError(t, err)
+			pending := &APIMartPending{Endpoint: APIMartImages, Model: "seedream-5-0-flash", Tier: "1K", Units: 17, LayerDecomposition: true}
+			result := APIMartCompletionResult(pending, body, "apimart:image:completed-layers")
+			require.NotNil(t, result)
+			require.Equal(t, tc.count, result.ImageCount)
+			require.Equal(t, map[string]int{"1K": tc.count}, result.ImageSizeBreakdown)
+			stub := &doneBotPrepaidStub{p: &DoneBotMediaPrecharge{ReceiptID: "layers-receipt", UserID: 1, APIKeyID: 2, AccountID: 3, Kind: "image", State: "prepaid", Amount: 4.25, Snapshot: DoneBotMediaPriceSnapshot{Kind: "image", MaxUnits: 17, Rates: map[string]DoneBotMediaUnitPrice{"1K": {Actual: 0.25, Total: 0.1}}}}}
+			err = (&OpenAIGatewayService{usageBillingRepo: stub}).RecordUsage(context.Background(), &OpenAIRecordUsageInput{Result: result, APIKey: &APIKey{ID: 2, UserID: 1, Key: "sk-donebot-isolated"}, User: &User{ID: 1}, Account: &Account{ID: 3}})
+			require.NoError(t, err)
+			require.Equal(t, tc.actual, stub.settled.ActualAmount)
+			require.Equal(t, tc.refund, stub.p.Amount-stub.settled.ActualAmount)
+			require.Equal(t, "settled", stub.p.State)
 		})
 	}
 }

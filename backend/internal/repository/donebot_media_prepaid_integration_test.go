@@ -145,31 +145,45 @@ func TestDoneBotMediaPrepaidRefundIsSeparateImmutableAndExactlyOnce(t *testing.T
 }
 
 func TestDoneBotMediaPrepaidSuccessRefundsDifferenceWithoutSecondDebit(t *testing.T) {
-	repo, ops, owner, accountID := doneBotPrepaidFixture(t, 10, 20)
-	p := doneBotPrepaidInput(t, ops, owner, accountID, "partial", 0.6)
-	require.NoError(t, repo.PrepayDoneBotMedia(context.Background(), p))
-	request := "dbm:settle:" + p.ReceiptID
-	effects := &service.UsageBillingCommand{RequestID: request, APIKeyID: owner.APIKeyID, UserID: owner.UserID, AccountID: accountID, Model: p.Model, AccountType: service.AccountTypeAPIKey, APIKeyQuotaCost: 0.25, APIKeyRateLimitCost: 0.25}
-	in := service.DoneBotMediaPrepaidSettlement{ReceiptID: p.ReceiptID, ProviderRequestID: "provider-success", ActualAmount: 0.25, TotalAmount: 0.125, Effects: effects}
-	first, err := repo.SettleDoneBotMediaPrecharge(context.Background(), in)
-	require.NoError(t, err)
-	require.True(t, first.Applied)
-	second, err := repo.SettleDoneBotMediaPrecharge(context.Background(), in)
-	require.NoError(t, err)
-	require.False(t, second.Applied)
-	var balance, quota, net, charge, refund float64
-	require.NoError(t, integrationDB.QueryRow(`SELECT balance FROM users WHERE id=$1`, owner.UserID).Scan(&balance))
-	require.Equal(t, 9.75, balance)
-	require.NoError(t, integrationDB.QueryRow(`SELECT quota_used FROM api_keys WHERE id=$1`, owner.APIKeyID).Scan(&quota))
-	require.Equal(t, 0.25, quota)
-	require.NoError(t, integrationDB.QueryRow(`SELECT SUM(actual_cost),MAX(actual_cost),MIN(actual_cost) FROM usage_logs WHERE operation_receipt_id=$1::uuid`, p.ReceiptID).Scan(&net, &charge, &refund))
-	require.Equal(t, 0.25, net)
-	require.Equal(t, 0.6, charge)
-	require.Equal(t, -0.35, refund)
-	_, err = repo.SettleDoneBotMediaPrecharge(context.Background(), service.DoneBotMediaPrepaidSettlement{ReceiptID: p.ReceiptID, Failure: true})
-	require.NoError(t, err)
-	require.NoError(t, integrationDB.QueryRow(`SELECT balance FROM users WHERE id=$1`, owner.UserID).Scan(&balance))
-	require.Equal(t, 9.75, balance, "a late failure cannot refund a settled success")
+	for _, tc := range []struct {
+		name                    string
+		prepaid, actual, refund float64
+	}{
+		{"ordinary partial", 0.6, 0.25, -0.35},
+		{"seedream portrait seventeen to six", 4.25, 1.5, -2.75},
+		{"seedream tiger seventeen to five", 4.25, 1.25, -3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, ops, owner, accountID := doneBotPrepaidFixture(t, 10, 20)
+			p := doneBotPrepaidInput(t, ops, owner, accountID, tc.name, tc.prepaid)
+			require.NoError(t, repo.PrepayDoneBotMedia(context.Background(), p))
+			request := "dbm:settle:" + p.ReceiptID
+			effects := &service.UsageBillingCommand{RequestID: request, APIKeyID: owner.APIKeyID, UserID: owner.UserID, AccountID: accountID, Model: p.Model, AccountType: service.AccountTypeAPIKey, APIKeyQuotaCost: tc.actual, APIKeyRateLimitCost: tc.actual}
+			in := service.DoneBotMediaPrepaidSettlement{ReceiptID: p.ReceiptID, ProviderRequestID: "provider-success", ActualAmount: tc.actual, TotalAmount: tc.actual / 2, Effects: effects}
+			first, err := repo.SettleDoneBotMediaPrecharge(context.Background(), in)
+			require.NoError(t, err)
+			require.True(t, first.Applied)
+			second, err := repo.SettleDoneBotMediaPrecharge(context.Background(), in)
+			require.NoError(t, err)
+			require.False(t, second.Applied)
+			var balance, quota, net, charge, refund float64
+			var events int
+			require.NoError(t, integrationDB.QueryRow(`SELECT COUNT(*) FROM usage_logs WHERE operation_receipt_id=$1::uuid`, p.ReceiptID).Scan(&events))
+			require.Equal(t, 2, events, "one immutable charge and one refund")
+			require.NoError(t, integrationDB.QueryRow(`SELECT balance FROM users WHERE id=$1`, owner.UserID).Scan(&balance))
+			require.Equal(t, 10-tc.actual, balance)
+			require.NoError(t, integrationDB.QueryRow(`SELECT quota_used FROM api_keys WHERE id=$1`, owner.APIKeyID).Scan(&quota))
+			require.Equal(t, tc.actual, quota)
+			require.NoError(t, integrationDB.QueryRow(`SELECT SUM(actual_cost),MAX(actual_cost),MIN(actual_cost) FROM usage_logs WHERE operation_receipt_id=$1::uuid`, p.ReceiptID).Scan(&net, &charge, &refund))
+			require.Equal(t, tc.actual, net)
+			require.Equal(t, tc.prepaid, charge)
+			require.Equal(t, tc.refund, refund)
+			_, err = repo.SettleDoneBotMediaPrecharge(context.Background(), service.DoneBotMediaPrepaidSettlement{ReceiptID: p.ReceiptID, Failure: true})
+			require.NoError(t, err)
+			require.NoError(t, integrationDB.QueryRow(`SELECT balance FROM users WHERE id=$1`, owner.UserID).Scan(&balance))
+			require.Equal(t, 10-tc.actual, balance, "a late failure cannot refund a settled success")
+		})
+	}
 }
 
 func TestDoneBotMediaPrepaidEnforcesSharedMediaConcurrencyAndRecovery(t *testing.T) {
