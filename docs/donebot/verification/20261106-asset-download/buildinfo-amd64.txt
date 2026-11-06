@@ -1,6 +1,6 @@
 /var/folders/wf/gs6jc_rd4qd_6_1jmqjkg1jh0000gn/T/donebot-v0.4.12-artifacts-nagwa2me/amd64/sub2api: go1.27.3
 	path	github.com/Wei-Shaw/sub2api/cmd/server
-	mod	github.com/Wei-Shaw/sub2api	(devel)	
+	mod	github.com/Wei-Shaw/sub2api	(devel)
 	dep	ariga.io/atlas	v0.32.1-0.20250325101103-175b25e1c1b9	h1:E0wvcUXTkgyN4wy4LGtNzMNGMytJN8afmIWXJVMi4cc=
 	dep	entgo.io/ent	v0.14.5	h1:Rj2WOYJtCkWyFo6a+5wB3EfBRP0rnx1fMk6gGA0UUe4=
 	dep	github.com/agext/levenshtein	v1.2.3	h1:YB2fHEn0UJagG8T1rrWknE3ZQzWM06O8AMAatNn7lmo=
