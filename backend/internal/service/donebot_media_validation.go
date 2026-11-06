@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/shopspring/decimal"
@@ -116,6 +117,9 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 		{"resolution", media.Resolutions}, {"ratio", media.AspectRatios}, {"aspect_ratio", media.AspectRatios},
 		{"voice", media.Voices}, {"response_format", media.Formats}, {"output_format", media.Formats}, {"audio_format", media.Formats}, {"version", media.MusicVersions},
 	} {
+		if protocol.Adapter == "apimart.images.v1" && field.name == "resolution" {
+			continue
+		}
 		if value, exists := parameters[field.name]; exists {
 			selected, ok := value.(string)
 			if !ok || (len(field.choices) > 0 || protocol.Adapter != "donebot.images.async.v1") && !slices.Contains(field.choices, selected) {
@@ -123,7 +127,7 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 			}
 		}
 	}
-	if value, exists := parameters["size"]; exists {
+	if value, exists := parameters["size"]; exists && protocol.Adapter != "apimart.images.v1" {
 		selected, ok := value.(string)
 		if !ok || (len(media.Sizes)+len(media.Resolutions)+len(media.AspectRatios) > 0 || protocol.Adapter != "donebot.images.async.v1") && !slices.Contains(media.Sizes, selected) && !slices.Contains(media.Resolutions, selected) && !slices.Contains(media.AspectRatios, selected) {
 			return ErrDoneBotMediaInvalid
@@ -154,22 +158,8 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 	stringValue := func(name string) string { value, _ := parameters[name].(string); return value }
 	switch protocol.Adapter {
 	case "apimart.images.v1":
-		size := stringValue("size")
-		if size == "" && !slices.Contains(media.Sizes, "auto") {
-			return ErrDoneBotMediaInvalid
-		}
-		resolution := stringValue("resolution")
-		if slices.Contains([]string{"1K", "1.5K", "2K"}, size) {
-			resolution = size
-		}
-		if resolution == "" {
-			resolution = "1K"
-			if parameters["layer_decomposition"] == true {
-				resolution = "2K"
-			}
-		}
-		if !slices.Contains(media.Resolutions, resolution) {
-			return ErrDoneBotMediaInvalid
+		if err := validateDoneBotAPIMartImageSize(media, parameters); err != nil {
+			return err
 		}
 	case "seedance.videos.v1":
 		resolution := stringValue("resolution")
@@ -201,6 +191,49 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 		if stringValue("voice") == "" || stringValue("response_format") == "" {
 			return ErrDoneBotMediaInvalid
 		}
+	}
+	return nil
+}
+
+func validateDoneBotAPIMartImageSize(media *DoneBotCatalogMediaParameters, parameters map[string]any) error {
+	values := map[string]string{}
+	for _, field := range []string{"size", "resolution"} {
+		if value, exists := parameters[field]; exists {
+			selected, ok := value.(string)
+			if !ok {
+				return ErrDoneBotMediaInvalid
+			}
+			values[field] = selected
+		}
+	}
+	size, resolution := strings.TrimSpace(values["size"]), strings.ToUpper(values["resolution"])
+	layer := parameters["layer_decomposition"] == true
+	tier, err := apimartImageTier(size, resolution, layer)
+	if err != nil {
+		return ErrDoneBotMediaInvalid
+	}
+	if size == "" || size == "auto" {
+		if !slices.Contains(media.Sizes, "auto") {
+			return ErrDoneBotMediaInvalid
+		}
+		if layer {
+			resolution = "2K"
+		}
+	} else if selected := strings.ToUpper(size); slices.Contains([]string{"1K", "1.5K", "2K"}, selected) {
+		resolution = selected
+	} else if w, h, ok := parseImageBillingDimensions(strings.ReplaceAll(size, "×", "x")); ok && int64(w)*int64(h) >= 921600 {
+		if tier == "1K" && (slices.Contains(media.Resolutions, "1K") || slices.Contains(media.Resolutions, "1.5K")) || tier == "2K" && slices.Contains(media.Resolutions, "2K") {
+			return nil
+		}
+		return ErrDoneBotMediaInvalid
+	} else if !slices.Contains(media.AspectRatios, strings.ReplaceAll(size, "x", ":")) {
+		return ErrDoneBotMediaInvalid
+	}
+	if resolution == "" {
+		resolution = "1K"
+	}
+	if !slices.Contains(media.Resolutions, resolution) {
+		return ErrDoneBotMediaInvalid
 	}
 	return nil
 }

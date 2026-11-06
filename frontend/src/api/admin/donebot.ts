@@ -12,6 +12,7 @@ export interface DoneBotModel extends ModelToggle {
  pricing_configured?: boolean
  editable_pricing?: ModelSalePricing
  video_resolutions?: string[]
+ image_resolutions?: string[]
  channel_pricing?: { input_price: number | null; output_price: number | null; per_request_price: number | null }
  effective_input_price: number | null; effective_output_price: number | null
  effective_per_request_price?: number | null

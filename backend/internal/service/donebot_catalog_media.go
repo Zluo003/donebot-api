@@ -199,13 +199,14 @@ func doneBotAccountMediaParameters(account *Account, model string, row DoneBotMo
 	switch row.Kind {
 	case "images":
 		if IsAPIMartImageModel(native) && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAPIMartImages) {
-			media := &DoneBotCatalogMediaParameters{Protocol: doneBotMediaProtocol("apimart.images.v1"), AspectRatios: []string{"1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "2:1", "1:2", "21:9"}}
+			media := &DoneBotCatalogMediaParameters{Protocol: doneBotMediaProtocol("apimart.images.v1"), AspectRatios: []string{"1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "2:1", "1:2", "21:9"}, Formats: []string{"jpeg", "png"}}
+			lowerTierPriced := doneBotCatalogPrice(row.EffectiveImagePrices["1K"], 1) != nil
 			for _, resolution := range []string{"1K", "1.5K", "2K"} {
 				tier := resolution
 				if tier == "1.5K" {
 					tier = "1K"
 				}
-				if doneBotCatalogPrice(row.EffectiveImagePrices[tier], 1) != nil {
+				if lowerTierPriced && doneBotCatalogPrice(row.EffectiveImagePrices[tier], 1) != nil {
 					media.Resolutions = append(media.Resolutions, resolution)
 					media.Sizes = append(media.Sizes, resolution)
 				}

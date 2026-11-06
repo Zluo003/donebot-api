@@ -181,18 +181,16 @@ func (s *OpenAIGatewayService) APIMartPricingConfigured(ctx context.Context, key
 	if key == nil || key.Group == nil {
 		return false
 	}
-	if e == APIMartImages && info.LayerDecomposition {
-		info.LayerDecomposition = false
-		for _, tier := range []string{"1K", "2K"} {
-			info.Tier = tier
-			if !s.APIMartPricingConfigured(ctx, key, info, e) {
-				return false
-			}
-		}
-		return true
+	tiers := []string{info.Tier}
+	if e == APIMartImages && info.Tier == "2K" {
+		tiers = []string{"1K", "2K"}
 	}
-	return s.apimartResolvedUnitTariff(ctx, key, firstNonEmpty(info.BillingModel, info.Model), info.Tier, e) != nil
-
+	for _, tier := range tiers {
+		if s.apimartResolvedUnitTariff(ctx, key, firstNonEmpty(info.BillingModel, info.Model), tier, e) == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *OpenAIGatewayService) apimartResolvedUnitTariff(ctx context.Context, key *APIKey, model, tier string, e APIMartEndpoint) *ResolvedPricing {

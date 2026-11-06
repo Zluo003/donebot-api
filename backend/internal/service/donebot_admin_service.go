@@ -52,6 +52,7 @@ type DoneBotModel struct {
 	PricingConfigured        bool                    `json:"pricing_configured"`
 	EditablePricing          *DoneBotEditablePricing `json:"editable_pricing,omitempty"`
 	VideoResolutions         []string                `json:"video_resolutions,omitempty"`
+	ImageResolutions         []string                `json:"image_resolutions,omitempty"`
 	Model                    string                  `json:"model"`
 	Platform                 string                  `json:"platform"`
 	Kind                     string                  `json:"kind"`
@@ -234,7 +235,7 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 							continue
 						}
 						cp := price.Clone()
-						rows[strings.ToLower(route.PublicModel)] = DoneBotModel{Model: route.PublicModel, Platform: route.TargetPlatform, Kind: kind, AudioPriceUnit: audioUnit, Available: true, ChannelPricing: &cp, VideoResolutions: doneBotVideoResolutions(upstream, accounts)}
+						rows[strings.ToLower(route.PublicModel)] = DoneBotModel{Model: route.PublicModel, Platform: route.TargetPlatform, Kind: kind, AudioPriceUnit: audioUnit, Available: true, ChannelPricing: &cp, VideoResolutions: doneBotVideoResolutions(upstream, accounts), ImageResolutions: doneBotImageResolutions(kind, upstream, accounts)}
 					}
 				}
 			}
@@ -279,7 +280,7 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 		if native, _ := doneBotNativeMediaKind(upstream, accounts); native != "" && !doneBotHasNativeMediaAccount(upstream, route.TargetPlatform, native, accounts) {
 			continue
 		}
-		rows[key] = DoneBotModel{Model: route.PublicModel, Platform: route.TargetPlatform, Kind: kind, AudioPriceUnit: unit, Available: true, ChannelPricing: nil, VideoResolutions: doneBotVideoResolutions(upstream, accounts)}
+		rows[key] = DoneBotModel{Model: route.PublicModel, Platform: route.TargetPlatform, Kind: kind, AudioPriceUnit: unit, Available: true, ChannelPricing: nil, VideoResolutions: doneBotVideoResolutions(upstream, accounts), ImageResolutions: doneBotImageResolutions(kind, upstream, accounts)}
 	}
 	result := make([]DoneBotModel, 0, len(rows))
 	for _, row := range rows {
@@ -324,8 +325,11 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 			if g.ImageRateIndependent {
 				m = g.ImageRateMultiplier
 			}
+			if len(row.ImageResolutions) == 0 {
+				row.ImageResolutions = doneBotImageResolutions(row.Kind, row.Model, accounts)
+			}
 			row.EffectiveImagePrices = map[string]*float64{}
-			for _, size := range []string{"1K", "2K", "4K"} {
+			for _, size := range doneBotImagePricingTiers(row.ImageResolutions) {
 				p := g.GetImagePrice(size)
 				if matchGroupModelPricing(g, row.Model) != nil {
 					p = nil
@@ -343,6 +347,9 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 			}
 		}
 		row.PricingConfigured = doneBotPriceMatchesKind(price, row.Kind)
+		if row.Kind == "images" && slices.Contains(row.ImageResolutions, "1.5K") {
+			row.PricingConfigured = row.PricingConfigured && doneBotCatalogPrice(row.EffectiveImagePrices["1K"], 1) != nil
+		}
 		row.Enabled = row.Enabled && row.PricingConfigured
 		doneBotEditablePrice(&row, g, price)
 		result = append(result, row)

@@ -218,3 +218,69 @@ func TestDoneBotMediaEstimateDoesNotInventUserRateAdjustedPrices(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, estimate)
 }
+
+func TestDoneBotSeedreamValidationHonorsNativeSizePrecedenceAndPixels(t *testing.T) {
+	s, owner, _, _ := doneBotMediaValidationFixture(t)
+	for _, test := range []struct {
+		name, raw string
+		allowed   bool
+	}{
+		{"pixels lower", `{"size":"1600x1600"}`, true},
+		{"pixels upper X", `{"size":"2048X1024","resolution":"4K"}`, true},
+		{"pixels multiplication sign", `{"size":"2048×2048","resolution":"1K"}`, true},
+		{"tier precedence", `{"size":"1.5K","resolution":"4K"}`, true},
+		{"lowercase tier", `{"size":"1.5k","resolution":"4K"}`, true},
+		{"ratio alias", `{"size":"16x9","resolution":"1.5k"}`, true},
+		{"pixels too small", `{"size":"512x512"}`, false},
+		{"pixels too large", `{"size":"4096x4096"}`, false},
+		{"unsupported ratio", `{"size":"9:21"}`, false},
+		{"unsupported resolution", `{"size":"16:9","resolution":"4K"}`, false},
+		{"size type", `{"size":1600}`, false},
+		{"resolution type", `{"size":"1600x1600","resolution":2}`, false},
+		{"layer low tier", `{"size":"1.5K","resolution":"4K","layer_decomposition":true}`, true},
+		{"layer pixels", `{"size":"1600x1600","layer_decomposition":true}`, false},
+		{"layer ratio", `{"size":"16:9","layer_decomposition":true}`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := s.ValidateMediaPath(t.Context(), owner, "image", "image", "/v1/images/generations", decodeDoneBotMediaTest(t, test.raw))
+			if test.allowed {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, ErrDoneBotMediaInvalid)
+			}
+		})
+	}
+}
+
+func TestDoneBotSeedreamValidationChecksEffectiveTierAgainstNarrowedCatalog(t *testing.T) {
+	s, owner, _, settings := doneBotMediaValidationFixture(t)
+	settings.values[doneBotCapabilitiesSetting] = `{"image":{"media_parameters":{"sizes":["auto","1K","1.5K"],"resolutions":["1K","1.5K"],"aspect_ratios":["16:9"]}}}`
+	for _, test := range []struct {
+		name, raw string
+		allowed   bool
+	}{
+		{"lower pixels ignore higher resolution", `{"size":"1600x1600","resolution":"2K"}`, true},
+		{"lower tier overrides higher resolution", `{"size":"1.5K","resolution":"2K"}`, true},
+		{"higher pixels ignore lower resolution", `{"size":"2048x2048","resolution":"1K"}`, false},
+		{"ratio uses resolution", `{"size":"16:9","resolution":"2K"}`, false},
+		{"ratio narrowing", `{"size":"1x1","resolution":"1K"}`, false},
+		{"ratio alias", `{"size":"16x9","resolution":"1.5K"}`, true},
+		{"auto layer requires high tier", `{"size":"auto","resolution":"1K","layer_decomposition":true}`, false},
+		{"implicit auto layer requires high tier", `{"resolution":"1K","layer_decomposition":true}`, false},
+		{"explicit lower layer tier", `{"size":"1.5K","resolution":"2K","layer_decomposition":true}`, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := s.ValidateMedia(t.Context(), owner, "image", "image", decodeDoneBotMediaTest(t, test.raw))
+			if test.allowed {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, ErrDoneBotMediaInvalid)
+			}
+		})
+	}
+	settings.values[doneBotCapabilitiesSetting] = `{"image":{"media_parameters":{"sizes":["2K"],"resolutions":["2K"],"aspect_ratios":["16:9"]}}}`
+	require.NoError(t, s.ValidateMedia(t.Context(), owner, "image", "image", decodeDoneBotMediaTest(t, `{"size":"2048x2048","resolution":"1K"}`)))
+	require.ErrorIs(t, s.ValidateMedia(t.Context(), owner, "image", "image", decodeDoneBotMediaTest(t, `{"size":"1600x1600","resolution":"2K"}`)), ErrDoneBotMediaInvalid)
+	settings.values[doneBotCapabilitiesSetting] = `{"image":{"media_parameters":{"sizes":["1.5K"],"resolutions":["1.5K"]}}}`
+	require.NoError(t, s.ValidateMedia(t.Context(), owner, "image", "image", decodeDoneBotMediaTest(t, `{"size":"1600x1600","resolution":"2K"}`)))
+}

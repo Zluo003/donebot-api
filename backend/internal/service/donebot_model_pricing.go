@@ -57,6 +57,31 @@ func doneBotLlmModelMultiplier(g *Group, model string) float64 {
 	}
 	return m
 }
+func doneBotImageResolutions(kind, model string, accounts []Account) []string {
+	if kind != "images" {
+		return nil
+	}
+	if IsAPIMartImageModel(model) {
+		return []string{"1K", "1.5K", "2K"}
+	}
+	for i := range accounts {
+		if accounts[i].IsModelSupported(model) && IsAPIMartImageModel(accounts[i].GetMappedModel(model)) {
+			return []string{"1K", "1.5K", "2K"}
+		}
+	}
+	return []string{"1K", "2K", "4K"}
+}
+
+func doneBotImagePricingTiers(resolutions []string) []string {
+	var tiers []string
+	for _, resolution := range resolutions {
+		if resolution != "1.5K" && !slices.Contains(tiers, resolution) {
+			tiers = append(tiers, resolution)
+		}
+	}
+	return tiers
+}
+
 func doneBotVideoResolutions(model string, accounts []Account) []string {
 	for i := range accounts {
 		account := &accounts[i]
@@ -237,7 +262,7 @@ func (s *DoneBotAdminService) prepareModelPricingUpdate(ctx context.Context, g *
 			}
 			p.BillingMode = BillingModeImage
 			for size, v := range value.ImagePrices {
-				if !slices.Contains([]string{"1K", "2K", "4K"}, size) {
+				if !slices.Contains(doneBotImagePricingTiers(row.ImageResolutions), size) {
 					return nil, invalid()
 				}
 				if v != nil {

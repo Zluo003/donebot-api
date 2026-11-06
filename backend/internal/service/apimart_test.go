@@ -71,7 +71,7 @@ func TestAPIMartNativeForwardingAndNoMutation(t *testing.T) {
 		endpoint             APIMartEndpoint
 		body, path, response string
 	}{
-		{APIMartImages, `{"model":"seedream-5-0-flash","prompt":"x","size":"2K","future":{"keep":true}}`, "/v1/images/generations", `{"code":200,"data":[{"status":"submitted","task_id":"task-image"}]}`},
+		{APIMartImages, `{"model":"seedream-5-0-flash","prompt":"x","size":"2K","optimize_prompt_options":{"mode":"standard"},"future":{"keep":true}}`, "/v1/images/generations", `{"code":200,"data":[{"status":"submitted","task_id":"task-image"}]}`},
 		{APIMartSuno, `{"model":"suno","version":"v6","prompt":"x","future":{"keep":true}}`, "/v1/music/generations", `{"code":200,"data":[{"status":"submitted","task_id":"task-music"}]}`},
 		{APIMartTTS, `{"model":"gpt-4o-mini-tts","input":"x","voice":"alloy","response_format":"pcm","future":{"keep":true}}`, "/v1/audio/speech", "\x00\x01\x02audio"},
 	} {
@@ -343,4 +343,26 @@ func TestAPIMartUpstreamRetainsWorkerDeadline(t *testing.T) {
 	forwarded, ok := upstream.request.Context().Deadline()
 	require.True(t, ok, "worker's deadline must survive detached forwarding")
 	require.Equal(t, deadline, forwarded)
+}
+
+func TestAPIMartOrdinaryImagesUsePixelAreaRatherThanLongestEdge(t *testing.T) {
+	for _, tc := range []struct{ size, tier string }{
+		{"1312x736", "1K"}, {"1536x1536", "1K"}, {"2352x1008", "1K"}, {"3024x1296", "2K"}, {"2048x2048", "2K"},
+	} {
+		p := &APIMartPending{Model: "seedream-5-0-flash", Tier: tc.tier, Units: 1, Endpoint: APIMartImages}
+		r := APIMartCompletionResult(p, []byte(`{"status":"success","result":{"images":[{"url":["https://cdn.example/image"],"sizes":["`+tc.size+`"]}]}}`), "apimart:image:area-test")
+		require.NotNil(t, r)
+		require.Equal(t, map[string]int{tc.tier: 1}, r.ImageSizeBreakdown)
+	}
+}
+
+func TestAPIMartSeedreamPromptOptimizationUsesDocumentedMode(t *testing.T) {
+	for _, options := range []string{`"optimize_prompt_options":{"mode":"standard"}`, `"optimize_prompt_options":{}`, `"optimize_prompt_options.mode":"standard"`} {
+		_, err := ParseAPIMartRequest(APIMartImages, []byte(`{"model":"seedream-5-0-flash","prompt":"x",`+options+`}`))
+		require.NoError(t, err)
+	}
+	for _, options := range []string{`"optimize_prompt_options":{"mode":"fast"}`, `"optimize_prompt_options":"standard"`, `"optimize_prompt_options.mode":"fast"`} {
+		_, err := ParseAPIMartRequest(APIMartImages, []byte(`{"model":"seedream-5-0-flash","prompt":"x",`+options+`}`))
+		require.Error(t, err)
+	}
 }

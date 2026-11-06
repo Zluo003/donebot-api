@@ -19,7 +19,8 @@ export function createModelPriceDraft(row: DoneBotModel, kind: Modality): ModelP
   if (kind === 'llm') {
     fields = [{ key: 'rate_multiplier', label: '倍率', factor: 1, value: display(p.rate_multiplier ?? 1) }]
   } else if (kind === 'images') {
-    fields = ['1K', '2K', '4K'].map(size => ({ key: `image-${size}`, label: size, factor: 1, value: display(p.image_prices?.[size] ?? row.effective_image_prices?.[size]) }))
+    const resolutions = row.image_resolutions ?? ['1K', '2K', '4K']
+    fields = resolutions.filter(size => size !== '1.5K').map(size => ({ key: `image-${size}`, label: size === '1K' && resolutions.includes('1.5K') ? '1K / 1.5K' : size, factor: 1, value: display(p.image_prices?.[size] ?? row.effective_image_prices?.[size]) }))
   } else if (kind === 'audio') {
     const tiers = p.tier_prices ?? row.effective_tier_prices ?? {}
     const defaults = row.audio_price_unit === 'million_characters' || row.model === 'gpt-4o-mini-tts' || 'tts' in tiers ? ['tts'] : ['v6', 'v6-wild', 'v6-mini', 'custom-model']
@@ -41,7 +42,7 @@ export function validPriceDraft(draft: ModelPriceDraft): boolean {
 export function draftToSalePricing(draft: ModelPriceDraft, kind: Modality): ModelSalePricing {
   const value = (field: PriceField) => String(field.value).trim() === '' ? null : Number(field.value) / field.factor
   if (kind === 'llm') return { rate_multiplier: Number(draft.fields[0].value) }
-  if (kind === 'images') return { image_prices: Object.fromEntries(draft.fields.map(field => [field.label, value(field)])) }
+  if (kind === 'images') return { image_prices: Object.fromEntries(draft.fields.map(field => [field.key.slice('image-'.length), value(field)])) }
   if (kind === 'audio') return { tier_prices: Object.fromEntries(draft.fields.map(field => [field.label, value(field)])) }
   return { video_prices: draft.fields.map(field => ({ resolution: field.resolution!, reference_video: field.referenceVideo!, price_per_second: value(field) })) }
 }

@@ -191,3 +191,32 @@ func TestDoneBotVideoPricingUsesOfficialSpecWithCustomMappingNames(t *testing.T)
 	require.Equal(t, BillingModeVideo, price.BillingMode)
 	require.InDelta(t, 0.2, *price.Intervals[0].PerRequestPrice, 1e-12)
 }
+
+func TestDoneBotSeedreamPricingUsesDocumentedResolutionsAndSharedLowerTier(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	account := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"seedream-5-0-flash": "seedream-5-0-flash", "poster": "seedream-5-0-flash", "gpt-image-1": "gpt-image-1"})
+	account.Type = AccountTypeAPIKey
+	account.Credentials["base_url"] = "https://provider.invalid"
+	account.Credentials["openai_capabilities"] = []string{"apimart_images", "chat_completions"}
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+	s.channels = doneBotCatalogChannelsStub{}
+	one, two, four := 0.05, 0.1, 0.2
+	for _, model := range []string{"seedream-5-0-flash", "poster"} {
+		in := []DoneBotModelPriceInput{{Model: model, Pricing: DoneBotEditablePricing{ImagePrices: map[string]*float64{"1K": &one, "2K": &two}}}}
+		require.NoError(t, s.updateModelPricing(context.Background(), a.group, "images", in))
+		a.group.ModelPricing = *a.update.ModelPricing
+		rows, err := s.catalog(context.Background(), a.group)
+		require.NoError(t, err)
+		for _, row := range rows {
+			if row.Model == model {
+				require.Equal(t, []string{"1K", "1.5K", "2K"}, row.ImageResolutions)
+				require.Len(t, row.EditablePricing.ImagePrices, 2)
+				require.InDelta(t, one, *row.EffectiveImagePrices["1K"], 1e-12)
+				require.NotContains(t, row.EffectiveImagePrices, "4K")
+			}
+		}
+		in[0].Pricing.ImagePrices["4K"] = &four
+		require.Error(t, s.updateModelPricing(context.Background(), a.group, "images", in))
+	}
+	require.NoError(t, s.updateModelPricing(context.Background(), a.group, "images", []DoneBotModelPriceInput{{Model: "gpt-image-1", Pricing: DoneBotEditablePricing{ImagePrices: map[string]*float64{"1K": &one, "2K": &two, "4K": &four}}}}))
+}

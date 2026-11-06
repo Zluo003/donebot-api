@@ -68,7 +68,7 @@ watch(state, value => {
 const validPrices = computed(() => drafts.value.every(validPriceDraft))
 const descriptions = computed<Record<Modality, string>>(() => ({
   llm: 'LLM 按渠道价格 × 每模型倍率计费。',
-  images: '图片按模型与尺寸逐张计费（USD / 张）。Seedream 1.5K 与 1K 使用相同价格。',
+  images: '图片按模型与尺寸逐张计费（USD / 张）。Seedream 1.5K 与 1K 使用相同价格；2K 也须配置低档价，以便按实际产出结算。',
   audio: 'Suno 按版本配置每次生成价格，Max 模式为 2 倍；TTS 按百万字符配置价格。',
   video: t('admin.donebot.pricing.videoDescription')
 }))
@@ -81,7 +81,9 @@ const emptyMessages: Record<Modality, string> = {
 function canEnable(row: DoneBotModel, draft?: ModelPriceDraft) {
   if (!row.available) return false
   if (row.pricing_configured !== false) return true
-  return props.kind !== 'llm' && !!draft && validPriceDraft(draft) && draft.fields.some(field => String(field.value).trim() !== '')
+  if (props.kind === 'llm' || !draft || !validPriceDraft(draft)) return false
+  if (props.kind === 'images' && row.image_resolutions?.includes('1.5K')) return draft.fields.some(field => field.key === 'image-1K' && String(field.value).trim() !== '')
+  return draft.fields.some(field => String(field.value).trim() !== '')
 }
 function priceUnit(row: DoneBotModel) {
   if (props.kind === 'llm') return '×'

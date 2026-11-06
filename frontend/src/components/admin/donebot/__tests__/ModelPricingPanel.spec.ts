@@ -52,14 +52,17 @@ describe('DoneBot individual model sale prices', () => {
   })
   it('edits separate image model prices without submitting shared group image overrides', async () => {
     mockResult(fixture([
-      row('seedream-5-0-flash', 'images', { image_prices: { '1K': .045, '2K': .09, '4K': null } }),
+      { ...row('seedream-5-0-flash', 'images', { image_prices: { '1K': .045, '2K': .09 } }), image_resolutions: ['1K', '1.5K', '2K'] },
       row('gpt-image-1', 'images', { image_prices: { '1K': .1, '2K': .2, '4K': .3 } })
     ]))
     const wrapper = mount(ImageModelsPanel, { global: { stubs: { ImageTaskLookup: true } } }); await flushPromises()
+    expect(wrapper.find('[data-testid="price-seedream-5-0-flash-image-4K"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('1K / 1.5K')
+    expect(wrapper.find('[data-testid="price-gpt-image-1-image-4K"]').exists()).toBe(true)
     await wrapper.get('[data-testid="price-seedream-5-0-flash-image-1K"]').setValue('0.055')
     await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
     expect(donebot.saveConfiguration).toHaveBeenCalledWith('images', { models: [
-      { model: 'seedream-5-0-flash', enabled: true, pricing: { image_prices: { '1K': .055, '2K': .09, '4K': null } } },
+      { model: 'seedream-5-0-flash', enabled: true, pricing: { image_prices: { '1K': .055, '2K': .09 } } },
       { model: 'gpt-image-1', enabled: true, pricing: { image_prices: { '1K': .1, '2K': .2, '4K': .3 } } }
     ] })
   })
@@ -133,15 +136,18 @@ describe('DoneBot individual model sale prices', () => {
     expect(wrapper.get<HTMLInputElement>('[aria-label="启用 gpt-new"]').element.disabled).toBe(true)
   })
   it('can price and enable a new media model in the same save', async () => {
-    mockResult(fixture([{ ...row('seedream-5-0-flash', 'images', { image_prices: {} }), enabled: false, pricing_configured: false }]))
+    mockResult(fixture([{ ...row('seedream-5-0-flash', 'images', { image_prices: {} }), enabled: false, pricing_configured: false, image_resolutions: ['1K', '1.5K', '2K'] }]))
     const wrapper = mount(ImageModelsPanel, { global: { stubs: { ImageTaskLookup: true } } }); await flushPromises()
     expect(wrapper.get<HTMLInputElement>('[aria-label="启用 seedream-5-0-flash"]').element.disabled).toBe(true)
+    await wrapper.get('[data-testid="price-seedream-5-0-flash-image-2K"]').setValue('0.1')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="启用 seedream-5-0-flash"]').element.disabled).toBe(true)
+    await wrapper.get('[data-testid="price-seedream-5-0-flash-image-2K"]').setValue('')
     await wrapper.get('[data-testid="price-seedream-5-0-flash-image-1K"]').setValue('0.05')
     expect(wrapper.get<HTMLInputElement>('[aria-label="启用 seedream-5-0-flash"]').element.disabled).toBe(false)
     await wrapper.get('[aria-label="启用 seedream-5-0-flash"]').setValue(true)
     await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
     expect(donebot.saveConfiguration).toHaveBeenCalledTimes(1)
-    expect(donebot.saveConfiguration).toHaveBeenCalledWith('images', { models: [{ model: 'seedream-5-0-flash', enabled: true, pricing: { image_prices: { '1K': 0.05, '2K': null, '4K': null } } }] })
+    expect(donebot.saveConfiguration).toHaveBeenCalledWith('images', { models: [{ model: 'seedream-5-0-flash', enabled: true, pricing: { image_prices: { '1K': 0.05, '2K': null } } }] })
   })
   it('saves model switches and current multipliers in one request', async () => {
     mockResult(fixture([row('gpt-test', 'llm', { rate_multiplier: 1.2 })]))

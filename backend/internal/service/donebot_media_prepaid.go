@@ -92,10 +92,12 @@ func (s *OpenAIGatewayService) PrepayDoneBotAPIMart(ctx context.Context, key *AP
 		snapshot.Kind = "image"
 		snapshot.RateMultiplier = imageRate
 		snapshot.MaxUnits = 1
-		tiers = []string{"1K", "2K", "4K"}
+		tiers = []string{"1K"}
+		if info.Tier == "2K" {
+			tiers = append(tiers, "2K")
+		}
 		if info.LayerDecomposition {
 			snapshot.MaxUnits = 17
-			tiers = []string{"1K", "2K"}
 		}
 	}
 	for _, tier := range tiers {

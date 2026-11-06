@@ -1,0 +1,21 @@
+# Seedream 5.0 Flash 接入修复核验
+
+文档依据：[APIMart Seedream 5.0 Flash generation](https://docs.apimart.ai/cn/api-reference/images/seedream-5-0-flash/generation)，核对日期 2026-11-07。
+
+## 修复边界
+
+- 管理端按原生型号和账号映射返回 `image_resolutions`。Seedream 为 1K、1.5K、2K，不显示或接受 4K；1K / 1.5K 共享低档售价。GPT Image 保留 4K。
+- 普通图片不再在预扣阶段索要无关的 4K 价格。低档仅冻结低档价；高档同时冻结低档价供较小产出结算。仅配置高档而缺少低档价时，目录和提交入场都判为不可调用。
+- 图层拆分预扣上限仍是 17 张。完成后按实际张数、每张实际面积结算，多扣退还，失败退款路径保持不变。预扣采用可达档位中的最高本地价，覆盖管理员将低档售价设得高于高档售价的情况。
+- 所有 Seedream 实际输出按面积判档：不超过 2,601,124 像素按 1K，超过按 2K，避免宽屏 1K 或 1.5K 误套用 GPT Image 的最长边收费。
+- 目录公布 jpeg / png，嵌套 `optimize_prompt_options` 透传且 mode 仅接受 standard（省略 mode 使用默认）。原始 sizes / output_formats / layers 元数据在缓存 URL 替换后保留。
+- 既有模型金额不迁移、不按供应商成本猜定售价。第二张起参考图的上游附加费用目前需要运营方在本地售价覆盖，尚无独立参考图加价设置；本轮范围是文生图、单参考图、单图层拆分。
+
+## 离线验证
+
+使用内存价卡、虚构账号、模拟上游与隔离缓存；未修改生产模型价格或调用真实 APIMart 密钥。
+
+- 后端目标测试覆盖 APIMart 原生请求、面积计费、模型价格、目录、Seedream 预扣、模型别名和生成文件元数据保留。
+- 前端目标：`pnpm exec vitest run src/components/admin/donebot/__tests__/ModelPricingPanel.spec.ts`，15 项通过。
+- 前端类型检查：`pnpm exec vue-tsc --noEmit` 通过。
+- 真实网关生成结果由主任务在发布部署后另行记录；上述离线通过不代表生产部署已完成。

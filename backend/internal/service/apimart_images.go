@@ -27,6 +27,14 @@ func parseAPIMartImageRequest(root gjson.Result, info APIMartRequestInfo) (APIMa
 	if err := validateAPIMartNativeFields(root, []string{"prompt", "size", "resolution", "output_format", "layer_decomposition", "nsfw_check"}, []string{"layer_decomposition", "nsfw_check", "watermark"}); err != nil {
 		return info, err
 	}
+	if options := root.Get("optimize_prompt_options"); options.Exists() {
+		if !options.IsObject() || options.Get("mode").Exists() && options.Get("mode").String() != "standard" {
+			return info, fmt.Errorf("optimize_prompt_options.mode must be standard")
+		}
+	}
+	if mode := root.Get("optimize_prompt_options\\.mode"); mode.Exists() && mode.String() != "standard" {
+		return info, fmt.Errorf("optimize_prompt_options.mode must be standard")
+	}
 	info.Prompt = root.Get("prompt").String()
 	for _, k := range []string{"stream", "tools", "sequential_image_generation"} {
 		if root.Get(k).Exists() {
@@ -108,14 +116,8 @@ func completeAPIMartImages(p *APIMartPending, root gjson.Result, r *OpenAIForwar
 				size = v.Get(fmt.Sprintf("layers.%d.size", i)).String()
 			}
 			tier := p.Tier
-			if !p.LayerDecomposition && size != "" {
-				tier = NormalizeImageBillingTierOrDefault(size)
-			}
-			if w, h, ok := parseImageBillingDimensions(size); p.LayerDecomposition && ok && w > 0 && h > 0 {
-				tier = "1K"
-				if int64(w)*int64(h) > 2601124 {
-					tier = "2K"
-				}
+			if w, h, ok := parseImageBillingDimensions(size); ok && w > 0 && h > 0 {
+				tier = apimartImageAreaTier(int64(w) * int64(h))
 			}
 			breakdown[tier]++
 			sizes = append(sizes, size)
@@ -145,6 +147,16 @@ func validAPIMartImageURL(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && u.User == nil && u.Host != "" && (u.Scheme == "https" || u.Scheme == "http")
 }
+
+// APIMart bills Seedream outputs by pixel area; 1K and 1.5K share the lower tier.
+// https://docs.apimart.ai/cn/api-reference/images/seedream-5-0-flash/generation
+func apimartImageAreaTier(area int64) string {
+	if area > 2601124 {
+		return "2K"
+	}
+	return "1K"
+}
+
 func apimartImageTier(size, resolution string, layer bool) (string, error) {
 	size = strings.TrimSpace(size)
 	res := strings.ToUpper(resolution)
@@ -170,10 +182,7 @@ func apimartImageTier(size, resolution string, layer bool) (string, error) {
 			if e1 != nil || e2 != nil || w <= 0 || h <= 0 || area < 921600 || area > 4624220 || float64(w)/float64(h) < 1.0/16 || float64(w)/float64(h) > 16 {
 				return "", fmt.Errorf("invalid Seedream pixel dimensions")
 			}
-			if area > 2601124 {
-				return "2K", nil
-			}
-			return "1K", nil
+			return apimartImageAreaTier(area), nil
 		}
 	}
 	if res == "" {

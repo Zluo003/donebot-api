@@ -168,3 +168,46 @@ func TestDoneBotMediaPrepaidAdmissionFreezesConservativeNativeBounds(t *testing.
 		video = 0.15
 	}
 }
+
+func TestDoneBotSeedreamPrepaymentUsesRequestedTierWithoutUnsupported4K(t *testing.T) {
+	gid := int64(7)
+	one, two := 0.045, 0.09
+	billing := NewBillingService(&config.Config{}, nil)
+	stub := &doneBotPrepaidStub{}
+	svc := &OpenAIGatewayService{billingService: billing, resolver: NewModelPricingResolver(nil, billing), usageBillingRepo: stub}
+	key := &APIKey{ID: 2, UserID: 1, GroupID: &gid, User: &User{ID: 1}, Group: &Group{ID: gid, Platform: PlatformOpenAI, RateMultiplier: 1, ImagePrice1K: &one}}
+	account := &Account{ID: 3}
+	for _, tc := range []struct {
+		body  string
+		want  float64
+		units float64
+	}{
+		{`{"model":"seedream-5-0-flash","prompt":"x","resolution":"1.5K","size":"16:9"}`, one, 1},
+		{`{"model":"seedream-5-0-flash","layer_decomposition":true,"image_urls":["https://example.invalid/image.png"],"size":"1.5K"}`, one * 17, 17},
+		{`{"model":"seedream-5-0-flash","prompt":"x","resolution":"2K"}`, two, 1},
+		{`{"model":"seedream-5-0-flash","layer_decomposition":true,"image_urls":["https://example.invalid/image.png"],"size":"auto"}`, two * 17, 17},
+	} {
+		info, err := ParseAPIMartRequest(APIMartImages, []byte(tc.body))
+		require.NoError(t, err)
+		if info.Tier == "2K" {
+			key.Group.ImagePrice2K = &two
+		}
+		require.True(t, svc.APIMartPricingConfigured(context.Background(), key, info, APIMartImages))
+		err = svc.PrepayDoneBotAPIMart(WithDoneBotMediaReceipt(context.Background(), uuid.NewString()), key, account, info, APIMartImages)
+		require.NoError(t, err)
+		require.InDelta(t, tc.want, stub.p.Amount, 1e-12)
+		require.Equal(t, tc.units, stub.p.Snapshot.MaxUnits)
+		require.NotContains(t, stub.p.Snapshot.Rates, "4K")
+	}
+}
+
+func TestDoneBotSeedreamHighTierWithoutLowerTariffCannotBeAdmitted(t *testing.T) {
+	gid := int64(7)
+	two := 0.09
+	billing := NewBillingService(&config.Config{}, nil)
+	svc := &OpenAIGatewayService{billingService: billing, resolver: NewModelPricingResolver(nil, billing)}
+	key := &APIKey{GroupID: &gid, Group: &Group{ID: gid, Platform: PlatformOpenAI, RateMultiplier: 1, ImagePrice2K: &two}}
+	for _, layer := range []bool{false, true} {
+		require.False(t, svc.APIMartPricingConfigured(context.Background(), key, APIMartRequestInfo{Model: "seedream-5-0-flash", Tier: "2K", LayerDecomposition: layer}, APIMartImages))
+	}
+}

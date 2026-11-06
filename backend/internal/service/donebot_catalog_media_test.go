@@ -36,7 +36,7 @@ func TestDoneBotPublicCatalogMediaParametersFollowNativeParsersAndTariffs(t *tes
 	require.Equal(t, []string{"auto", "1K", "1.5K", "2K"}, image.Sizes)
 	require.Contains(t, image.AspectRatios, "16:9")
 	require.Equal(t, []string{"1K", "1.5K", "2K"}, image.Resolutions)
-	require.Empty(t, image.Formats)
+	require.Equal(t, []string{"jpeg", "png"}, image.Formats)
 	require.Equal(t, "apimart.images.v1", image.Protocol.Adapter)
 	require.Equal(t, "data.0.task_id", image.Protocol.TaskIDPath)
 	require.Equal(t, "/v1/tasks/{task_id}", image.Protocol.Poll.Path)
@@ -213,4 +213,12 @@ func TestDoneBotPublicCatalogMediaIgnoresLegacyFeatureSwitches(t *testing.T) {
 	catalog, err = s.Models(t.Context(), owner.UserID, owner.InstallationID)
 	require.NoError(t, err)
 	require.Empty(t, catalog.Models)
+}
+
+func TestDoneBotSeedreamHighTierRequiresLowerTierSettlementPrice(t *testing.T) {
+	group, rows, accounts := doneBotMediaCatalogFixture()
+	delete(rows[0].EffectiveImagePrices, "1K")
+	media, err := doneBotPublicMediaParameters(group.ID, rows[0], accounts, nil, nil)
+	require.NoError(t, err)
+	require.Nil(t, media)
 }

@@ -95,7 +95,7 @@ func (f generatedMediaRoundTripper) RoundTrip(r *http.Request) (*http.Response, 
 func TestGeneratedMediaUsesSharedPolicyAndPreservesNativeFields(t *testing.T) {
 	for _, tc := range []struct{ provider, body, path string }{
 		{"apimart", `{"code":200,"data":{"status":"completed","result":{"music":[{"audio_url":"https://cdn.example/music","title":"song","duration":12.5}]},"cost":0.1}}`, "data.result.music.0.audio_url"},
-		{"apimart", `{"status":"success","result":{"images":[{"url":["https://cdn.example/image"],"sizes":["2048x2048"]}]},"keep":true}`, "result.images.0.url.0"},
+		{"apimart", `{"status":"success","result":{"images":[{"url":["https://cdn.example/image"],"sizes":["2048x2048"],"output_formats":["png"],"layers":[{"z_index":0,"name":"base","description":"底图","bounding_box":{"absolute":[0,0,2048,2048],"normalized":[0,0,1000,1000]}}]}]},"keep":true}`, "result.images.0.url.0"},
 		{"seedance", `{"id":"task-video","status":"succeeded","content":{"video_url":"https://cdn.example/video"},"duration":8,"usage":{"total_tokens":123}}`, "content.video_url"},
 	} {
 		t.Run(tc.provider+tc.path, func(t *testing.T) {
@@ -116,6 +116,10 @@ func TestGeneratedMediaUsesSharedPolicyAndPreservesNativeFields(t *testing.T) {
 			require.Equal(t, 1, assets.uploads)
 			require.Equal(t, "https://gateway.example/assets/generated?token=signed", gjson.GetBytes(got, tc.path).String())
 			require.Equal(t, gjson.Get(tc.body, "usage").Raw, gjson.GetBytes(got, "usage").Raw)
+			for _, field := range []string{"sizes", "output_formats", "layers"} {
+				path := "result.images.0." + field
+				require.Equal(t, gjson.Get(tc.body, path).Raw, gjson.GetBytes(got, path).Raw)
+			}
 			require.Equal(t, gjson.Get(tc.body, "cost").Raw, gjson.GetBytes(got, "cost").Raw)
 		})
 	}
