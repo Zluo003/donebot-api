@@ -1,0 +1,73 @@
+{
+  "version": "0.4.14",
+  "source_sha": "818e6417d941b73e54c9dc8901cb849bb0efbc7b",
+  "release_url": "https://github.com/Zluo003/donebot-api/releases/tag/v0.4.14",
+  "artifacts": [
+    {
+      "archive": "sub2api_0.4.14_linux_amd64.tar.gz",
+      "sha256": "b0e990110f6ef2a1fbac64b66331b58d986158b1fdd2f139e766f67c39f0455c",
+      "github_digest": "sha256:b0e990110f6ef2a1fbac64b66331b58d986158b1fdd2f139e766f67c39f0455c",
+      "size": 40313170,
+      "elf_machine": 62,
+      "buildinfo_commit": "818e6417d941b73e54c9dc8901cb849bb0efbc7b",
+      "manifest": {
+        "sha": "818e6417d941b73e54c9dc8901cb849bb0efbc7b",
+        "version": "0.4.14",
+        "target": {
+          "goos": "linux",
+          "goarch": "amd64"
+        },
+        "archive": "sub2api_0.4.14_linux_amd64.tar.gz",
+        "sha256": "b0e990110f6ef2a1fbac64b66331b58d986158b1fdd2f139e766f67c39f0455c"
+      }
+    },
+    {
+      "archive": "sub2api_0.4.14_linux_arm64.tar.gz",
+      "sha256": "8af01baaa4dc6ba40255c5122b68dc522472b76fff8558919864dfdd80e1972f",
+      "github_digest": "sha256:8af01baaa4dc6ba40255c5122b68dc522472b76fff8558919864dfdd80e1972f",
+      "size": 36477969,
+      "elf_machine": 183,
+      "buildinfo_commit": "818e6417d941b73e54c9dc8901cb849bb0efbc7b",
+      "manifest": {
+        "sha": "818e6417d941b73e54c9dc8901cb849bb0efbc7b",
+        "version": "0.4.14",
+        "target": {
+          "goos": "linux",
+          "goarch": "arm64"
+        },
+        "archive": "sub2api_0.4.14_linux_arm64.tar.gz",
+        "sha256": "8af01baaa4dc6ba40255c5122b68dc522472b76fff8558919864dfdd80e1972f"
+      }
+    }
+  ],
+  "image": "ghcr.io/zluo003/donebot-api:0.4.14",
+  "image_index_digest": "sha256:15d088296a18b03ab81cfb0ae581a2b30be7726a4504d0ccb6c82ec9cac966c6",
+  "platforms": [
+    {
+      "platform": "linux/amd64",
+      "manifest_digest": "sha256:548a3df36e517c5eaf64d7006432b5359589ae1a3f658114edd0352a3d4f576c",
+      "architecture_tag_digest": "sha256:368ca98f5813868e93ea5c50c3b76dd521422ca673a376d358663e16ec9b646c",
+      "config_digest": "sha256:4f56fb2b7178ba63ac9c228824da93691ddd7a87462390366edeb6c747748780",
+      "labels": {
+        "description": "DoneBot API - AI model gateway",
+        "maintainer": "Zluo003 <github.com/Zluo003>",
+        "org.opencontainers.image.revision": "818e6417d941b73e54c9dc8901cb849bb0efbc7b",
+        "org.opencontainers.image.source": "https://github.com/Zluo003/donebot-api",
+        "org.opencontainers.image.version": "0.4.14"
+      }
+    },
+    {
+      "platform": "linux/arm64",
+      "manifest_digest": "sha256:d2110fcdb3d0d94640e0513f26756839990f533c2033f3d2d95a88e61c9c6379",
+      "architecture_tag_digest": "sha256:dbdbd714e1821e7b8222dcc18015788e9e323c0885e798d6536c3e99140c34be",
+      "config_digest": "sha256:cda55dc5b67bf171dfb48a557eaf5b45a8a8a24d682037a5630e54d682cd60f1",
+      "labels": {
+        "description": "DoneBot API - AI model gateway",
+        "maintainer": "Zluo003 <github.com/Zluo003>",
+        "org.opencontainers.image.revision": "818e6417d941b73e54c9dc8901cb849bb0efbc7b",
+        "org.opencontainers.image.source": "https://github.com/Zluo003/donebot-api",
+        "org.opencontainers.image.version": "0.4.14"
+      }
+    }
+  ]
+}
