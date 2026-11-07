@@ -112,14 +112,14 @@ func (req *OpenAIImagesRequest) ApplyDoneBotImagePolicy(model string) error {
 	if req.HasMask && IsGPTImageGenerationModel(model) {
 		return fmt.Errorf("GPT Image mask editing is not supported by DoneBot")
 	}
-	if isGPTImage26Model(model) {
+	if isGPTImage26Model(model) || req.usesGPTImage26() {
 		req.Complexity = "high"
 	}
 	return nil
 }
 
 func rewriteOpenAIImagesForwardBody(body []byte, parsed *OpenAIImagesRequest, model string) ([]byte, string, error) {
-	if !isGPTImage26Model(model) {
+	if !isGPTImage26Model(model) && !parsed.usesGPTImage26() {
 		return rewriteOpenAIImagesModel(body, parsed.ContentType, model)
 	}
 	fields := map[string]string{"model": model, "complexity": parsed.Complexity}
@@ -180,7 +180,8 @@ func isOpenAIImagesSingletonField(name string) bool {
 }
 
 func isKnownLegacyGPTImageModel(model string) bool {
-	switch strings.ToLower(strings.TrimSpace(model)) {
+	model = strings.ToLower(strings.TrimSpace(model))
+	switch model {
 	case "gpt-image-1", "gpt-image-1.5", "gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst":
 		return true
 	default:
@@ -188,8 +189,17 @@ func isKnownLegacyGPTImageModel(model string) bool {
 	}
 }
 
-// ValidateUpstreamImageOptions checks the resolved supplier model before a paid
-// dispatch; public aliases alone cannot establish GIF support.
+// ValidateUpstreamImageOptions requires a known GIF-capable model on either
+// side of an administrator-configured GPT Image mapping before paid dispatch.
 func (req *OpenAIImagesRequest) ValidateUpstreamImageOptions(model string) error {
-	return validateGPTImage26Options(req, model, true)
+	if strings.EqualFold(strings.TrimSpace(req.OutputFormat), "gif") && !isGPTImage26Model(model) {
+		if !req.usesGPTImage26() || !IsGPTImageGenerationModel(model) || isKnownLegacyGPTImageModel(model) {
+			return fmt.Errorf("GIF output requires a GPT Image 2.6 model")
+		}
+	}
+	return validateGPTImage26Options(req, model, false)
+}
+
+func (req *OpenAIImagesRequest) usesGPTImage26() bool {
+	return isGPTImage26Model(req.requestedModel) || isGPTImage26Model(req.Model)
 }

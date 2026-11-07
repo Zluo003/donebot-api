@@ -257,6 +257,14 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			optionErr = parsed.ApplyDoneBotImagePolicy(upstreamImageModel)
 		}
 		if optionErr != nil {
+			reqLog.Warn("openai.images.upstream_options_rejected",
+				zap.String("request_model", requestModel),
+				zap.String("channel_mapped_model", channelMapping.MappedModel),
+				zap.String("upstream_model", upstreamImageModel),
+				zap.Int64("account_id", account.ID),
+				zap.String("account_type", account.Type),
+				zap.Error(optionErr),
+			)
 			if selection.Acquired && selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}

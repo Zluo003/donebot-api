@@ -78,6 +78,7 @@ type OpenAIImagesRequest struct {
 	Multipart          bool
 	Model              string
 	ExplicitModel      bool
+	requestedModel     string
 	Prompt             string
 	Stream             bool
 	N                  int
@@ -236,6 +237,10 @@ func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []b
 	}
 
 	applyOpenAIImagesDefaults(req)
+	req.requestedModel = req.Model
+	if publicModel, ok := RequestedPublicModelFromContext(c.Request.Context()); ok {
+		req.requestedModel = publicModel
+	}
 	// Composite middleware preserves multipart bodies, including their public
 	// alias. Validate and forward the resolved model without altering uploads.
 	if platform, _ := ResolvedTargetPlatformFromContext(c.Request.Context()); platform == PlatformOpenAI {
@@ -244,6 +249,9 @@ func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []b
 		}
 	}
 	if err := validateCompatibleImagesModel(req.Model); err != nil {
+		return nil, err
+	}
+	if err := validateGPTImage26Options(req, req.requestedModel, false); err != nil {
 		return nil, err
 	}
 	if err := validateGPTImage26Options(req, req.Model, false); err != nil {
@@ -688,7 +696,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if err := validateCompatibleImagesModel(upstreamModel); err != nil {
 		return nil, err
 	}
-	if err := validateGPTImage26Options(parsed, upstreamModel, true); err != nil {
+	if err := parsed.ValidateUpstreamImageOptions(upstreamModel); err != nil {
 		return nil, err
 	}
 	SetOpsUpstreamModel(c, upstreamModel)

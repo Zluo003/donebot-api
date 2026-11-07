@@ -281,7 +281,7 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			logger.L().Error("image_task.execution_panicked", zap.String("task_id", taskID), zap.Any("panic", recovered))
-			h.failTask(taskID, http.StatusInternalServerError, imageTaskErrorPayload("api_error", "image generation task panicked"))
+			h.failTask(taskCtx, taskID, http.StatusInternalServerError, imageTaskErrorPayload("api_error", "image generation task panicked"))
 		}
 	}()
 
@@ -289,11 +289,11 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 	h.execute(platform, taskCtx)
 	body := bytes.TrimSpace(recorder.Body.Bytes())
 	if pending, _ := taskCtx.Get(doneBotImageSettlementPending); pending == true {
-		h.failTask(taskID, http.StatusBadGateway, imageTaskErrorPayload("settlement_pending", "image settlement needs reconciliation; do not resubmit"))
+		h.failTask(taskCtx, taskID, http.StatusBadGateway, imageTaskErrorPayload("settlement_pending", "image settlement needs reconciliation; do not resubmit"))
 		return
 	}
 	if err := taskCtx.Request.Context().Err(); err != nil && len(body) == 0 {
-		h.failTask(taskID, http.StatusGatewayTimeout, imageTaskErrorPayload("timeout_error", "image generation task timed out"))
+		h.failTask(taskCtx, taskID, http.StatusGatewayTimeout, imageTaskErrorPayload("timeout_error", "image generation task timed out"))
 		return
 	}
 	statusCode := recorder.Code
@@ -302,13 +302,13 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 	}
 	if statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices {
 		if len(body) == 0 || !json.Valid(body) {
-			h.failTask(taskID, http.StatusBadGateway, imageTaskErrorPayload("api_error", "upstream returned an invalid image response"))
+			h.failTask(taskCtx, taskID, http.StatusBadGateway, imageTaskErrorPayload("api_error", "upstream returned an invalid image response"))
 			return
 		}
 		delivered, err := h.tasks.CompleteDelivered(taskCtx.Request.Context(), taskID, statusCode, json.RawMessage(body))
 		if err != nil {
 			logger.L().Error("image_task.complete_store_failed", zap.String("task_id", taskID), zap.Error(err))
-			h.failTask(taskID, http.StatusBadGateway, imageTaskErrorPayload("api_error", "failed to persist generated image result"))
+			h.failTask(taskCtx, taskID, http.StatusBadGateway, imageTaskErrorPayload("api_error", "failed to persist generated image result"))
 			return
 		}
 		if delivered {
@@ -326,6 +326,7 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 		}
 	}
 	if notDispatched, _ := taskCtx.Get(middleware2.DoneBotMediaNotDispatched); notDispatched == true && statusCode >= http.StatusInternalServerError {
+		logAsyncImageTaskFailure(taskCtx, taskID, statusCode, taskError)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := h.tasks.FailNotDispatched(ctx, taskID, statusCode, taskError); err != nil {
@@ -333,15 +334,36 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 		}
 		return
 	}
-	h.failTask(taskID, statusCode, taskError)
+	h.failTask(taskCtx, taskID, statusCode, taskError)
 }
 
-func (h *AsyncImageHandler) failTask(taskID string, statusCode int, taskErr json.RawMessage) {
+func (h *AsyncImageHandler) failTask(taskCtx *gin.Context, taskID string, statusCode int, taskErr json.RawMessage) {
+	logAsyncImageTaskFailure(taskCtx, taskID, statusCode, taskErr)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := h.tasks.Fail(ctx, taskID, statusCode, taskErr); err != nil {
 		logger.L().Error("image_task.failure_store_failed", zap.String("task_id", taskID), zap.Error(err))
 	}
+}
+
+func logAsyncImageTaskFailure(c *gin.Context, taskID string, statusCode int, taskErr json.RawMessage) {
+	fields := []zap.Field{
+		zap.String("task_id", taskID),
+		zap.Int("status_code", statusCode),
+		zap.String("model", c.GetString(opsModelKey)),
+		zap.String("upstream_model", c.GetString(opsUpstreamModelKey)),
+		zap.Int64("account_id", c.GetInt64(opsAccountIDKey)),
+		zap.Bool("marked_not_dispatched", c.GetBool(middleware2.DoneBotMediaNotDispatched)),
+	}
+	if diagnostic := service.DoneBotMediaErrorDiagnostic(statusCode, c.Writer.Header().Get("X-Request-Id"), taskErr); diagnostic != nil {
+		fields = append(fields,
+			zap.String("error_type", diagnostic.Type),
+			zap.String("error_code", diagnostic.Code),
+			zap.String("upstream_request_id", diagnostic.RequestID),
+			zap.String("error_message", diagnostic.Message),
+		)
+	}
+	requestLogger(c, "handler.async_image").Warn("image_task.execution_failed", fields...)
 }
 
 func newAsyncImageContext(c *gin.Context, body []byte, timeoutDuration time.Duration) (*gin.Context, *httptest.ResponseRecorder, context.CancelFunc) {

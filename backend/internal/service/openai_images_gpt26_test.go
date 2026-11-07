@@ -353,3 +353,30 @@ func TestGPTImage26RejectsAmbiguousMultipartControlsAndKeepsReferences(t *testin
 	require.NoError(t, err)
 	require.Len(t, parsed.Uploads, 2)
 }
+
+func TestGPTImage26MappedGIFCapability(t *testing.T) {
+	for _, test := range []struct {
+		public   string
+		upstream string
+		allowed  bool
+	}{
+		{"gpt-image-2.6-flare", "gpt-image-supplier-alias", true},
+		{"gpt-image-2.6-sunburst", "gpt-image-supplier-alias", true},
+		{"gpt-image-public-alias", "gpt-image-2.6-flare", true},
+		{"gpt-image-public-alias", "gpt-image-supplier-alias", false},
+		{"gpt-image-2.6-flare", "gpt-image-2.5-flare", false},
+		{"gpt-image-2.6-flare", " GPT-IMAGE-2.5-FLARE-2026-09-08 ", false},
+		{"gpt-image-2.6-flare", "gemini-3-pro-image", false},
+	} {
+		t.Run(test.public+"/"+test.upstream, func(t *testing.T) {
+			req, err := parseGPT26TestRequest(t, openAIImagesGenerationsEndpoint, map[string]any{"model": test.public, "prompt": "fixture", "output_format": "gif"})
+			require.NoError(t, err)
+			err = req.ValidateUpstreamImageOptions(test.upstream)
+			if test.allowed {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "GPT Image 2.6")
+			}
+		})
+	}
+}
