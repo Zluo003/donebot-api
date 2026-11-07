@@ -115,6 +115,11 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 	if !h.checkSecurityAuditBeforeSubmit(c, apiKey, platform, body) {
 		return
 	}
+	if h.openAI != nil && platform == service.PlatformOpenAI && service.DoneBotMediaReceiptID(c.Request.Context()) != "" {
+		c.Request.Body = io.NopCloser(bytes.NewReader(body))
+		h.openAI.Images(c)
+		return
+	}
 	fingerprint := fmt.Sprintf("%x", sha256.Sum256(append([]byte(strings.TrimPrefix(c.Request.URL.Path, "/v1")+"\n"+c.GetHeader("Content-Type")+"\n"), body...)))
 	owner := service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID}
 	task, found, err := h.tasks.LookupIdempotent(c.Request.Context(), owner, c.GetHeader("Idempotency-Key"), fingerprint)
@@ -219,6 +224,9 @@ func (h *AsyncImageHandler) Get(c *gin.Context) {
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok || apiKey == nil || apiKey.UserID <= 0 || apiKey.ID <= 0 {
 		imageTaskError(c, service.ErrImageTaskForbidden)
+		return
+	}
+	if h.openAI != nil && h.openAI.serveDoneBotDispatch(c, c.Param("task_id")) {
 		return
 	}
 	task, err := h.tasks.Get(c.Request.Context(), service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID}, c.Param("task_id"))

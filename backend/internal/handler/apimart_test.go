@@ -248,3 +248,23 @@ func TestAPIMartExplicitFreeGenerationDoesNotRequirePositiveReservation(t *testi
 	require.Len(t, bindings.jobs, 1)
 	slots.assertReleased(t)
 }
+
+func TestDoneBotSpeechFailoverBeforeAudioStarts(t *testing.T) {
+	h, slots, _, upstream := newGrokMediaSlotHandler(t, false, false, service.PlatformOpenAI, "apimart")
+	seen := []int64{}
+	upstream.call = func(req *http.Request, id int64) (*http.Response, error) {
+		seen = append(seen, id)
+		status, kind, body := 400, "application/json", `{"error":{"message":"fixture voice provider rejected"}}`
+		if id == 3 {
+			status, kind, body = 200, "audio/pcm", "fixture-audio"
+		}
+		return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": []string{kind}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+	}
+	c, w := apimartHandlerContext(`{"model":"gpt-4o-mini-tts","input":"fixture","voice":"alloy"}`, false)
+	c.Request = c.Request.WithContext(service.WithDoneBotPriority(c.Request.Context()))
+	h.APIMartTTS(c)
+	require.Equal(t, []int64{1, 2, 3}, seen)
+	require.Equal(t, 200, w.Code)
+	require.Equal(t, "fixture-audio", w.Body.String())
+	slots.assertReleased(t)
+}

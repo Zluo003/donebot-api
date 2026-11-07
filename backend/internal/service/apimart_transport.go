@@ -144,10 +144,14 @@ func (s *OpenAIGatewayService) prepareAPIMartRequest(ctx context.Context, c *gin
 		if err != nil {
 			return nil, nil, err
 		}
-		model := a.GetMappedModel(info.Model)
-		if !op.adapter.supportsModel(model) {
+		// Validate a caller-supplied native model against the selected APIMart
+		// interface before applying the administrator's private supplier mapping.
+		// The mapped supplier name is intentionally opaque: it may differ from
+		// the public model and must not be rejected by a local name heuristic.
+		if (IsAPIMartImageModel(info.Model) || info.Model == "suno" || info.Model == "gpt-4o-mini-tts") && !op.adapter.supportsModel(info.Model) {
 			return nil, nil, fmt.Errorf("model is not supported by the selected APIMart endpoint")
 		}
+		model := a.GetMappedModel(info.Model)
 		if root.Get("model").Exists() {
 			body, err = sjson.SetBytes(body, "model", model)
 			if err != nil {

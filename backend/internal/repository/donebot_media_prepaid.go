@@ -99,6 +99,22 @@ func (r *usageBillingRepository) PrepayDoneBotMedia(ctx context.Context, p *serv
 	if err != nil {
 		return err
 	}
+	if dispatch := service.DoneBotDispatchFromContext(ctx); dispatch != nil {
+		raw, marshalErr := json.Marshal(dispatch)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO donebot_media_dispatches(receipt_id,task_id,user_id,api_key_id,state,payload) VALUES($1::uuid,$2,$3,$4,'queued',$5::jsonb)`, p.ReceiptID, dispatch.TaskID, p.UserID, p.APIKeyID, string(raw)); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE donebot_media_precharges SET provider_task_key=$2 WHERE receipt_id=$1::uuid`, p.ReceiptID, dispatch.TaskID); err != nil {
+			return err
+		}
+		body := dispatch.AcceptedBody()
+		if _, err = tx.ExecContext(ctx, `UPDATE donebot_media_operations SET status='accepted',task_id=$2,provider_task_key=$2,provider='donebot',replay_status=202,replay_content_type='application/json',replay_body=$3,updated_at=NOW() WHERE receipt_id=$1::uuid AND (task_id='' OR task_id=$2)`, p.ReceiptID, dispatch.TaskID, body); err != nil {
+			return err
+		}
+	}
 	if err = insertDoneBotMoneyEvent(ctx, tx, p, "charge", p.Amount, p.TotalAmount, ""); err != nil {
 		return err
 	}
@@ -252,7 +268,7 @@ func (r *usageBillingRepository) TakeDoneBotMediaRecovery(ctx context.Context, l
 	if limit < 1 || limit > 100 {
 		limit = 100
 	}
-	_, err := r.db.ExecContext(ctx, `UPDATE donebot_media_operations o SET status='uncertain',updated_at=NOW() FROM donebot_media_precharges p WHERE o.receipt_id=p.receipt_id AND p.state='prepaid' AND p.settlement_input IS NULL AND o.provider='donebot' AND o.media_kind='image' AND o.status IN ('dispatching','accepted','processing') AND p.created_at<NOW()-INTERVAL '30 minutes'`)
+	_, err := r.db.ExecContext(ctx, `UPDATE donebot_media_operations o SET status='uncertain',updated_at=NOW() FROM donebot_media_precharges p WHERE o.receipt_id=p.receipt_id AND p.state='prepaid' AND p.settlement_input IS NULL AND o.provider='donebot' AND o.media_kind='image' AND o.status IN ('dispatching','accepted','processing') AND p.created_at<NOW()-INTERVAL '30 minutes' AND NOT EXISTS(SELECT 1 FROM donebot_media_dispatches d WHERE d.receipt_id=p.receipt_id)`)
 	if err != nil {
 		return nil, err
 	}

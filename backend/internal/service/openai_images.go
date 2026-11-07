@@ -248,13 +248,13 @@ func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []b
 			req.Model = model
 		}
 	}
-	if err := validateCompatibleImagesModel(req.Model); err != nil {
+	if err := validateCompatibleImagesModel(imageRequestCapabilityModel(req)); err != nil {
 		return nil, err
 	}
 	if err := validateGPTImage26Options(req, req.requestedModel, false); err != nil {
 		return nil, err
 	}
-	if err := validateGPTImage26Options(req, req.Model, false); err != nil {
+	if err := validateGPTImage26Options(req, imageRequestCapabilityModel(req), false); err != nil {
 		return nil, err
 	}
 	req.SizeTier = normalizeOpenAIImageSizeTier(req.Size)
@@ -689,13 +689,11 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if mapped := strings.TrimSpace(channelMappedModel); mapped != "" {
 		requestModel = mapped
 	}
-	if err := validateCompatibleImagesModel(requestModel); err != nil {
+	capabilityModel := imageRequestCapabilityModel(parsed)
+	if err := validateCompatibleImagesModel(capabilityModel); err != nil {
 		return nil, err
 	}
 	upstreamModel := account.GetMappedModel(requestModel)
-	if err := validateCompatibleImagesModel(upstreamModel); err != nil {
-		return nil, err
-	}
 	if err := parsed.ValidateUpstreamImageOptions(upstreamModel); err != nil {
 		return nil, err
 	}
@@ -1867,4 +1865,11 @@ func dedupeStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func imageRequestCapabilityModel(req *OpenAIImagesRequest) string {
+	if validateCompatibleImagesModel(req.requestedModel) == nil {
+		return req.requestedModel
+	}
+	return req.Model
 }

@@ -2322,6 +2322,9 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 		ctx = s.withOpenAIProfitControlGate(ctx, groupID)
 	}
 	platform = NormalizeOpenAICompatiblePlatform(platform)
+	if DoneBotPriorityEnabled(ctx) {
+		return s.selectDoneBotPriority(ctx, OpenAIAccountScheduleRequest{GroupID: groupID, Platform: platform, RequestedModel: requestedModel, ExcludedIDs: excludedIDs, RequiredTransport: requiredTransport, RequiredCapability: requiredCapability, RequiredImageCapability: requiredImageCapability, RequireCompact: requireCompact, RequirePrivacySet: s.openAIGroupRequiresPrivacySet(ctx, groupID)})
+	}
 	decision := OpenAIAccountScheduleDecision{}
 	preserveGuardianParentBinding := preserveOpenAIGuardianParentBinding(ctx, sessionHash)
 	guardianParentAccountID := int64(0)

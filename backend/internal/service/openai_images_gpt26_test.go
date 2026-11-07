@@ -364,9 +364,9 @@ func TestGPTImage26MappedGIFCapability(t *testing.T) {
 		{"gpt-image-2.6-sunburst", "gpt-image-supplier-alias", true},
 		{"gpt-image-public-alias", "gpt-image-2.6-flare", true},
 		{"gpt-image-public-alias", "gpt-image-supplier-alias", false},
-		{"gpt-image-2.6-flare", "gpt-image-2.5-flare", false},
-		{"gpt-image-2.6-flare", " GPT-IMAGE-2.5-FLARE-2026-09-08 ", false},
-		{"gpt-image-2.6-flare", "gemini-3-pro-image", false},
+		{"gpt-image-2.6-flare", "gpt-image-2.5-flare", true},
+		{"gpt-image-2.6-flare", " GPT-IMAGE-2.5-FLARE-2026-09-08 ", true},
+		{"gpt-image-2.6-flare", "gemini-3-pro-image", true},
 	} {
 		t.Run(test.public+"/"+test.upstream, func(t *testing.T) {
 			req, err := parseGPT26TestRequest(t, openAIImagesGenerationsEndpoint, map[string]any{"model": test.public, "prompt": "fixture", "output_format": "gif"})

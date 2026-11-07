@@ -247,7 +247,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	if isGrokVideoCreateEndpoint(endpoint) {
 		videoCreateStartedAt = service.GrokVideoPendingCreatedAtNow()
 	}
-	maxAccountSwitches := h.maxAccountSwitches
+	maxAccountSwitches := service.DoneBotAccountSwitchLimit(c.Request.Context(), h.maxAccountSwitches)
 	if maxAccountSwitches <= 0 {
 		maxAccountSwitches = 3
 	}
@@ -476,6 +476,15 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
+		if endpoint == service.SeedanceEndpointCreate && service.DoneBotMediaReceiptID(requestCtx) != "" {
+			task, dispatchErr := h.gatewayService.SubmitDoneBotDispatch(requestCtx, apiKey, account, service.DoneBotDispatch{Protocol: service.DoneBotDispatchSeedance, Kind: "video", Model: requestModel, RoutingModel: routingModel, ForwardModel: routingModel, Path: c.Request.URL.Path, ContentType: contentType, Body: body, VideoInfo: requestInfo})
+			releaseAccount()
+			if response.ErrorFrom(c, dispatchErr) {
+				return
+			}
+			writeDoneBotDispatchAccepted(c, task)
+			return
+		}
 		if endpoint == service.SeedanceEndpointCreate {
 			if err := h.gatewayService.PrepayDoneBotSeedance(requestCtx, apiKey, account, routingModel, requestInfo); response.ErrorFrom(c, err) {
 				releaseAccount()

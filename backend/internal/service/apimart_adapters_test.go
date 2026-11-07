@@ -66,11 +66,7 @@ func TestAPIMartAdaptersKeepDynamicAliasesWithinTheirNativeInterface(t *testing.
 				svc := &OpenAIGatewayService{httpUpstream: upstream}
 				c, _ := grokMediaContentTestContext(http.MethodPost, tc.path, nil)
 				response, err := svc.ForwardAPIMart(context.Background(), c, account, tc.endpoint, "", []byte(tc.body))
-				if model == tc.other {
-					require.ErrorContains(t, err, "model is not supported")
-					require.Empty(t, upstream.requests)
-					continue
-				}
+
 				require.NoError(t, err)
 				require.Equal(t, tc.path, upstream.request.URL.Path)
 				require.Equal(t, tc.accept, upstream.request.Header.Get("Accept"))

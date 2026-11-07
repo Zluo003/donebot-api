@@ -643,7 +643,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	))
 	requireCompact := legacyCompact
 
-	maxAccountSwitches := h.maxAccountSwitches
+	maxAccountSwitches := service.DoneBotAccountSwitchLimit(c.Request.Context(), h.maxAccountSwitches)
 	switchCount := 0
 	firstOutputTimeoutSwitchCount := 0
 	profitVetoCount := 0
@@ -1288,7 +1288,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
-	maxAccountSwitches := h.maxAccountSwitches
+	maxAccountSwitches := service.DoneBotAccountSwitchLimit(c.Request.Context(), h.maxAccountSwitches)
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
@@ -2710,7 +2710,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		openAIWSIngressFallbackSessionSeed(subject.UserID, apiKey.ID, apiKey.GroupID),
 	)
 	ctx = service.WithOpenAIGuardianParentAffinity(ctx, c, firstMessage, reqModel)
-	maxAccountSwitches := h.maxAccountSwitches
+	maxAccountSwitches := service.DoneBotAccountSwitchLimit(c.Request.Context(), h.maxAccountSwitches)
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})

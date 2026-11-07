@@ -209,7 +209,7 @@ func (s *GeminiMessagesCompatService) tryStickySessionHit(
 	platform string,
 	useMixedScheduling bool,
 ) *Account {
-	if sessionHash == "" {
+	if sessionHash == "" || DoneBotPriorityEnabled(ctx) {
 		return nil
 	}
 

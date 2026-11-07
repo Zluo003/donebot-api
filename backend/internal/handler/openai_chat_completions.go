@@ -162,7 +162,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
 	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)
 
-	maxAccountSwitches := h.maxAccountSwitches
+	maxAccountSwitches := service.DoneBotAccountSwitchLimit(c.Request.Context(), h.maxAccountSwitches)
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})

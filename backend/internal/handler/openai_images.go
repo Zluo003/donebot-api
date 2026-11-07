@@ -175,7 +175,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	sessionHash := h.gatewayService.GenerateExplicitSessionHash(c, body)
 	requestCtx := service.WithOpenAIImagesEndpoint(service.WithOpenAIImageGenerationIntent(c.Request.Context()))
 
-	maxAccountSwitches := h.maxAccountSwitches
+	maxAccountSwitches := service.DoneBotAccountSwitchLimit(c.Request.Context(), h.maxAccountSwitches)
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
@@ -254,7 +254,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		upstreamImageModel := account.GetMappedModel(mappedImageModel)
 		optionErr := parsed.ValidateUpstreamImageOptions(upstreamImageModel)
 		if optionErr == nil && strings.HasPrefix(apiKey.Key, "sk-donebot-") {
-			optionErr = parsed.ApplyDoneBotImagePolicy(upstreamImageModel)
+			optionErr = parsed.ApplyDoneBotImagePolicy(clientRequestModel)
 		}
 		if optionErr != nil {
 			reqLog.Warn("openai.images.upstream_options_rejected",
@@ -288,6 +288,17 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			return
 		}
 		billingModel := h.gatewayService.APIMartBillingModel(requestCtx, apiKey, routingModel, clientRequestedModel(c, requestModel))
+		if service.DoneBotMediaReceiptID(requestCtx) != "" && strings.HasSuffix(c.Request.URL.Path, "/async") {
+			task, dispatchErr := h.gatewayService.SubmitDoneBotDispatch(requestCtx, apiKey, account, service.DoneBotDispatch{Protocol: service.DoneBotDispatchImages, Kind: "image", Model: billingModel, RoutingModel: routingModel, ForwardModel: channelMapping.MappedModel, Path: c.Request.URL.Path, ContentType: c.GetHeader("Content-Type"), Body: body, Info: service.APIMartRequestInfo{Units: float64(parsed.N)}})
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			if response.ErrorFrom(c, dispatchErr) {
+				return
+			}
+			writeDoneBotDispatchAccepted(c, task)
+			return
+		}
 		if err := h.gatewayService.PrepayDoneBotImage(requestCtx, apiKey, account, billingModel, parsed.N); response.ErrorFrom(c, err) {
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()

@@ -192,6 +192,9 @@ func isKnownLegacyGPTImageModel(model string) bool {
 // ValidateUpstreamImageOptions requires a known GIF-capable model on either
 // side of an administrator-configured GPT Image mapping before paid dispatch.
 func (req *OpenAIImagesRequest) ValidateUpstreamImageOptions(model string) error {
+	if req.usesGPTImage26() {
+		return validateGPTImage26Options(req, req.requestedModel, false)
+	}
 	if strings.EqualFold(strings.TrimSpace(req.OutputFormat), "gif") && !isGPTImage26Model(model) {
 		if !req.usesGPTImage26() || !IsGPTImageGenerationModel(model) || isKnownLegacyGPTImageModel(model) {
 			return fmt.Errorf("GIF output requires a GPT Image 2.6 model")

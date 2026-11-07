@@ -58,6 +58,12 @@ func (h *OpenAIGatewayHandler) doneBotVideoCreate(c *gin.Context, grok gin.Handl
 }
 
 func (h *OpenAIGatewayHandler) DoneBotVideoStatus(c *gin.Context) {
+	if h.serveDoneBotDispatch(c, c.Param("request_id")) {
+		return
+	}
+	if h.serveDoneBotDispatch(c, c.Param("task_id")) {
+		return
+	}
 	if seedance, ok := h.doneBotSeedanceTask(c); ok {
 		if seedance {
 			h.SeedanceTasks(c)

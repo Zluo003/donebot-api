@@ -75,6 +75,9 @@ func (s *GatewayService) SelectAccountForModelWithExclusions(ctx context.Context
 		return nil, fmt.Errorf("%w supporting model: %s (channel pricing restriction)", ErrNoAvailableAccounts, requestedModel)
 	}
 
+	if DoneBotPriorityEnabled(ctx) {
+		return s.selectDoneBotGatewayPriority(ctx, groupID, requestedModel, platform, excludedIDs)
+	}
 	// anthropic/gemini 分组支持混合调度（包含启用了 mixed_scheduling 的 antigravity 账户）
 	// 注意：强制平台模式不走混合调度
 	if (platform == PlatformAnthropic || platform == PlatformGemini) && !hasForcePlatform {
@@ -128,6 +131,20 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		return nil, fmt.Errorf("%w supporting model: %s (channel pricing restriction)", ErrNoAvailableAccounts, requestedModel)
 	}
 
+	if DoneBotPriorityEnabled(ctx) {
+		account, selectErr := s.SelectAccountForModelWithExclusions(ctx, groupID, "", requestedModel, excludedIDs)
+		if selectErr != nil {
+			return nil, selectErr
+		}
+		slot, slotErr := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
+		if slotErr != nil {
+			return nil, slotErr
+		}
+		if slot != nil && slot.Acquired {
+			return s.newSelectionResult(ctx, account, true, slot.ReleaseFunc, nil)
+		}
+		return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{AccountID: account.ID, MaxConcurrency: account.Concurrency, Timeout: cfg.FallbackWaitTimeout, MaxWaiting: cfg.FallbackMaxWaiting})
+	}
 	var stickyAccountID int64
 	var stickySource string
 	if prefetch := prefetchedStickyAccountIDFromContext(ctx, groupID); prefetch > 0 {

@@ -478,7 +478,7 @@ func (s *DoneBotMediaService) Receipt(ctx context.Context, userID int64, install
 			if err != nil {
 				return nil, err
 			}
-			if p.State == "prepaid" && op.Kind == "image" && op.Provider == "donebot" && !op.CreatedAt.IsZero() && time.Since(op.CreatedAt) > defaultImageTaskExecutionTimeout {
+			if p.State == "prepaid" && op.Kind == "image" && op.Provider == "donebot" && !strings.HasPrefix(op.TaskID, "dbtask_") && !op.CreatedAt.IsZero() && time.Since(op.CreatedAt) > defaultImageTaskExecutionTimeout {
 				receipt.Status = "uncertain"
 			}
 			receipt.RequestID = DoneBotMediaChargeRequestID(receiptID)

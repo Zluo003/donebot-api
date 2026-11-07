@@ -15,6 +15,7 @@ import (
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 )
@@ -44,6 +45,9 @@ func (h *OpenAIGatewayHandler) IsAPIMartImageRequest(c *gin.Context, model strin
 
 func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.APIMartEndpoint) {
 	lookup := endpoint.IsLookup()
+	if lookup && h.serveDoneBotDispatch(c, c.Param("task_id")) {
+		return
+	}
 	forwardStarted := false
 	defer func() {
 		if !lookup && !forwardStarted && c.Writer.Status() >= http.StatusInternalServerError {
@@ -246,13 +250,49 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 	if release != nil {
 		defer release()
 	}
+	if !lookup && endpoint != service.APIMartTTS && service.DoneBotMediaReceiptID(ctx) != "" {
+		protocol, kind := service.DoneBotDispatchAPIMartImages, "image"
+		if endpoint == service.APIMartSuno {
+			protocol, kind = service.DoneBotDispatchAPIMartMusic, "music"
+		}
+		task, dispatchErr := h.gatewayService.SubmitDoneBotDispatch(ctx, key, account, service.DoneBotDispatch{Protocol: protocol, Kind: kind, Model: info.Model, RoutingModel: info.Model, ForwardModel: gjson.GetBytes(body, "model").String(), Path: c.Request.URL.Path, ContentType: "application/json", Body: body, Info: info})
+		if response.ErrorFrom(c, dispatchErr) {
+			return
+		}
+		writeDoneBotDispatchAccepted(c, task)
+		return
+	}
 	if !lookup && endpoint != service.APIMartTTS {
 		if err := h.gatewayService.PrepayDoneBotAPIMart(ctx, key, account, info, endpoint); response.ErrorFrom(c, err) {
 			return
 		}
 	}
 	forwardStarted = true
-	response, err := h.gatewayService.ForwardAPIMart(ctx, c, account, endpoint, taskID, body)
+	mediaResponse, forwardErr := h.gatewayService.ForwardAPIMart(ctx, c, account, endpoint, taskID, body)
+	if endpoint == service.APIMartTTS && service.DoneBotPriorityEnabled(ctx) {
+		failed := map[int64]struct{}{}
+		for forwardErr == nil && mediaResponse != nil && mediaResponse.IsFailure() && service.DoneBotExplicitMediaRejection(mediaResponse.Status, mediaResponse.Body) {
+			failed[account.ID] = struct{}{}
+			if release != nil {
+				release()
+			}
+			next, _, selectErr := h.gatewayService.SelectAccountWithSchedulerForCapability(ctx, key.GroupID, "", "", info.Model, failed, service.OpenAIUpstreamTransportHTTPSSE, endpoint.Capability(), false, false, false, service.PlatformOpenAI)
+			if selectErr != nil || next == nil || next.Account == nil {
+				break
+			}
+			nextRelease, slotStatus := h.acquireResponsesAccountSlot(c, key.GroupID, "", next, false, &streamStarted, log)
+			if slotStatus != openAISlotAcquireOK {
+				return
+			}
+			if nextRelease != nil {
+				defer nextRelease()
+			}
+			release = nextRelease
+			account = next.Account
+			mediaResponse, forwardErr = h.gatewayService.ForwardAPIMart(ctx, c, account, endpoint, taskID, body)
+		}
+	}
+	response, err := mediaResponse, forwardErr
 	if err != nil {
 		log.Warn("apimart.forward_failed")
 		h.errorResponse(c, 502, "upstream_error", "APIMart upstream request failed")

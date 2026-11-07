@@ -568,7 +568,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	hasBoundSession := sessionKey != "" && sessionBoundAccountID > 0
 	cleanedForUnknownBinding := false
 
-	maxAccountSwitches := h.maxAccountSwitchesGemini
+	maxAccountSwitches := service.DoneBotAccountSwitchLimit(c.Request.Context(), h.maxAccountSwitchesGemini)
 	var cachedContentExclusions map[int64]struct{}
 	if cachedContentBinding != nil {
 		// 缓存只存在于绑定账号：排除分组内其余账号，失败不换号。

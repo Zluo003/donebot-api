@@ -59,14 +59,15 @@ type apimartReservationSnapshot struct {
 }
 
 type apimartSettlementWorker struct {
-	store   APIMartSettlementStore
-	process func(context.Context, APIMartSettlementJob) (bool, error)
-	service *OpenAIGatewayService
-	keys    *APIKeyService
-	handles sync.Map
-	mu      sync.Mutex
-	cancel  context.CancelFunc
-	done    chan struct{}
+	store        APIMartSettlementStore
+	process      func(context.Context, APIMartSettlementJob) (bool, error)
+	service      *OpenAIGatewayService
+	keys         *APIKeyService
+	handles      sync.Map
+	mu           sync.Mutex
+	cancel       context.CancelFunc
+	done         chan struct{}
+	dispatchDone chan struct{}
 }
 
 func (s *OpenAIGatewayService) StartAPIMartSettlements(keys *APIKeyService) {
@@ -79,6 +80,28 @@ func (s *OpenAIGatewayService) StartAPIMartSettlements(keys *APIKeyService) {
 	ctx, cancel := context.WithCancel(context.Background())
 	w.cancel = cancel
 	s.apimartSettlements = w
+	w.dispatchDone = make(chan struct{})
+	go func() {
+		defer close(w.dispatchDone)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		slots := make(chan struct{}, 32)
+		var running sync.WaitGroup
+		defer running.Wait()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if len(slots) == cap(slots) {
+					continue
+				}
+				slots <- struct{}{}
+				running.Add(1)
+				go func() { defer running.Done(); defer func() { <-slots }(); w.dispatchDoneBot(ctx) }()
+			}
+		}
+	}()
 	go func() {
 		defer close(w.done)
 		w.tick(ctx, time.Now())
@@ -102,6 +125,9 @@ func (s *OpenAIGatewayService) StopAPIMartSettlements() {
 	w := s.apimartSettlements
 	w.cancel()
 	<-w.done
+	if w.dispatchDone != nil {
+		<-w.dispatchDone
+	}
 	w.handles.Range(func(_, value any) bool {
 		if r, ok := value.(*InflightReservation); ok {
 			r.stopRenewal()
