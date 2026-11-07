@@ -28,6 +28,7 @@ type stubAdminService struct {
 	updatedGroups                       []*service.UpdateGroupInput
 	deletedGroupIDs                     []int64
 	guardedDeletedGroupIDs              []int64
+	deleteGroupErr                      error
 	deleteGroupIfEmptyErr               error
 	advancedGroupOperationCalls         int
 	lastListGroupsIsExclusive           *bool
@@ -389,7 +390,7 @@ func (s *stubAdminService) UpdateGroup(ctx context.Context, id int64, input *ser
 
 func (s *stubAdminService) DeleteGroup(ctx context.Context, id int64) error {
 	s.deletedGroupIDs = append(s.deletedGroupIDs, id)
-	return nil
+	return s.deleteGroupErr
 }
 
 func (s *stubAdminService) DeleteGroupIfEmpty(ctx context.Context, id int64) error {

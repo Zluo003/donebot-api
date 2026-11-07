@@ -46,22 +46,36 @@ func (s *adminServiceImpl) ListGroups(ctx context.Context, page, pageSize int, p
 	if err != nil {
 		return nil, 0, err
 	}
+	if err := s.markGroupDeletionProtection(ctx, groups); err != nil {
+		return nil, 0, err
+	}
 	return groups, result.Total, nil
 }
 
 func (s *adminServiceImpl) GetAllGroups(ctx context.Context) ([]Group, error) {
-	return s.groupRepo.ListActive(ctx)
+	groups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return groups, s.markGroupDeletionProtection(ctx, groups)
 }
 
 func (s *adminServiceImpl) GetAllGroupsByPlatform(ctx context.Context, platform string) ([]Group, error) {
-	return s.groupRepo.ListActiveByPlatform(ctx, platform)
+	groups, err := s.groupRepo.ListActiveByPlatform(ctx, platform)
+	if err != nil {
+		return nil, err
+	}
+	return groups, s.markGroupDeletionProtection(ctx, groups)
 }
 
 func (s *adminServiceImpl) GetAllGroupsIncludingInactive(ctx context.Context) ([]Group, error) {
 	// ListWithFilters with empty status = no status filter, so active + disabled groups are returned.
 	// PageSize 10000 is intentionally large; group count is O(dozens) in practice.
 	groups, _, err := s.groupRepo.ListWithFilters(ctx, pagination.PaginationParams{Page: 1, PageSize: 10000}, "", "", "", nil)
-	return groups, err
+	if err != nil {
+		return nil, err
+	}
+	return groups, s.markGroupDeletionProtection(ctx, groups)
 }
 
 func (s *adminServiceImpl) GetGroup(ctx context.Context, id int64) (*Group, error) {
@@ -72,6 +86,11 @@ func (s *adminServiceImpl) GetGroup(ctx context.Context, id int64) (*Group, erro
 	if err := s.validateSimpleModeGroupAccess(group); err != nil {
 		return nil, err
 	}
+	boundID, err := s.doneBotBoundGroupID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	group.DeletionProtected = boundID > 0 && group.ID == boundID
 	return group, nil
 }
 
@@ -1213,6 +1232,14 @@ func (s *adminServiceImpl) DeleteGroupIfEmpty(ctx context.Context, id int64) err
 }
 
 func (s *adminServiceImpl) deleteGroup(ctx context.Context, id int64, requireEmpty bool) error {
+	boundID, bindingErr := s.doneBotBoundGroupID(ctx)
+	if bindingErr != nil {
+		return bindingErr
+	}
+	if boundID > 0 && id == boundID {
+		return ErrDoneBotGroupProtected
+	}
+
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		group, err := s.groupRepo.GetByIDLite(ctx, id)
 		if err != nil {

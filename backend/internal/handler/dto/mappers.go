@@ -150,6 +150,7 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 		return nil
 	}
 	out := &AdminGroup{
+		DeletionProtected:           g.DeletionProtected,
 		Group:                       groupFromServiceBase(g),
 		ForceOpenAIFast:             g.ForceOpenAIFast,
 		FreeOpenAIFast:              g.FreeOpenAIFast,

@@ -126,7 +126,9 @@ func doneBotPublicMediaParameters(groupID int64, row DoneBotModel, accounts []Ac
 		}
 	}
 	upstream := row.Model
-	if route, matched := matchCompositeRoute(activeRoutes, row.Model, endpoint); matched {
+	if row.routingModel != "" {
+		upstream = row.routingModel
+	} else if route, matched := matchCompositeRoute(activeRoutes, row.Model, endpoint); matched {
 		if route.TargetPlatform != row.Platform {
 			return nil, nil
 		}
@@ -217,7 +219,7 @@ func doneBotAccountMediaParameters(account *Account, model string, row DoneBotMo
 			return media
 		}
 		media := &DoneBotCatalogMediaParameters{Protocol: doneBotMediaProtocol("donebot.images.async.v1")}
-		if isGPTImage26Model(native) {
+		if isGPTImage26Model(native) || isGPTImage26Model(model) || isGPTImage26Model(row.Model) {
 			media.Formats = []string{"png", "jpeg", "webp"}
 			if account.Type == AccountTypeAPIKey {
 				media.Formats = append(media.Formats, "gif")

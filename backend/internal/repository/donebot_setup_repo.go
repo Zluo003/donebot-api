@@ -34,7 +34,7 @@ func (r *doneBotSetupRepository) EnsureGroup(ctx context.Context, desired *servi
 	}
 	// One transaction-scoped lock protects both group creation and its settings
 	// pointer. It also handles instances starting simultaneously on an empty DB.
-	if _, err := client.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", int64(0x446f6e65426f74)); err != nil {
+	if err := lockDoneBotGroupBinding(ctx, client); err != nil {
 		return 0, fmt.Errorf("lock DoneBot setup: %w", err)
 	}
 	settings := NewSettingRepository(client)

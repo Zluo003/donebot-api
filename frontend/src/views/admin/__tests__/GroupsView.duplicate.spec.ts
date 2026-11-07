@@ -450,3 +450,39 @@ describe('GroupsView duplicate action', () => {
   })
 
 })
+
+
+describe('GroupsView DoneBot deletion protection', () => {
+  beforeEach(() => {
+    getModelAllowlistCandidates.mockResolvedValue([])
+    vi.mocked(adminAPI.groups.delete).mockReset()
+    getUsageSummary.mockResolvedValue([])
+    getCapacitySummary.mockResolvedValue([])
+    getLiveCapability.mockResolvedValue({ supported: false })
+  })
+
+  it('disables deleting the bound group after it is renamed', async () => {
+    listGroups.mockResolvedValue({ items: [{ ...sourceGroup, name: 'Renamed', deletion_protected: true }], total: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+    const button = wrapper.get('[data-testid="group-delete"]')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('title')).toBe('admin.groups.donebotDeletionProtected')
+    await button.trigger('click')
+    expect(adminAPI.groups.delete).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'ConfirmDialog' }).props('show')).not.toBe(true)
+    wrapper.unmount()
+  })
+
+  it('allows deletion of an ordinary group even if named DoneBot', async () => {
+    listGroups.mockResolvedValue({ items: [{ ...sourceGroup, name: 'DoneBot', deletion_protected: false }], total: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="group-delete"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="group-delete"]').trigger('click')
+    wrapper.findComponent({ name: 'ConfirmDialog' }).vm.$emit('confirm')
+    await flushPromises()
+    expect(adminAPI.groups.delete).toHaveBeenCalledWith(sourceGroup.id)
+    wrapper.unmount()
+  })
+})

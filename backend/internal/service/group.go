@@ -30,6 +30,7 @@ type Group struct {
 	PeakRateMultiplier float64
 	IsExclusive        bool
 	Status             string
+	DeletionProtected  bool
 	Hydrated           bool // indicates the group was loaded from a trusted repository source
 	// DuplicateOperationID is internal persistence metadata used only to recover
 	// an already committed one-click copy. It must never be mapped to API DTOs.

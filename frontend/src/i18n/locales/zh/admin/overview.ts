@@ -1037,6 +1037,7 @@ export default {
       limitMonth: '月',
       groupCreated: '分组创建成功',
       groupUpdated: '分组更新成功',
+      donebotDeletionProtected: '此分组已绑定 DoneBot，不能删除。',
       groupDeleted: '分组删除成功',
       failedToCreate: '创建分组失败',
       failedToUpdate: '更新分组失败',

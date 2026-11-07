@@ -648,7 +648,12 @@ func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account
 	}
 	for iface, endpoint := range endpoints {
 		upstream := row.Model
-		if route, matched := matchCompositeRoute(activeRoutes, row.Model, endpoint); matched {
+		if row.routingModel != "" {
+			if row.routingEndpoint != CompositeRouteEndpointAny && row.routingEndpoint != endpoint {
+				continue
+			}
+			upstream = row.routingModel
+		} else if route, matched := matchCompositeRoute(activeRoutes, row.Model, endpoint); matched {
 			if route.TargetPlatform != row.Platform {
 				continue
 			}

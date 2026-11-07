@@ -443,8 +443,11 @@
                 }}</span>
               </button>
               <button
+                data-testid="group-delete"
+                :disabled="row.deletion_protected"
+                :title="row.deletion_protected ? t('admin.groups.donebotDeletionProtected') : undefined"
                 @click="handleDelete(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors enabled:hover:bg-red-50 enabled:hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:enabled:hover:bg-red-900/20 dark:enabled:hover:text-red-400"
               >
                 <Icon name="trash" size="sm" />
                 <span class="text-xs">{{ t("common.delete") }}</span>
@@ -6684,12 +6687,16 @@ const previewCompositeRoute = async () => {
 };
 
 const handleDelete = (group: AdminGroup) => {
+  if (group.deletion_protected) {
+    appStore.showError(t("admin.groups.donebotDeletionProtected"));
+    return;
+  }
   deletingGroup.value = group;
   showDeleteDialog.value = true;
 };
 
 const confirmDelete = async () => {
-  if (!deletingGroup.value) return;
+  if (!deletingGroup.value || deletingGroup.value.deletion_protected) return;
 
   try {
     await adminAPI.groups.delete(deletingGroup.value.id);

@@ -641,6 +641,7 @@ export interface Group {
 }
 
 export interface AdminGroup extends Group {
+  deletion_protected?: boolean
   // 管理端的 name / description 始终是原字段，各语言译文另放在 i18n 里
   i18n?: GroupI18n
   force_openai_fast: boolean

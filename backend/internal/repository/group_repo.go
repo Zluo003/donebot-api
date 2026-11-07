@@ -455,12 +455,27 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 }
 
 func (r *groupRepository) Delete(ctx context.Context, id int64) error {
-	_, err := r.client.Group.Delete().Where(group.IDEQ(id)).Exec(ctx)
+	tx, err := r.client.Tx(ctx)
+	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+		return err
+	}
+	client := r.client
+	if err == nil {
+		defer func() { _ = tx.Rollback() }()
+		client = tx.Client()
+	}
+	if err := protectDoneBotGroupDeletion(ctx, client, id); err != nil {
+		return err
+	}
+	_, err = client.Group.Delete().Where(group.IDEQ(id)).Exec(ctx)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrGroupNotFound, nil)
 	}
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &id, nil); err != nil {
-		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group delete failed: group=%d err=%v", id, err)
+	if err := enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventGroupChanged, nil, &id, nil); err != nil {
+		return err
+	}
+	if tx != nil {
+		return tx.Commit()
 	}
 	return nil
 }
@@ -883,6 +898,10 @@ func (r *groupRepository) deleteCascade(ctx context.Context, id int64, requireEm
 		txClient = exec
 	}
 	// err 为 dbent.ErrTxStarted 时，复用当前 client 参与同一事务。
+
+	if err := protectDoneBotGroupDeletion(ctx, exec, id); err != nil {
+		return nil, err
+	}
 
 	// Lock the group row to avoid concurrent writes while we cascade.
 	// 这里使用 exec.QueryContext 手动扫描，确保同一事务内加锁并能区分"未找到"与其他错误。

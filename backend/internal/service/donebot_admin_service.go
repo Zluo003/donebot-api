@@ -48,6 +48,9 @@ func NewDoneBotAdminService(installs *DoneBotService, admin AdminService, channe
 }
 
 type DoneBotModel struct {
+	routingModel             string
+	routingEndpoint          string
+	pricingModel             string
 	ModelMultiplier          float64                 `json:"model_multiplier"`
 	PricingConfigured        bool                    `json:"pricing_configured"`
 	EditablePricing          *DoneBotEditablePricing `json:"editable_pricing,omitempty"`
@@ -142,12 +145,21 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 	accounts = slices.DeleteFunc(accounts, func(a Account) bool {
 		return a.Status != StatusActive || !a.Schedulable || !slices.Contains(a.GroupIDs, g.ID)
 	})
+	channels, err := s.catalogChannels(ctx, g.ID)
+	if err != nil {
+		return nil, err
+	}
+	routes, err := s.admin.ListCompositeRoutes(ctx, g.ID)
+	if err != nil {
+		return nil, err
+	}
+	routes, internalModels := doneBotCatalogRoutes(g.ID, routes, channels)
 	candidates := map[string][]string{}
 	for i := range accounts {
 		account := &accounts[i]
 		for model, target := range stringMappingFromRaw(account.Credentials["model_mapping"]) {
 			model = strings.TrimSpace(model)
-			if model == "" || strings.Contains(model, "*") || strings.TrimSpace(target) == "" || !doneBotCatalogAccountSupports(account, model, "") {
+			if model == "" || strings.Contains(model, "*") || strings.TrimSpace(target) == "" || internalModels[account.Platform][strings.ToLower(model)] || !doneBotCatalogAccountSupports(account, model, "") {
 				continue
 			}
 			if !slices.Contains(candidates[account.Platform], model) {
@@ -155,93 +167,77 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 			}
 		}
 	}
-	routes, err := s.admin.ListCompositeRoutes(ctx, g.ID)
-	if err != nil {
-		return nil, err
-	}
 	rows := map[string]DoneBotModel{}
-	for page := 1; ; page++ {
-		channels, p, e := s.channels.List(ctx, pagination.PaginationParams{Page: page, PageSize: 100}, StatusActive, "")
-		if e != nil {
-			return nil, e
-		}
-		for _, ch := range channels {
-			if ch.Status != StatusActive || !slices.Contains(ch.GroupIDs, g.ID) {
+	for _, ch := range channels {
+		for _, price := range ch.ModelPricing {
+			if !doneBotHasPrice(price) {
 				continue
 			}
-			for _, price := range ch.ModelPricing {
-				if !doneBotHasPrice(price) {
+			source := candidates[price.Platform]
+			for _, model := range source {
+				matched := false
+				for _, pattern := range price.Models {
+					if groupAllowlistPatternMatches(pattern, model) {
+						matched = true
+						break
+					}
+				}
+				if !matched || strings.Contains(model, "*") {
 					continue
 				}
-				source := candidates[price.Platform]
-				for _, model := range source {
-					matched := false
-					for _, pattern := range price.Models {
-						if groupAllowlistPatternMatches(pattern, model) {
-							matched = true
-							break
-						}
-					}
-					if !matched || strings.Contains(model, "*") {
+				kind, audioUnit := doneBotModelKind(model, price.BillingMode, accounts)
+				if price.BillingMode == BillingModeImage || IsGPTImageGenerationModel(model) || isImageGenerationModel(model) || isGrokImageGenerationModel(model) {
+					kind = "images"
+				}
+				if native, _ := doneBotNativeMediaKind(model, accounts); native != "" && !doneBotHasNativeMediaAccount(model, price.Platform, native, accounts) {
+					continue
+				}
+				if kind == "audio" && (price.BillingMode != BillingModePerRequest || !doneBotHasAudioAccount(model, price.Platform, accounts)) {
+					continue
+				}
+				if kind == "llm" && price.BillingMode != "" && price.BillingMode != BillingModeToken {
+					continue
+				}
+				cp := price.Clone()
+				row := DoneBotModel{Model: model, Platform: price.Platform, Kind: kind, AudioPriceUnit: audioUnit, Available: true, ChannelPricing: &cp}
+				rows[strings.ToLower(model)] = row
+			}
+			for _, route := range routes {
+				if !route.Enabled || route.MatchType != "exact" || route.TargetPlatform != price.Platform || route.GroupID != 0 && route.GroupID != g.ID {
+					continue
+				}
+				upstream := route.UpstreamModel
+				if upstream == "" {
+					upstream = route.PublicModel
+				}
+				if !doneBotCatalogAccountsSupport(accounts, route.TargetPlatform, upstream, route.Endpoint) {
+					continue
+				}
+				pricedModel := route.PublicModel
+				if ch.BillingModelSource == BillingModelSourceUpstream {
+					pricedModel = upstream
+				}
+				for _, pattern := range price.Models {
+					if !groupAllowlistPatternMatches(pattern, pricedModel) {
 						continue
 					}
-					kind, audioUnit := doneBotModelKind(model, price.BillingMode, accounts)
-					if price.BillingMode == BillingModeImage || IsGPTImageGenerationModel(model) || isImageGenerationModel(model) || isGrokImageGenerationModel(model) {
+					kind, audioUnit := doneBotModelKind(upstream, price.BillingMode, accounts)
+					if route.Endpoint == "images" {
 						kind = "images"
 					}
-					if native, _ := doneBotNativeMediaKind(model, accounts); native != "" && !doneBotHasNativeMediaAccount(model, price.Platform, native, accounts) {
+					if native, _ := doneBotNativeMediaKind(upstream, accounts); native != "" && !doneBotHasNativeMediaAccount(upstream, price.Platform, native, accounts) {
 						continue
 					}
-					if kind == "audio" && (price.BillingMode != BillingModePerRequest || !doneBotHasAudioAccount(model, price.Platform, accounts)) {
+					if kind == "audio" && (price.BillingMode != BillingModePerRequest || !doneBotHasAudioAccount(upstream, price.Platform, accounts)) {
 						continue
 					}
 					if kind == "llm" && price.BillingMode != "" && price.BillingMode != BillingModeToken {
 						continue
 					}
 					cp := price.Clone()
-					row := DoneBotModel{Model: model, Platform: price.Platform, Kind: kind, AudioPriceUnit: audioUnit, Available: true, ChannelPricing: &cp}
-					rows[strings.ToLower(model)] = row
-				}
-				for _, route := range routes {
-					if !route.Enabled || route.MatchType != "exact" || route.TargetPlatform != price.Platform || route.GroupID != 0 && route.GroupID != g.ID {
-						continue
-					}
-					upstream := route.UpstreamModel
-					if upstream == "" {
-						upstream = route.PublicModel
-					}
-					if !doneBotCatalogAccountsSupport(accounts, route.TargetPlatform, upstream, route.Endpoint) {
-						continue
-					}
-					pricedModel := route.PublicModel
-					if ch.BillingModelSource == BillingModelSourceUpstream {
-						pricedModel = upstream
-					}
-					for _, pattern := range price.Models {
-						if !groupAllowlistPatternMatches(pattern, pricedModel) {
-							continue
-						}
-						kind, audioUnit := doneBotModelKind(upstream, price.BillingMode, accounts)
-						if route.Endpoint == "images" {
-							kind = "images"
-						}
-						if native, _ := doneBotNativeMediaKind(upstream, accounts); native != "" && !doneBotHasNativeMediaAccount(upstream, price.Platform, native, accounts) {
-							continue
-						}
-						if kind == "audio" && (price.BillingMode != BillingModePerRequest || !doneBotHasAudioAccount(upstream, price.Platform, accounts)) {
-							continue
-						}
-						if kind == "llm" && price.BillingMode != "" && price.BillingMode != BillingModeToken {
-							continue
-						}
-						cp := price.Clone()
-						rows[strings.ToLower(route.PublicModel)] = DoneBotModel{Model: route.PublicModel, Platform: route.TargetPlatform, Kind: kind, AudioPriceUnit: audioUnit, Available: true, ChannelPricing: &cp, VideoResolutions: doneBotVideoResolutions(upstream, accounts), ImageResolutions: doneBotImageResolutions(kind, upstream, accounts)}
-					}
+					rows[strings.ToLower(route.PublicModel)] = DoneBotModel{routingModel: upstream, routingEndpoint: normalizeCompositeRouteEndpoint(route.Endpoint), pricingModel: pricedModel, Model: route.PublicModel, Platform: route.TargetPlatform, Kind: kind, AudioPriceUnit: audioUnit, Available: true, ChannelPricing: &cp, VideoResolutions: doneBotVideoResolutions(upstream, accounts), ImageResolutions: doneBotImageResolutions(kind, upstream, accounts)}
 				}
 			}
-		}
-		if p == nil || int64(page*100) >= p.Total {
-			break
 		}
 	}
 	// Account candidates remain configurable before their first price is set.
@@ -280,7 +276,7 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 		if native, _ := doneBotNativeMediaKind(upstream, accounts); native != "" && !doneBotHasNativeMediaAccount(upstream, route.TargetPlatform, native, accounts) {
 			continue
 		}
-		rows[key] = DoneBotModel{Model: route.PublicModel, Platform: route.TargetPlatform, Kind: kind, AudioPriceUnit: unit, Available: true, ChannelPricing: nil, VideoResolutions: doneBotVideoResolutions(upstream, accounts), ImageResolutions: doneBotImageResolutions(kind, upstream, accounts)}
+		rows[key] = DoneBotModel{routingModel: upstream, routingEndpoint: normalizeCompositeRouteEndpoint(route.Endpoint), Model: route.PublicModel, Platform: route.TargetPlatform, Kind: kind, AudioPriceUnit: unit, Available: true, ChannelPricing: nil, VideoResolutions: doneBotVideoResolutions(upstream, accounts), ImageResolutions: doneBotImageResolutions(kind, upstream, accounts)}
 	}
 	result := make([]DoneBotModel, 0, len(rows))
 	for _, row := range rows {
@@ -291,7 +287,7 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 		}
 		price := row.ChannelPricing
 		if row.Available && s.pricing != nil {
-			if resolved := s.pricing.GetChannelModelPricing(WithResolvedTargetPlatform(ctx, row.Platform), g.ID, row.Model); resolved != nil {
+			if resolved := s.pricing.GetChannelModelPricing(WithResolvedTargetPlatform(ctx, row.Platform), g.ID, firstNonEmpty(row.pricingModel, row.Model)); resolved != nil {
 				price = resolved
 				row.ChannelPricing = resolved
 			}

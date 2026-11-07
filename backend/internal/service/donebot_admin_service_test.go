@@ -331,7 +331,7 @@ func TestDoneBotCatalogCompositeRoutesNeedEnabledAccountEvidence(t *testing.T) {
 	for _, r := range rows {
 		models = append(models, r.Model)
 	}
-	require.ElementsMatch(t, []string{"native", "public", "wildcard-supported"}, models)
+	require.ElementsMatch(t, []string{"public", "wildcard-supported"}, models)
 }
 func TestDoneBotCatalogRuntimeDefaultsAndCapabilitiesCannotExpandMappings(t *testing.T) {
 	s, a := doneBotCatalogFixture()
@@ -423,4 +423,100 @@ func TestDoneBotCatalogWildcardOnlyAccountCanPriceExactCompositeRoute(t *testing
 	require.NotNil(t, rows[0].ChannelPricing)
 	require.NoError(t, s.updateModels(context.Background(), a.group, "llm", []DoneBotModelToggle{{Model: "public-chat", Enabled: true}}))
 	require.True(t, a.group.ModelAllowlist.Allows("public-chat"))
+}
+
+func TestDoneBotCatalogHidesInternalRoutingModels(t *testing.T) {
+	const publicModel = "gpt-image-2.5-sunburst"
+	const routingModel = "gpt-image-2.5-sunburst-zx"
+	for _, path := range []string{"composite", "channel", "composed"} {
+		t.Run(path, func(t *testing.T) {
+			s, a := doneBotCatalogFixture()
+			account := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{routingModel: "supplier-private-model"})
+			account.Type = AccountTypeAPIKey
+			s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+			price := 0.25
+			channel := Channel{Status: StatusActive, GroupIDs: []int64{7}, BillingModelSource: BillingModelSourceUpstream, ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"gpt-image-*"}, BillingMode: BillingModeImage, PerRequestPrice: &price}}}
+			switch path {
+			case "composite":
+				a.routes = []CompositeModelRoute{{PublicModel: publicModel, UpstreamModel: routingModel, TargetPlatform: PlatformOpenAI, MatchType: CompositeRouteMatchExact, Endpoint: CompositeRouteEndpointImages, Enabled: true}}
+			case "channel":
+				channel.ModelMapping = map[string]map[string]string{PlatformOpenAI: {publicModel: routingModel}}
+			case "composed":
+				a.routes = []CompositeModelRoute{{PublicModel: publicModel, UpstreamModel: "channel-internal", TargetPlatform: PlatformOpenAI, MatchType: CompositeRouteMatchExact, Endpoint: CompositeRouteEndpointImages, Enabled: true}}
+				channel.ModelMapping = map[string]map[string]string{PlatformOpenAI: {"channel-internal": routingModel}}
+			}
+			s.channels = doneBotCatalogChannelsStub{channels: []Channel{channel}}
+			a.group.ModelAllowlist.Models = []string{publicModel, routingModel}
+			a.group.ModelPricing = []ChannelModelPricing{{Models: []string{publicModel, routingModel}, BillingMode: BillingModeImage, PerRequestPrice: &price}}
+			rows, err := s.catalog(context.Background(), a.group)
+			require.NoError(t, err)
+			require.Len(t, rows, 1)
+			require.Equal(t, publicModel, rows[0].Model)
+			require.True(t, rows[0].PricingConfigured)
+			require.True(t, rows[0].Enabled)
+			catalog, err := buildDoneBotPublicCatalog(a.group, 42, "fixture", rows, []Account{account}, a.routes, nil)
+			require.NoError(t, err)
+			require.Len(t, catalog.Models, 1)
+			require.Equal(t, publicModel, catalog.Models[0].ID)
+			data, err := json.Marshal(catalog)
+			require.NoError(t, err)
+			require.NotContains(t, string(data), routingModel)
+			require.NotContains(t, string(data), "supplier-private-model")
+			require.Error(t, s.updateModels(context.Background(), a.group, "images", []DoneBotModelToggle{{Model: routingModel, Enabled: true}}))
+			require.Error(t, s.updateModelPricing(context.Background(), a.group, "images", []DoneBotModelPriceInput{{Model: routingModel, Pricing: DoneBotEditablePricing{ImagePrices: map[string]*float64{"1K": &price}}}}))
+		})
+	}
+}
+
+func TestDoneBotCatalogExplicitPublicAliasRemainsConfigurable(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	account := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"internal": "vendor", "direct-public": "another-vendor"})
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+	s.channels = doneBotCatalogChannelsStub{}
+	a.routes = []CompositeModelRoute{
+		{PublicModel: "public", UpstreamModel: "internal", TargetPlatform: PlatformOpenAI, MatchType: CompositeRouteMatchExact, Enabled: true},
+		{PublicModel: "internal", UpstreamModel: "internal", TargetPlatform: PlatformOpenAI, MatchType: CompositeRouteMatchExact, Enabled: true},
+		{PublicModel: "unavailable", UpstreamModel: "absent", TargetPlatform: PlatformOpenAI, MatchType: CompositeRouteMatchExact, Enabled: true},
+	}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	models := make([]string, 0, len(rows))
+	for _, row := range rows {
+		models = append(models, row.Model)
+	}
+	require.ElementsMatch(t, []string{"public", "internal", "direct-public"}, models)
+}
+
+func TestDoneBotCatalogAccountMappingExposesOnlyRequestedNames(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	account := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"gpt-image-2.5-sunburst": "gpt-image-2.5-sunburst-zx"})
+	account.Type = AccountTypeAPIKey
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+	s.channels = doneBotCatalogChannelsStub{}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "gpt-image-2.5-sunburst", rows[0].Model)
+}
+
+func TestDoneBotCatalogDoesNotGuessWhitelistAliases(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	account := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{"gpt-image-2.5-sunburst-zx": "gpt-image-2.5-sunburst-zx"})
+	account.Type = AccountTypeAPIKey
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+	s.channels = doneBotCatalogChannelsStub{}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "gpt-image-2.5-sunburst-zx", rows[0].Model)
+}
+
+func TestDoneBotCatalogChannelMappingOrderDoesNotExposeInternalNames(t *testing.T) {
+	for range 50 {
+		routes, internal := doneBotCatalogRoutes(7, nil, []Channel{{ModelMapping: map[string]map[string]string{PlatformOpenAI: {"public": "internal", "internal": "vendor"}}}})
+		require.Len(t, routes, 1)
+		require.Equal(t, "public", routes[0].PublicModel)
+		require.True(t, internal[PlatformOpenAI]["internal"])
+		require.True(t, internal[PlatformOpenAI]["vendor"])
+	}
 }

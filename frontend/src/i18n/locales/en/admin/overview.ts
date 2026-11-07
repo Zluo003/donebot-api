@@ -1017,6 +1017,7 @@ export default {
       limitMonth: 'mo',
       groupCreated: 'Group created successfully',
       groupUpdated: 'Group updated successfully',
+      donebotDeletionProtected: 'This group is bound to DoneBot and cannot be deleted.',
       groupDeleted: 'Group deleted successfully',
       failedToLoad: 'Failed to load groups',
       failedToCreate: 'Failed to create group',
