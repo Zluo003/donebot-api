@@ -34,6 +34,7 @@ func TestDoneBotTemplateRecognizesPortableBotAndDepartment(t *testing.T) {
 		})
 	}
 }
+
 //nolint:errcheck // The fixed role fixture supplies the asserted types before each mutation.
 func TestDoneBotTemplateRejectsMalformedAndDanglingContent(t *testing.T) {
 	raw, err := os.ReadFile("templateschema/testdata/role.json")
