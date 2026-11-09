@@ -381,7 +381,8 @@ func (s *OpsScheduledReportService) runReport(ctx context.Context, report *opsSc
 			subjectPrefix = "[运维报表]"
 		}
 		subject := fmt.Sprintf("%s %s", subjectPrefix, subjectName)
-		if err := s.emailService.SendEmail(ctx, addr, subject, content.html); err != nil {
+		body := brandedEmailDocument(locale, "DoneBot", subjectName, content.html)
+		if err := s.emailService.SendEmail(ctx, addr, subject, body); err != nil {
 			// Ignore per-recipient failures; continue best-effort.
 			continue
 		}
@@ -648,7 +649,7 @@ func buildOpsSummaryEmailHTML(title string, start, end time.Time, overview *OpsD
 		ttftP99 = fmt.Sprintf("%dms", *overview.TTFT.P99)
 	}
 
-	return fmt.Sprintf(`
+	return styleEmailContent(fmt.Sprintf(`
 <h2>%s</h2>
 <p><b>Period</b>: %s ~ %s (UTC)</p>
 <ul>
@@ -691,7 +692,7 @@ func buildOpsSummaryEmailHTML(title string, start, end time.Time, overview *OpsD
 		overview.TPS.Current,
 		overview.TPS.Peak,
 		overview.TPS.Avg,
-	)
+	))
 }
 
 func buildOpsErrorDigestEmailHTML(title string, start, end time.Time, list *OpsErrorLogList) string {
@@ -722,12 +723,12 @@ func buildOpsErrorDigestEmailHTML(title string, start, end time.Time, list *OpsE
 		rows = "<tr><td colspan=\"4\">No recent errors.</td></tr>"
 	}
 
-	return fmt.Sprintf(`
+	return styleEmailContent(fmt.Sprintf(`
 <h2>%s</h2>
 <p><b>Period</b>: %s ~ %s (UTC)</p>
 <p><b>Total Errors</b>: %d</p>
 <h3>Recent</h3>
-<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;">
+<table class="error-digest" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
   <thead><tr><th>Time</th><th>Platform</th><th>Status</th><th>Message</th></tr></thead>
   <tbody>%s</tbody>
 </table>
@@ -737,7 +738,7 @@ func buildOpsErrorDigestEmailHTML(title string, start, end time.Time, list *OpsE
 		htmlEscape(end.UTC().Format(time.RFC3339)),
 		total,
 		rows,
-	)
+	))
 }
 
 func buildOpsAccountHealthEmailHTML(title string, start, end time.Time, avail *OpsAccountAvailability) string {
@@ -764,7 +765,7 @@ func buildOpsAccountHealthEmailHTML(title string, start, end time.Time, avail *O
 		}
 	}
 
-	return fmt.Sprintf(`
+	return styleEmailContent(fmt.Sprintf(`
 <h2>%s</h2>
 <p><b>Period</b>: %s ~ %s (UTC)</p>
 <ul>
@@ -782,7 +783,7 @@ func buildOpsAccountHealthEmailHTML(title string, start, end time.Time, avail *O
 		available,
 		rateLimited,
 		hasError,
-	)
+	))
 }
 
 func (s *OpsScheduledReportService) tryAcquireLeaderLock(ctx context.Context) (func(), bool) {

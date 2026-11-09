@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"html"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -143,7 +142,9 @@ func (s *EmailService) SendPasswordResetCode(ctx context.Context, email, siteNam
 			return err
 		}
 	}
-	body := fmt.Sprintf(`<html><body><h1>%s · 找回密码</h1><p>请在客户端输入以下验证码：</p><p style="font-size:32px;letter-spacing:8px">%s</p><p>验证码 15 分钟内有效。若非本人操作，请忽略此邮件。</p></body></html>`, html.EscapeString(siteName), html.EscapeString(code))
+	body := defaultNotificationEmailBody(NotificationEmailEventAuthPasswordResetCode, locale, map[string]string{
+		"site_name": siteName, "verification_code": code, "expires_in_minutes": strconv.Itoa(int(passwordResetCodeTTL / time.Minute)),
+	})
 	if err := s.SendEmail(ctx, email, fmt.Sprintf("[%s] 找回密码验证码", siteName), body); err != nil {
 		_ = cache.DeletePasswordResetCode(ctx, email, generation)
 		return err

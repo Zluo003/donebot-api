@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DoneBot 邮件模板</title>
+  <style>
+    * { box-sizing:border-box; letter-spacing:0; }
+    body { margin:0; color:#202126; background:#f3f4f5; font:14px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; }
+    header { padding:20px 28px; background:#fff; border-bottom:1px solid #e4e5e8; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+    strong { font-size:22px; color:#c92e3c; }
+    h1 { font-size:16px; font-weight:500; margin:0; }
+    nav { padding:18px 28px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; background:#fff; }
+    label { color:#64676e; }
+    select { max-width:100%; padding:9px 30px 9px 12px; border:1px solid #d6d8dc; border-radius:6px; background:#fff; color:#202126; font:inherit; }
+    .modes { display:flex; margin-left:auto; border:1px solid #d6d8dc; border-radius:6px; overflow:hidden; }
+    button { border:0; padding:9px 16px; background:#fff; color:#64676e; font:inherit; cursor:pointer; }
+    button[aria-pressed="true"] { background:#202126; color:#fff; }
+    main { padding:24px 12px; }
+    iframe { display:block; width:100%; max-width:680px; height:1500px; margin:0 auto; border:0; }
+    iframe.mobile { width:360px; max-width:100%; }
+    @media(max-width:600px) { header,nav { padding:16px; } .modes { margin-left:0; } main { padding:12px 0; } }
+  </style>
+</head>
+<body>
+  <header><strong>DoneBot</strong><h1>邮件模板</h1></header>
+  <nav>
+    <label for="event">邮件</label>
+    <select id="event">
+      <option value="auth.verify_code">注册 · 邮箱验证码</option>
+      <option value="auth.password_reset_code">找回密码 · 验证码</option>
+      <option value="auth.password_reset">重置密码 · 链接</option>
+      <option value="notification_email.verify_code">通知邮箱验证</option>
+      <option value="subscription.purchase_success">订阅开通</option>
+      <option value="subscription.expiry_reminder">订阅到期提醒</option>
+      <option value="balance.low">余额不足提醒</option>
+      <option value="balance.recharge_success">充值成功</option>
+      <option value="account.quota_alert">账号额度告警</option>
+      <option value="content_moderation.violation_notice">账户风控提醒</option>
+      <option value="content_moderation.account_disabled">账户禁用</option>
+      <option value="content_moderation.cyber_policy_notice">网络安全策略提醒</option>
+      <option value="ops.alert">运维告警</option>
+      <option value="ops.scheduled_report">运维报表</option>
+      <option value="smtp-test">SMTP 测试</option>
+      <option value="long-message">长文本</option>
+      <option value="error-digest">错误摘要</option>
+    </select>
+    <label for="locale">语言</label>
+    <select id="locale"><option value="zh">中文</option><option value="en">English</option></select>
+    <div class="modes" role="group" aria-label="预览尺寸">
+      <button type="button" aria-pressed="true" data-size="desktop">桌面</button>
+      <button type="button" aria-pressed="false" data-size="mobile">手机</button>
+    </div>
+  </nav>
+  <main><iframe id="preview" title="邮件预览" src="auth.verify_code.zh.html"></iframe></main>
+  <script>
+    const eventInput = document.querySelector('#event');
+    const localeInput = document.querySelector('#locale');
+    const preview = document.querySelector('#preview');
+    function update() {
+      const standalone = ['smtp-test', 'long-message', 'error-digest'].includes(eventInput.value);
+      localeInput.disabled = standalone;
+      preview.src = eventInput.value + (standalone ? '' : '.' + localeInput.value) + '.html';
+    }
+    eventInput.addEventListener('change', update);
+    localeInput.addEventListener('change', update);
+    document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => {
+      preview.classList.toggle('mobile', button.dataset.size === 'mobile');
+      document.querySelectorAll('[data-size]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+    }));
+  </script>
+</body>
+</html>

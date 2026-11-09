@@ -4,8 +4,11 @@ package service
 
 import (
 	"bytes"
+	"encoding/base64"
+	"image/png"
 	"io"
 	"mime"
+	"mime/multipart"
 	"mime/quotedprintable"
 	"net/mail"
 	"regexp"
@@ -114,4 +117,39 @@ func TestBuildSMTPMessageUsesUniqueMessageIDs(t *testing.T) {
 	secondParsed, err := mail.ReadMessage(bytes.NewReader(second.data))
 	require.NoError(t, err)
 	require.NotEqual(t, firstParsed.Header.Get("Message-ID"), secondParsed.Header.Get("Message-ID"))
+}
+
+func TestBuildSMTPMessageEmbedsDoneBotLogo(t *testing.T) {
+	body := (&EmailService{}).buildVerifyCodeEmailBody("654321", "DoneBot")
+	message, err := buildSMTPMessage(&SMTPConfig{Host: "smtp.example.com", From: "notify@example.com"}, "user@example.net", "验证码", body)
+	require.NoError(t, err)
+	parsed, err := mail.ReadMessage(bytes.NewReader(message.data))
+	require.NoError(t, err)
+	mediaType, params, err := mime.ParseMediaType(parsed.Header.Get("Content-Type"))
+	require.NoError(t, err)
+	require.Equal(t, "multipart/related", mediaType)
+	require.Equal(t, "text/html", params["type"])
+	reader := multipart.NewReader(parsed.Body, params["boundary"])
+	htmlPart, err := reader.NextPart()
+	require.NoError(t, err)
+	require.Contains(t, htmlPart.Header.Get("Content-Type"), "text/html")
+	decodedHTML, err := io.ReadAll(htmlPart)
+	require.NoError(t, err)
+	require.Equal(t, strings.ReplaceAll(body, "\n", "\r\n"), string(decodedHTML))
+	require.Contains(t, string(decodedHTML), "654321")
+	require.Contains(t, string(decodedHTML), "cid:"+doneBotEmailLogoCID)
+	logoPart, err := reader.NextPart()
+	require.NoError(t, err)
+	require.Equal(t, "image/png", logoPart.Header.Get("Content-Type"))
+	require.Equal(t, "<"+doneBotEmailLogoCID+">", logoPart.Header.Get("Content-ID"))
+	require.Contains(t, logoPart.Header.Get("Content-Disposition"), "inline;")
+	decodedLogo, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, logoPart))
+	require.NoError(t, err)
+	require.Equal(t, doneBotEmailLogo, decodedLogo)
+	imageConfig, err := png.DecodeConfig(bytes.NewReader(decodedLogo))
+	require.NoError(t, err)
+	require.Equal(t, 128, imageConfig.Width)
+	require.Equal(t, 128, imageConfig.Height)
+	_, err = reader.NextPart()
+	require.ErrorIs(t, err, io.EOF)
 }

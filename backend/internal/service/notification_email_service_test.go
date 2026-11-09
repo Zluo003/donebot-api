@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"mime"
+	"mime/multipart"
 	"mime/quotedprintable"
 	"net"
 	"net/mail"
@@ -608,7 +610,13 @@ func (s *notificationEmailTestSMTPServer) lastMessageBody(t *testing.T) string {
 	require.NoError(t, err)
 
 	bodyReader := io.Reader(message.Body)
-	if strings.EqualFold(message.Header.Get("Content-Transfer-Encoding"), "quoted-printable") {
+	mediaType, params, err := mime.ParseMediaType(message.Header.Get("Content-Type"))
+	require.NoError(t, err)
+	if mediaType == "multipart/related" {
+		part, err := multipart.NewReader(message.Body, params["boundary"]).NextPart()
+		require.NoError(t, err)
+		bodyReader = part
+	} else if strings.EqualFold(message.Header.Get("Content-Transfer-Encoding"), "quoted-printable") {
 		bodyReader = quotedprintable.NewReader(message.Body)
 	}
 	body, err := io.ReadAll(bodyReader)

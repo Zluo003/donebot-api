@@ -3,12 +3,16 @@ package service
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
+	"mime/multipart"
 	"mime/quotedprintable"
 	"net/mail"
+	"net/textproto"
 	"strings"
 	"time"
 )
@@ -57,16 +61,16 @@ func buildSMTPMessage(config *SMTPConfig, to, subject, body string) (smtpMessage
 	fmt.Fprintf(&message, "Date: %s\r\n", time.Now().UTC().Format(time.RFC1123Z))
 	fmt.Fprintf(&message, "Message-ID: %s\r\n", messageID)
 	fmt.Fprintf(&message, "Subject: %s\r\n", subjectHeader)
-	fmt.Fprint(&message, "MIME-Version: 1.0\r\n"+
-		"Content-Type: text/html; charset=UTF-8\r\n"+
-		"Content-Transfer-Encoding: quoted-printable\r\n\r\n")
-
-	bodyWriter := quotedprintable.NewWriter(&message)
-	if _, err := bodyWriter.Write([]byte(body)); err != nil {
-		return smtpMessage{}, fmt.Errorf("encode email body: %w", err)
-	}
-	if err := bodyWriter.Close(); err != nil {
-		return smtpMessage{}, fmt.Errorf("close email body encoder: %w", err)
+	fmt.Fprint(&message, "MIME-Version: 1.0\r\n")
+	if strings.Contains(body, "cid:"+doneBotEmailLogoCID) {
+		if err := writeBrandedEmailParts(&message, body); err != nil {
+			return smtpMessage{}, err
+		}
+	} else {
+		fmt.Fprint(&message, "Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n")
+		if err := writeEmailHTML(&message, body); err != nil {
+			return smtpMessage{}, err
+		}
 	}
 
 	return smtpMessage{
@@ -74,6 +78,52 @@ func buildSMTPMessage(config *SMTPConfig, to, subject, body string) (smtpMessage
 		envelopeTo:   recipientAddress.Address,
 		data:         message.Bytes(),
 	}, nil
+}
+
+func writeEmailHTML(writer io.Writer, body string) error {
+	bodyWriter := quotedprintable.NewWriter(writer)
+	if _, err := bodyWriter.Write([]byte(body)); err != nil {
+		return fmt.Errorf("encode email body: %w", err)
+	}
+	if err := bodyWriter.Close(); err != nil {
+		return fmt.Errorf("close email body encoder: %w", err)
+	}
+	return nil
+}
+
+func writeBrandedEmailParts(message *bytes.Buffer, body string) error {
+	writer := multipart.NewWriter(message)
+	fmt.Fprintf(message, "Content-Type: %s\r\n\r\n", mime.FormatMediaType("multipart/related", map[string]string{
+		"boundary": writer.Boundary(), "type": "text/html",
+	}))
+	bodyPart, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Type":              {"text/html; charset=UTF-8"},
+		"Content-Transfer-Encoding": {"quoted-printable"},
+	})
+	if err != nil {
+		return fmt.Errorf("create email HTML part: %w", err)
+	}
+	if err := writeEmailHTML(bodyPart, body); err != nil {
+		return err
+	}
+	logoPart, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Type":              {"image/png"},
+		"Content-Transfer-Encoding": {"base64"},
+		"Content-ID":                {"<" + doneBotEmailLogoCID + ">"},
+		"Content-Disposition":       {`inline; filename="donebot-logo.png"`},
+	})
+	if err != nil {
+		return fmt.Errorf("create email logo part: %w", err)
+	}
+	encoded := base64.StdEncoding.EncodeToString(doneBotEmailLogo)
+	for len(encoded) > 0 {
+		lineLength := min(76, len(encoded))
+		if _, err := io.WriteString(logoPart, encoded[:lineLength]+"\r\n"); err != nil {
+			return fmt.Errorf("encode email logo: %w", err)
+		}
+		encoded = encoded[lineLength:]
+	}
+	return writer.Close()
 }
 
 func parseSMTPAddress(value, field string) (*mail.Address, error) {

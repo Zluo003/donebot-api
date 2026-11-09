@@ -18,6 +18,22 @@ type stubOpsRepo struct {
 	err      error
 }
 
+func TestOpsAlertEmailBodyUsesConfiguredSiteName(t *testing.T) {
+	settings := newMockSettingRepo()
+	settings.data[SettingKeySiteName] = "My DoneBot Site"
+	service := &OpsAlertEvaluatorService{
+		opsService: &OpsService{settingRepo: settings},
+	}
+
+	body := buildOpsAlertEmailBody(
+		&OpsAlertRule{Name: "Queue delay"},
+		&OpsAlertEvent{Description: "Queue is delayed"},
+		service.siteName(context.Background()),
+	)
+
+	require.Contains(t, body, "My DoneBot Site")
+}
+
 func (s *stubOpsRepo) GetDashboardOverview(ctx context.Context, filter *OpsDashboardFilter) (*OpsDashboardOverview, error) {
 	if s.err != nil {
 		return nil, s.err

@@ -708,7 +708,7 @@ func (s *OpsAlertEvaluatorService) maybeSendAlertEmail(ctx context.Context, runt
 	s.emailLimiter.SetLimit(emailCfg.Alert.RateLimitPerHour)
 
 	subject := fmt.Sprintf("[Ops Alert][%s] %s", strings.TrimSpace(rule.Severity), strings.TrimSpace(rule.Name))
-	body := buildOpsAlertEmailBody(rule, event)
+	body := buildOpsAlertEmailBody(rule, event, s.siteName(ctx))
 
 	anySent := false
 	for _, to := range emailCfg.Alert.Recipients {
@@ -787,37 +787,24 @@ func opsAlertEmailVariables(rule *OpsAlertRule, event *OpsAlertEvent) map[string
 	return variables
 }
 
-func buildOpsAlertEmailBody(rule *OpsAlertRule, event *OpsAlertEvent) string {
+func (s *OpsAlertEvaluatorService) siteName(ctx context.Context) string {
+	if s == nil || s.opsService == nil || s.opsService.settingRepo == nil {
+		return defaultSiteName
+	}
+	name, err := s.opsService.settingRepo.GetValue(ctx, SettingKeySiteName)
+	if err != nil || strings.TrimSpace(name) == "" {
+		return defaultSiteName
+	}
+	return strings.TrimSpace(name)
+}
+
+func buildOpsAlertEmailBody(rule *OpsAlertRule, event *OpsAlertEvent, siteName string) string {
 	if rule == nil || event == nil {
 		return ""
 	}
-	metric := strings.TrimSpace(rule.MetricType)
-	value := "-"
-	threshold := fmt.Sprintf("%.2f", rule.Threshold)
-	if event.MetricValue != nil {
-		value = fmt.Sprintf("%.2f", *event.MetricValue)
-	}
-	if event.ThresholdValue != nil {
-		threshold = fmt.Sprintf("%.2f", *event.ThresholdValue)
-	}
-	return fmt.Sprintf(`
-<h2>Ops Alert</h2>
-<p><b>Rule</b>: %s</p>
-<p><b>Severity</b>: %s</p>
-<p><b>Status</b>: %s</p>
-<p><b>Metric</b>: %s %s %s</p>
-<p><b>Fired at</b>: %s</p>
-<p><b>Description</b>: %s</p>
-`,
-		htmlEscape(rule.Name),
-		htmlEscape(rule.Severity),
-		htmlEscape(event.Status),
-		htmlEscape(metric),
-		htmlEscape(rule.Operator),
-		htmlEscape(fmt.Sprintf("%s (threshold %s)", value, threshold)),
-		event.FiredAt.Format(time.RFC3339),
-		htmlEscape(event.Description),
-	)
+	variables := opsAlertEmailVariables(rule, event)
+	variables["site_name"] = siteName
+	return defaultNotificationEmailBody(NotificationEmailEventOpsAlert, "en", variables)
 }
 
 func shouldSendOpsAlertEmailByMinSeverity(minSeverity string, ruleSeverity string) bool {
