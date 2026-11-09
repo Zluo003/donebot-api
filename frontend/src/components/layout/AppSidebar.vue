@@ -849,7 +849,7 @@ const adminNavItems = computed((): NavItem[] => {
   ]
 
   if (appStore.cachedPublicSettings?.donebot_enabled) {
-    baseItems.splice(1, 0, { path: '/admin/donebot', label: 'DoneBot', icon: FolderIcon })
+    baseItems.splice(1, 0, { path: '/admin/donebot', label: 'DoneBot', icon: FolderIcon }, { path: '/admin/donebot/templates', label: 'DoneBot 模板库', icon: FolderIcon })
   }
   const visible = applyFeatureFlags(baseItems)
 

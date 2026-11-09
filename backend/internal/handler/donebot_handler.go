@@ -42,6 +42,7 @@ func doneBotUserInstallation(install *service.DoneBotInstall) doneBotUserInstall
 }
 
 type DoneBotHandler struct {
+	templates    *service.DoneBotTemplateService
 	installs     doneBotClaimer
 	settings     service.SettingRepository
 	cfg          *config.Config

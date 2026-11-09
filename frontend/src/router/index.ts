@@ -474,6 +474,12 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/donebot/templates',
+    name: 'AdminDoneBotTemplates',
+    component: () => import('@/views/admin/DoneBotTemplatesView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'DoneBot 模板库' }
+  },
+  {
     path: '/admin/donebot',
     name: 'AdminDoneBot',
     component: () => import('@/views/admin/DoneBotView.vue'),

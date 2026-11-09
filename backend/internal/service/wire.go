@@ -896,6 +896,7 @@ func ProvideAssetService(repo AssetRepository, storage AssetStorage, cfg *config
 
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	NewDoneBotTemplateService,
 	ProvideAssetService,
 	NewDoneBotStorageService,
 	NewDoneBotWebToolsService,

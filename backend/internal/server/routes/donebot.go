@@ -8,6 +8,8 @@ import (
 
 func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handlers) {
 	if h.DoneBot != nil {
+		authenticated.GET("/donebot/templates", h.DoneBot.Templates)
+		authenticated.GET("/donebot/templates/:template_id/:release", h.DoneBot.Template)
 		authenticated.POST("/donebot/installations/claim", h.DoneBot.Claim)
 		authenticated.GET("/donebot/installations", h.DoneBot.ListInstallations)
 		authenticated.GET("/donebot/models", h.DoneBot.Models)
@@ -21,6 +23,11 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUp middleware.StepUpAuthMiddleware) {
 	if h.Admin.DoneBot != nil {
 		donebot := admin.Group("/donebot")
+		donebot.GET("/templates", h.Admin.DoneBot.Templates)
+		donebot.POST("/templates/preview", h.Admin.DoneBot.PreviewTemplate)
+		donebot.POST("/templates", gin.HandlerFunc(stepUp), h.Admin.DoneBot.PublishTemplate)
+		donebot.GET("/templates/:template_id/:release", h.Admin.DoneBot.Template)
+		donebot.PATCH("/templates/:template_id/:release", gin.HandlerFunc(stepUp), h.Admin.DoneBot.TemplateVisibility)
 		donebot.GET("/storage", h.Admin.DoneBot.Storage)
 		donebot.GET("/web-tools", h.Admin.DoneBot.WebTools)
 		donebot.PUT("/web-tools", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateWebTools)

@@ -123,6 +123,11 @@ tests
 CLAUDE.md
 .claude
 scripts
+!frontend/scripts/
+frontend/scripts/*
+!frontend/scripts/preview-templates.mjs
+!frontend/scripts/template-preview-entry.ts
+!frontend/scripts/TemplatePreviewLayout.vue
 !backend/scripts/
 !backend/scripts/resolve-version.sh
 .code-review-state
@@ -134,6 +139,7 @@ deploy/docker-compose.override.yml
 .gocache/
 vite.config.js
 docs/*
+!docs/donebot-templates.md
 !docs/donebot/
 !docs/donebot/*.md
 !docs/admin-api-keys.md
