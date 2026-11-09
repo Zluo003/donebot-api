@@ -46,6 +46,12 @@ func TestDoneBotTemplateRejectsMalformedAndDanglingContent(t *testing.T) {
 		"missing soul": func(pkg map[string]any) {
 			pkg["presets"].([]any)[0].(map[string]any)["bot"].(map[string]any)["soul"] = ""
 		},
+		"missing duties": func(pkg map[string]any) {
+			delete(pkg["presets"].([]any)[0].(map[string]any)["bot"].(map[string]any), "description")
+		},
+		"no bound skills": func(pkg map[string]any) {
+			pkg["presets"].([]any)[0].(map[string]any)["skills"] = []any{}
+		},
 		"unknown skill": func(pkg map[string]any) {
 			pkg["presets"].([]any)[0].(map[string]any)["skills"] = []any{"missing-skill"}
 		},

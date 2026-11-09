@@ -8,6 +8,9 @@ ZIP files or arbitrary scripts are not supported by this version.
 
 The current ecommerce directory contains individual role packages and department
 packages. Catalog bundles with multiple presets are not single Bot templates.
+Every role, including each department member, must provide duties in `description`,
+a nonempty SOUL, and at least one skill bound to bundled content. Preview and
+publication reject incomplete roles; the client validates them again on download.
 
 Published content is immutable by `(template_id, release)`. Use **查看 → 发布新版本**
 to reuse a package with a new version, or upload an edited package. A repeated

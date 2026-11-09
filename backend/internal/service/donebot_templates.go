@@ -182,6 +182,13 @@ func PreviewDoneBotTemplate(raw json.RawMessage) (*DoneBotTemplateRelease, error
 		if strings.TrimSpace(soul) == "" || len(soul) > 24000 {
 			return invalid("每个机器人必须包含完整 SOUL，且不能超过 24000 字节")
 		}
+		duties, _ := bot["description"].(string)
+		if strings.TrimSpace(duties) == "" {
+			return invalid("每个机器人必须包含岗位职责（description）")
+		}
+		if len(doneBotTemplateList(item, "skills")) == 0 {
+			return invalid("每个机器人必须绑定至少一个随模板提供的技能")
+		}
 		if !hasRefs(item, "skills", "skills") || !hasRefs(item, "playbooks", "playbooks") || !hasRefs(item, "connections", "connections") {
 			return invalid("机器人引用了不存在的技能、工作手册或连接")
 		}
