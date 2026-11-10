@@ -16,8 +16,14 @@ import (
 
 func TestDoneBotDispatchAtomicDebitAndStableTaskRecovery(t *testing.T) {
 	repo, ops, owner, accountID := doneBotPrepaidFixture(t, 10, 20)
+	secondAccount := mustCreateAccount(t, integrationEntClient, &service.Account{Name: "donebot-dispatch-failover-" + uuid.NewString(), Type: service.AccountTypeAPIKey, Platform: service.PlatformOpenAI})
+	t.Cleanup(func() {
+		_, err := integrationDB.Exec(`DELETE FROM accounts WHERE id=$1`, secondAccount.ID)
+		require.NoError(t, err)
+	})
 	ctx := context.Background()
 	p := doneBotPrepaidInput(t, ops, owner, accountID, "stable-dispatch", 0.6)
+	p.Snapshot.AccountRateMultiplier = 1.25
 	task := service.DoneBotDispatch{ReceiptID: p.ReceiptID, TaskID: "dbtask_" + uuid.NewString(), UserID: owner.UserID, APIKeyID: owner.APIKeyID, GroupID: owner.GroupID, Protocol: service.DoneBotDispatchSeedance, Kind: "video", Model: p.Model, State: "queued", AccountID: accountID, Body: []byte(`{"prompt":"fixture"}`)}
 	require.NoError(t, repo.PrepayDoneBotMedia(service.WithDoneBotDispatch(ctx, &task), p))
 	var balance float64
@@ -46,8 +52,9 @@ func TestDoneBotDispatchAtomicDebitAndStableTaskRecovery(t *testing.T) {
 	}
 	require.NotEmpty(t, leased.Lease)
 	leased.State = "dispatching"
+	leased.AccountID = secondAccount.ID
 	require.NoError(t, restarted.SaveDoneBotDispatch(ctx, &leased, time.Minute))
-	require.NoError(t, restarted.ReassignDoneBotMediaAccount(ctx, p.ReceiptID, owner.APIKeyID, accountID, 2))
+	require.NoError(t, restarted.ReassignDoneBotMediaAccount(ctx, p.ReceiptID, owner.APIKeyID, secondAccount.ID, 3))
 	leaseCopy := leased
 	leaseCopy.Lease = uuid.NewString()
 	require.ErrorIs(t, restarted.SaveDoneBotDispatch(ctx, &leaseCopy, 0), service.DoneBotDispatchLeaseError())
@@ -60,6 +67,8 @@ func TestDoneBotDispatchAtomicDebitAndStableTaskRecovery(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, task.TaskID, after.TaskKey)
 	require.Equal(t, "prepaid", after.State)
+	require.Equal(t, accountID, after.AccountID, "dispatch account rotation must not migrate the original precharge ledger attribution")
+	require.Equal(t, 1.25, after.Snapshot.AccountRateMultiplier)
 	var count int
 	require.NoError(t, integrationDB.QueryRow(`SELECT COUNT(*) FROM usage_logs WHERE operation_receipt_id=$1::uuid`, p.ReceiptID).Scan(&count))
 	require.Equal(t, 1, count, "provider changes cannot add a second charge")
@@ -67,6 +76,14 @@ func TestDoneBotDispatchAtomicDebitAndStableTaskRecovery(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, integrationDB.QueryRow(`SELECT COUNT(*) FROM usage_logs WHERE operation_receipt_id=$1::uuid`, p.ReceiptID).Scan(&count))
 	require.Equal(t, 2, count, "final failure keeps charge plus one refund")
+	var chargeAccountID, refundAccountID int64
+	var chargeAccountRate, refundAccountRate float64
+	require.NoError(t, integrationDB.QueryRow(`SELECT account_id,account_rate_multiplier FROM usage_logs WHERE operation_receipt_id=$1::uuid AND event_type='charge'`, p.ReceiptID).Scan(&chargeAccountID, &chargeAccountRate))
+	require.NoError(t, integrationDB.QueryRow(`SELECT account_id,account_rate_multiplier FROM usage_logs WHERE operation_receipt_id=$1::uuid AND event_type='refund'`, p.ReceiptID).Scan(&refundAccountID, &refundAccountRate))
+	require.Equal(t, accountID, chargeAccountID)
+	require.Equal(t, chargeAccountID, refundAccountID, "DoneBot wallet refund retains the charge's internal account attribution")
+	require.Equal(t, 1.25, chargeAccountRate)
+	require.Equal(t, chargeAccountRate, refundAccountRate)
 	require.NoError(t, integrationDB.QueryRow(`SELECT balance FROM users WHERE id=$1`, owner.UserID).Scan(&balance))
 	require.Equal(t, 10.0, balance)
 }

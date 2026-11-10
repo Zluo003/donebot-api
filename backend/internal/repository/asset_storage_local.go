@@ -24,7 +24,11 @@ func (s *assetStorageSet) ForKind(kind string) (service.AssetStorage, bool) {
 	return driver, ok
 }
 func (s *assetStorageSet) Open(ctx context.Context, key string) (io.ReadCloser, error) {
-	reader, ok := s.drivers["local"].(service.LocalAssetReader)
+	driver := s.drivers["local"]
+	if driver == nil || driver.Kind() != "local" {
+		return nil, fmt.Errorf("local asset reader is not configured")
+	}
+	reader, ok := driver.(service.LocalAssetReader)
 	if !ok {
 		return nil, fmt.Errorf("local asset reader is not configured")
 	}

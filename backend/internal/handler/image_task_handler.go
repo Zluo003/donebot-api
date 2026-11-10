@@ -284,7 +284,8 @@ func (h *AsyncImageHandler) executeWithGateway(platform string, c *gin.Context) 
 func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, recorder *httptest.ResponseRecorder, cancel context.CancelFunc) {
 	defer cancel()
 	pending := &imageTaskBilling{}
-	taskCtx.Request = taskCtx.Request.WithContext(context.WithValue(taskCtx.Request.Context(), imageTaskBillingContextKey{}, pending))
+	base := context.WithValue(taskCtx.Request.Context(), imageTaskBillingContextKey{}, pending)
+	taskCtx.Request = taskCtx.Request.WithContext(service.WithDoneBotMediaPrepaidSettlement(base))
 	defer pending.finish(false)
 	defer func() {
 		if recovered := recover(); recovered != nil {

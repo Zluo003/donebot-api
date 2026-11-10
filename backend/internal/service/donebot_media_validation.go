@@ -42,6 +42,36 @@ func (s *DoneBotCatalogService) ValidateMediaPath(ctx context.Context, owner Don
 	return err
 }
 
+func (s *DoneBotCatalogService) ValidateMediaIntentPath(ctx context.Context, owner DoneBotMediaOwner, kind, modelID, operation, path string, parameters map[string]any) error {
+	model, err := s.validatedMediaModel(ctx, owner, kind, modelID, path, parameters)
+	if err != nil {
+		return err
+	}
+	media := model.MediaParameters
+	if media == nil || !slices.Contains(media.Operations, operation) {
+		return ErrDoneBotMediaInvalid
+	}
+	intentKind := kind
+	if kind == "music" || kind == "speech" {
+		intentKind = "audio"
+	}
+	if expected := doneBotMediaIntentPath(intentKind, operation, media.Protocol.Adapter); expected == "" || expected != path {
+		return ErrDoneBotMediaInvalid
+	}
+	if media.Protocol.Adapter == "seedance.videos.v1" {
+		mode, _ := parameters["omni_reference_task_type"].(string)
+		if operation == "edit" || operation == "extend" {
+			duration, validDuration := doneBotMediaInteger(parameters["duration"])
+			if mode != operation || parameters["ratio"] != "adaptive" || !validDuration || duration != -1 && operation == "edit" {
+				return ErrDoneBotMediaInvalid
+			}
+		} else if mode == "edit" || mode == "extend" {
+			return ErrDoneBotMediaInvalid
+		}
+	}
+	return nil
+}
+
 func (s *DoneBotCatalogService) validatedMediaModel(ctx context.Context, owner DoneBotMediaOwner, kind, modelID, path string, parameters map[string]any) (*DoneBotCatalogModel, error) {
 	install, err := s.installs.InstallationForUser(ctx, owner.UserID, owner.InstallationID)
 	if err != nil {
@@ -98,14 +128,14 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 		return ErrDoneBotMediaInvalid
 	}
 	controlFields := map[string][]string{
-		"openai.images.v1":        {"size", "response_format", "output_format"},
-		"donebot.images.async.v1": {"size", "response_format", "output_format"},
+		"openai.images.v1":        {"size", "response_format", "output_format", "quality"},
+		"donebot.images.async.v1": {"size", "response_format", "output_format", "quality"},
 		"apimart.images.v1":       {"size", "resolution", "output_format"},
 		"seedance.videos.v1":      {"resolution", "ratio", "duration"},
-		"apimart.music.v1":        {"version", "audio_format", "duration", "custom", "max_mode", "instrumental"},
+		"apimart.music.v1":        {"version", "audio_format", "duration", "custom", "max_mode", "instrumental", "auto_lyrics"},
 		"apimart.speech.v1":       {"voice", "response_format"},
 	}
-	for _, field := range []string{"size", "resolution", "ratio", "aspect_ratio", "duration", "voice", "response_format", "output_format", "audio_format", "version", "custom", "max_mode", "instrumental"} {
+	for _, field := range []string{"size", "resolution", "ratio", "aspect_ratio", "duration", "voice", "response_format", "output_format", "audio_format", "version", "quality", "custom", "max_mode", "instrumental", "auto_lyrics"} {
 		if _, exists := parameters[field]; exists && !slices.Contains(controlFields[protocol.Adapter], field) {
 			return ErrDoneBotMediaInvalid
 		}
@@ -115,7 +145,7 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 		choices []string
 	}{
 		{"resolution", media.Resolutions}, {"ratio", media.AspectRatios}, {"aspect_ratio", media.AspectRatios},
-		{"voice", media.Voices}, {"response_format", media.Formats}, {"output_format", media.Formats}, {"audio_format", media.Formats}, {"version", media.MusicVersions},
+		{"voice", media.Voices}, {"response_format", media.Formats}, {"output_format", media.Formats}, {"audio_format", media.Formats}, {"version", media.MusicVersions}, {"quality", media.Quality},
 	} {
 		if protocol.Adapter == "apimart.images.v1" && field.name == "resolution" {
 			continue
@@ -133,7 +163,7 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 			return ErrDoneBotMediaInvalid
 		}
 	}
-	for _, field := range []string{"custom", "max_mode", "layer_decomposition", "instrumental"} {
+	for _, field := range []string{"custom", "max_mode", "layer_decomposition", "instrumental", "auto_lyrics"} {
 		if value, exists := parameters[field]; exists {
 			if _, ok := value.(bool); !ok {
 				return ErrDoneBotMediaInvalid

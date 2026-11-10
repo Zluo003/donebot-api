@@ -18,7 +18,7 @@ func NewDoneBotMediaOperationRepository(client *dbent.Client) service.DoneBotMed
 }
 
 const doneBotMediaColumns = `receipt_id::text,user_id,api_key_id,group_id,installation_id::text,
- idempotency_hash,request_fingerprint,media_kind,model,method,native_path,status,
+ idempotency_hash,request_fingerprint,media_kind,operation,model,method,native_path,status,
  task_id,provider_task_key,provider,usage_request_id,estimated_cents::text,
  replay_status,replay_content_type,replay_retry_after,replay_body,created_at,updated_at`
 
@@ -33,7 +33,7 @@ func scanDoneBotMediaOperation(rows *sql.Rows) (*service.DoneBotMediaOperation, 
 	var estimated sql.NullString
 	var status sql.NullInt32
 	err := rows.Scan(&op.ReceiptID, &op.Owner.UserID, &op.Owner.APIKeyID, &op.Owner.GroupID, &op.Owner.InstallationID,
-		&op.IdempotencyHash, &op.Fingerprint, &op.Kind, &op.Model, &op.Method, &op.Path, &op.Status,
+		&op.IdempotencyHash, &op.Fingerprint, &op.Kind, &op.Operation, &op.Model, &op.Method, &op.Path, &op.Status,
 		&op.TaskID, &op.TaskKey, &op.Provider, &op.UsageRequestID, &estimated,
 		&status, &op.ReplayContentType, &op.ReplayRetryAfter, &op.ReplayBody, &op.CreatedAt, &op.UpdatedAt)
 	if err != nil {
@@ -70,10 +70,10 @@ func (r *doneBotMediaOperationRepository) Begin(ctx context.Context, op *service
 		estimated = op.EstimatedCents.String()
 	}
 	result, err := clientFromContext(ctx, r.client).ExecContext(ctx, `INSERT INTO donebot_media_operations
- (receipt_id,user_id,api_key_id,group_id,installation_id,idempotency_hash,request_fingerprint,media_kind,model,method,native_path,status,usage_request_id,estimated_cents,task_id,provider_task_key,provider)
- VALUES($1::uuid,$2,$3,$4,$5::uuid,$6,$7,$8,$9,$10,$11,'dispatching',$12,$13::numeric,$14,$15,$16)
+ (receipt_id,user_id,api_key_id,group_id,installation_id,idempotency_hash,request_fingerprint,media_kind,operation,model,method,native_path,status,usage_request_id,estimated_cents,task_id,provider_task_key,provider)
+ VALUES($1::uuid,$2,$3,$4,$5::uuid,$6,$7,$8,$9,$10,$11,$12,'dispatching',$13,$14::numeric,$15,$16,$17)
  ON CONFLICT(user_id,api_key_id,group_id,installation_id,idempotency_hash) DO NOTHING`,
-		op.ReceiptID, op.Owner.UserID, op.Owner.APIKeyID, op.Owner.GroupID, op.Owner.InstallationID, op.IdempotencyHash, op.Fingerprint, op.Kind, op.Model, op.Method, op.Path, op.UsageRequestID, estimated, op.TaskID, op.TaskKey, op.Provider)
+		op.ReceiptID, op.Owner.UserID, op.Owner.APIKeyID, op.Owner.GroupID, op.Owner.InstallationID, op.IdempotencyHash, op.Fingerprint, op.Kind, op.Operation, op.Model, op.Method, op.Path, op.UsageRequestID, estimated, op.TaskID, op.TaskKey, op.Provider)
 	if err != nil {
 		return nil, false, err
 	}
@@ -88,6 +88,10 @@ func (r *doneBotMediaOperationRepository) Begin(ctx context.Context, op *service
 
 func (r *doneBotMediaOperationRepository) Lookup(ctx context.Context, owner service.DoneBotMediaOwner, receiptID string) (*service.DoneBotMediaOperation, error) {
 	return r.query(ctx, `SELECT `+doneBotMediaColumns+` FROM donebot_media_operations WHERE `+doneBotMediaOwnerWhere+` AND receipt_id=$5::uuid`, append(doneBotMediaOwnerArgs(owner), receiptID)...)
+}
+
+func (r *doneBotMediaOperationRepository) LookupByIdempotencyHash(ctx context.Context, owner service.DoneBotMediaOwner, hash string) (*service.DoneBotMediaOperation, error) {
+	return r.query(ctx, `SELECT `+doneBotMediaColumns+` FROM donebot_media_operations WHERE `+doneBotMediaOwnerWhere+` AND idempotency_hash=$5`, append(doneBotMediaOwnerArgs(owner), hash)...)
 }
 
 func (r *doneBotMediaOperationRepository) LookupTask(ctx context.Context, owner service.DoneBotMediaOwner, taskID, kind string) (*service.DoneBotMediaOperation, error) {

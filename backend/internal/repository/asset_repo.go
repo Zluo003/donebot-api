@@ -181,7 +181,11 @@ func (r *assetRepository) ListOldest(ctx context.Context, purpose string, limit 
 	if limit <= 0 || limit > 10000 {
 		limit = 100
 	}
-	rows, err := r.executor(ctx).QueryContext(ctx, `SELECT `+assetColumns+` FROM assets WHERE purpose=$1 ORDER BY created_at,id LIMIT $2`, purpose, limit)
+	query := `SELECT ` + assetColumns + ` FROM assets WHERE purpose=$1 ORDER BY created_at,id LIMIT $2`
+	if purpose == service.AssetPurposeGenerated {
+		query = `SELECT ` + assetColumns + ` FROM assets WHERE purpose IN ($1,'donebot_output') ORDER BY created_at,id LIMIT $2`
+	}
+	rows, err := r.executor(ctx).QueryContext(ctx, query, purpose, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +201,11 @@ func (r *assetRepository) ListOldest(ctx context.Context, purpose string, limit 
 	return out, rows.Err()
 }
 func (r *assetRepository) StorageUsage(ctx context.Context, purpose string) (int64, int64, error) {
-	rows, err := r.executor(ctx).QueryContext(ctx, `SELECT COALESCE(SUM(size),0),COUNT(*) FROM assets WHERE purpose=$1`, purpose)
+	query := `SELECT COALESCE(SUM(size),0),COUNT(*) FROM assets WHERE purpose=$1`
+	if purpose == service.AssetPurposeGenerated {
+		query = `SELECT COALESCE(SUM(size),0),COUNT(*) FROM assets WHERE purpose IN ($1,'donebot_output')`
+	}
+	rows, err := r.executor(ctx).QueryContext(ctx, query, purpose)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -211,7 +219,11 @@ func (r *assetRepository) StorageUsage(ctx context.Context, purpose string) (int
 }
 
 func (r *assetRepository) ApplyStorageRetention(ctx context.Context, purpose string, hours int) error {
-	_, err := r.executor(ctx).ExecContext(ctx, `UPDATE assets SET expires_at=created_at+($2 * interval '1 hour') WHERE purpose=$1 AND expires_at>created_at+($2 * interval '1 hour')`, purpose, hours)
+	query := `UPDATE assets SET expires_at=created_at+($2 * interval '1 hour') WHERE purpose=$1 AND expires_at>created_at+($2 * interval '1 hour')`
+	if purpose == service.AssetPurposeGenerated {
+		query = `UPDATE assets SET expires_at=created_at+($2 * interval '1 hour') WHERE purpose IN ($1,'donebot_output') AND expires_at>created_at+($2 * interval '1 hour')`
+	}
+	_, err := r.executor(ctx).ExecContext(ctx, query, purpose, hours)
 	return err
 }
 

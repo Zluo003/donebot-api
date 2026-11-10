@@ -6,8 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Asset uploads are authenticated independently of model routing/allowlists.
-// Public downloads require an asset-specific expiring signature instead.
+// Uploads remain key-authenticated; only task-bound DoneBot artifact IDs grant download access.
 func registerAssetRoutes(r *gin.Engine, h *handler.Handlers, auth middleware.APIKeyAuthMiddleware) {
 	if h.Asset == nil {
 		return
@@ -16,5 +15,6 @@ func registerAssetRoutes(r *gin.Engine, h *handler.Handlers, auth middleware.API
 	assets.POST("", h.Asset.Upload)
 	assets.GET("/:id", h.Asset.Get)
 	assets.DELETE("/:id", h.Asset.Delete)
+	r.GET("/v1/donebot/media/jobs/:job_id/artifacts/:artifact_id", h.Asset.DownloadDoneBotArtifact)
 	r.GET("/assets/:id", h.Asset.Download)
 }

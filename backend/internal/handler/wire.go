@@ -145,6 +145,7 @@ func ProvideOpenAIGatewayHandler(
 	gatewayService.SetGeneratedMediaAssets(assets)
 	h := NewOpenAIGatewayHandler(gatewayService, concurrencyService, billingCacheService, apiKeyService,
 		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, cfg)
+	h.assets = assets
 	h.compositeResolver = compositeResolver
 	h.securityAuditCoordinator = coordinator
 	h.grokMediaEligibilityProber = grokQuotaService
@@ -214,6 +215,9 @@ func ProvideHandlers(
 	_ *service.IdempotencyCleanupService,
 	_ *service.OpenAIQuotaAutoResetService,
 ) *Handlers {
+	if openaiGatewayHandler != nil {
+		openaiGatewayHandler.doneBot = doneBotHandler
+	}
 	return &Handlers{
 		Asset:            assetHandler,
 		DoneBot:          doneBotHandler,
@@ -244,7 +248,7 @@ func ProvideHandlers(
 
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
-	NewAssetHandler,
+	ProvideAssetHandler,
 	ProvideDoneBotUserHandler,
 	admin.ProvideDoneBotHandler,
 	// Top-level handlers

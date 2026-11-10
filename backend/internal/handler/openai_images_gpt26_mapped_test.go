@@ -192,7 +192,7 @@ func gifAliasRequest(t *testing.T, model, endpoint, transport string, key *servi
 		body, err = json.Marshal(payload)
 		require.NoError(t, err)
 	}
-	receiptCtx := service.WithDoneBotMediaReceipt(context.Background(), uuid.NewString())
+	receiptCtx := service.WithDoneBotMediaPrepaidSettlement(service.WithDoneBotMediaReceipt(context.Background(), uuid.NewString()))
 	request := httptest.NewRequest(http.MethodPost, "/v1/images/"+endpoint+"/async", bytes.NewReader(body)).WithContext(receiptCtx)
 	request.Header.Set("Content-Type", contentType)
 	parent, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -201,6 +201,23 @@ func gifAliasRequest(t *testing.T, model, endpoint, transport string, key *servi
 	parent.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 100})
 	parent.Set(securityAuditCompletedContextKey, true)
 	return newAsyncImageContext(parent, body, 10*time.Second)
+}
+
+func TestDoneBotSynchronousImagesSkipMediaPrepayment(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler, _, key, prepay, upstream := gifAliasHandler(t, "gpt-image-2.6-flare", "gpt-image-supplier-alias", false)
+	prepay.calls = 0
+	c, recorder, cancel := gifAliasRequest(t, "gpt-image-2.6-flare", "generations", "json", key)
+	defer cancel()
+	c.Request.URL.Path = "/v1/images/generations"
+	c.Request = c.Request.WithContext(service.WithDoneBotMediaReceipt(context.Background(), uuid.NewString()))
+
+	handler.Images(c)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
+	require.Equal(t, 1, upstream.requests)
+	require.Zero(t, upstream.prepayAtDispatch, "synchronous image generation must not reserve a media prepayment")
+	require.Zero(t, prepay.calls)
 }
 
 func TestDoneBotGPTImage26GIFSupplierAliasThroughAsyncCloneAndHandler(t *testing.T) {

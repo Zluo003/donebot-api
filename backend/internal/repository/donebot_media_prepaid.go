@@ -127,15 +127,24 @@ func (r *usageBillingRepository) PrepayDoneBotMedia(ctx context.Context, p *serv
 
 func insertDoneBotMoneyEvent(ctx context.Context, tx *sql.Tx, p *service.DoneBotMediaPrecharge, event string, actual, total float64, related string) error {
 	request := service.DoneBotMediaChargeRequestID(p.ReceiptID)
+	accountID := p.AccountID
+	accountRateMultiplier := p.Snapshot.AccountRateMultiplier
 	if event == "refund" {
 		request = service.DoneBotMediaRefundRequestID(p.ReceiptID)
+		var chargeAccountID int64
+		var chargeAccountRateMultiplier float64
+		if err := tx.QueryRowContext(ctx, `SELECT account_id,account_rate_multiplier FROM usage_logs WHERE operation_receipt_id=$1::uuid AND event_type='charge'`, p.ReceiptID).Scan(&chargeAccountID, &chargeAccountRateMultiplier); err != nil {
+			return fmt.Errorf("load original DoneBot media charge account: %w", err)
+		}
+		accountID = chargeAccountID
+		accountRateMultiplier = chargeAccountRateMultiplier
 	}
 	mode := p.Kind
 	if mode == "music" {
 		mode = "per_request"
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO usage_logs(user_id,api_key_id,account_id,group_id,request_id,model,requested_model,total_cost,actual_cost,rate_multiplier,account_rate_multiplier,billing_type,billing_mode,event_type,operation_receipt_id,related_request_id,created_at)
-    VALUES($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,0,$11,$12,$13::uuid,NULLIF($14,''),NOW())`, p.UserID, p.APIKeyID, p.AccountID, p.GroupID, request, p.Model, total, actual, p.Snapshot.RateMultiplier, p.Snapshot.AccountRateMultiplier, mode, event, p.ReceiptID, related)
+	VALUES($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,0,$11,$12,$13::uuid,NULLIF($14,''),NOW())`, p.UserID, p.APIKeyID, accountID, p.GroupID, request, p.Model, total, actual, p.Snapshot.RateMultiplier, accountRateMultiplier, mode, event, p.ReceiptID, related)
 	return err
 }
 

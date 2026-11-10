@@ -15,6 +15,10 @@ type LocalAssetReader interface {
 	Open(context.Context, string) (io.ReadCloser, error)
 }
 
+type AssetReader interface {
+	Open(context.Context, string) (io.ReadCloser, error)
+}
+
 // AssetStorageResolver lets retained objects keep using their original driver
 // after the operator changes the default storage for new uploads.
 type AssetStorageResolver interface {

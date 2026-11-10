@@ -299,26 +299,27 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			writeDoneBotDispatchAccepted(c, task)
 			return
 		}
-		if err := h.gatewayService.PrepayDoneBotImage(requestCtx, apiKey, account, billingModel, parsed.N); response.ErrorFrom(c, err) {
-			if accountReleaseFunc != nil {
-				accountReleaseFunc()
-			}
-			return
-		}
-		if receipt := service.DoneBotMediaReceiptID(requestCtx); receipt != "" {
-			if err := h.gatewayService.BindDoneBotMediaTask(requestCtx, apiKey.ID, service.DoneBotImageTaskID(receipt)); response.ErrorFrom(c, err) {
-				ctx, cancel := context.WithTimeout(context.WithoutCancel(requestCtx), 15*time.Second)
-				if refundErr := h.gatewayService.RejectDoneBotMediaReceipt(ctx); refundErr != nil {
-					_ = c.Error(refundErr)
-				}
-				cancel()
+		if service.DoneBotMediaPrepaidSettlementEnabled(requestCtx) {
+			if err := h.gatewayService.PrepayDoneBotImage(requestCtx, apiKey, account, billingModel, parsed.N); response.ErrorFrom(c, err) {
 				if accountReleaseFunc != nil {
 					accountReleaseFunc()
 				}
 				return
 			}
+			if receipt := service.DoneBotMediaReceiptID(requestCtx); receipt != "" {
+				if err := h.gatewayService.BindDoneBotMediaTask(requestCtx, apiKey.ID, service.DoneBotImageTaskID(receipt)); response.ErrorFrom(c, err) {
+					ctx, cancel := context.WithTimeout(context.WithoutCancel(requestCtx), 15*time.Second)
+					if refundErr := h.gatewayService.RejectDoneBotMediaReceipt(ctx); refundErr != nil {
+						_ = c.Error(refundErr)
+					}
+					cancel()
+					if accountReleaseFunc != nil {
+						accountReleaseFunc()
+					}
+					return
+				}
+			}
 		}
-
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		if !parsed.Stream && !jsonKeepaliveStarted {
 			stopJSONKeepalive = service.StartOpenAIImagesJSONKeepalive(c, h.openAIImagesJSONKeepaliveInterval())

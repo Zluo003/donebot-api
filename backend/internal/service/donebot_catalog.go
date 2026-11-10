@@ -20,7 +20,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-const doneBotCapabilitiesSetting = "donebot.model_capabilities.v3"
+const doneBotCapabilitiesSetting = "donebot.model_capabilities.v4"
 
 var (
 	ErrDoneBotCatalogCurrency      = infraerrors.ServiceUnavailable("DONEBOT_CATALOG_CURRENCY", "DoneBot catalog currency must be CNY")
@@ -38,14 +38,15 @@ type DoneBotCatalogResult struct {
 }
 
 type DoneBotCatalogModel struct {
-	ID              string                         `json:"id"`
-	DisplayName     string                         `json:"display_name"`
-	MediaTypes      []string                       `json:"media_types"`
-	Platforms       []string                       `json:"platforms"`
-	Interfaces      []string                       `json:"interfaces"`
-	Capabilities    DoneBotCatalogCapabilities     `json:"capabilities"`
-	Pricing         DoneBotCatalogPricing          `json:"pricing"`
-	MediaParameters *DoneBotCatalogMediaParameters `json:"media_parameters,omitempty"`
+	ID                    string                         `json:"id"`
+	DisplayName           string                         `json:"display_name"`
+	MediaTypes            []string                       `json:"media_types"`
+	Platforms             []string                       `json:"platforms"`
+	Interfaces            []string                       `json:"interfaces"`
+	Capabilities          DoneBotCatalogCapabilities     `json:"capabilities"`
+	Pricing               DoneBotCatalogPricing          `json:"pricing"`
+	MediaParameters       *DoneBotCatalogMediaParameters `json:"media_parameters,omitempty"`
+	MediaFallbackPriority int                            `json:"-"`
 }
 
 type DoneBotCatalogCapabilities struct {
@@ -79,7 +80,8 @@ func (modalities *DoneBotInputModalities) UnmarshalJSON(raw []byte) error {
 
 type doneBotCatalogConfiguredCapabilities struct {
 	DoneBotCatalogCapabilities
-	MediaParameters *DoneBotCatalogMediaParameters `json:"media_parameters,omitempty"`
+	MediaParameters       *DoneBotCatalogMediaParameters `json:"media_parameters,omitempty"`
+	MediaFallbackPriority int                            `json:"media_fallback_priority,omitempty"`
 }
 
 type DoneBotCatalogReasoning struct {
@@ -433,6 +435,9 @@ func parseDoneBotCatalogCapabilities(raw string) (map[string]doneBotCatalogConfi
 		if strings.TrimSpace(model) != model || model == "" || len(model) > 200 || strings.ContainsAny(model, "*\r\n") {
 			return nil, fmt.Errorf("invalid capability model")
 		}
+		if capability.MediaFallbackPriority < 0 || capability.MediaFallbackPriority > 1000 {
+			return nil, fmt.Errorf("media fallback priority must be between 0 and 1000")
+		}
 		if capability.ContextWindowTokens < 0 || capability.MaxOutputTokens < 0 {
 			return nil, fmt.Errorf("token capabilities must not be negative")
 		}
@@ -524,8 +529,9 @@ func doneBotReasoningFieldAllowed(iface, control, field string) bool {
 }
 
 func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, rows []DoneBotModel, accounts []Account, routes []CompositeModelRoute, configured map[string]doneBotCatalogConfiguredCapabilities) (*DoneBotCatalogResult, error) {
-	result := &DoneBotCatalogResult{GatewayContractVersion: 3, Models: []DoneBotCatalogModel{}, Defaults: map[string]string{}}
-	scope := sha256.Sum256([]byte(fmt.Sprintf("donebot:3:%d:%s:%d", userID, installation, group.ID)))
+	result := &DoneBotCatalogResult{GatewayContractVersion: 4, Models: []DoneBotCatalogModel{}, Defaults: map[string]string{}}
+	fallbackPriorities := map[string]int{}
+	scope := sha256.Sum256([]byte(fmt.Sprintf("donebot:4:%d:%s:%d", userID, installation, group.ID)))
 	result.CatalogScopeID = "dbs_" + hex.EncodeToString(scope[:16])
 	for _, row := range rows {
 		if !row.Enabled || !row.Available || !row.PricingConfigured {
@@ -565,7 +571,7 @@ func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, 
 				}
 			}
 		}
-		model := DoneBotCatalogModel{ID: row.Model, DisplayName: row.Model, MediaTypes: []string{mediaType}, Platforms: []string{row.Platform}, Interfaces: interfaces, Capabilities: capability, Pricing: pricing}
+		model := DoneBotCatalogModel{ID: row.Model, DisplayName: row.Model, MediaTypes: []string{mediaType}, Platforms: []string{row.Platform}, Interfaces: interfaces, Capabilities: capability, Pricing: pricing, MediaFallbackPriority: configured[row.Model].MediaFallbackPriority}
 		media, err := doneBotPublicMediaParameters(group.ID, row, accounts, routes, configured[row.Model].MediaParameters)
 		if err != nil {
 			return nil, ErrDoneBotCatalogCapabilities
@@ -574,6 +580,9 @@ func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, 
 			continue
 		}
 		model.MediaParameters = media
+		if model.MediaFallbackPriority > 0 && media != nil {
+			fallbackPriorities[row.Model] = model.MediaFallbackPriority
+		}
 		result.Models = append(result.Models, model)
 	}
 	sort.Slice(result.Models, func(i, j int) bool { return result.Models[i].ID < result.Models[j].ID })
@@ -584,7 +593,10 @@ func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, 
 			}
 		}
 	}
-	canonical, err := json.Marshal(result)
+	canonical, err := json.Marshal(struct {
+		Catalog            *DoneBotCatalogResult `json:"catalog"`
+		FallbackPriorities map[string]int        `json:"media_fallback_priorities"`
+	}{Catalog: result, FallbackPriorities: fallbackPriorities})
 	if err != nil {
 		return nil, err
 	}

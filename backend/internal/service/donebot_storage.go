@@ -17,6 +17,7 @@ import (
 const settingKeyDoneBotStorage = "donebot_storage_policies"
 const AssetPurposeUpload = "upload"
 const AssetPurposeGenerated = "generated"
+const AssetPurposeDoneBotOutput = "donebot_output"
 
 type DoneBotStorageS3 struct {
 	Endpoint        string  `json:"endpoint"`
@@ -184,7 +185,7 @@ func (s *DoneBotStorageService) Policy(ctx context.Context, purpose string) (Don
 		return DoneBotStoragePolicy{}, err
 	}
 	out := p.Upload
-	if purpose == AssetPurposeGenerated {
+	if purpose == AssetPurposeGenerated || purpose == AssetPurposeDoneBotOutput {
 		out = p.Generated
 	} else if purpose != AssetPurposeUpload {
 		return out, fmt.Errorf("invalid storage purpose")

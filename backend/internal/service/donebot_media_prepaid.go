@@ -21,14 +21,24 @@ type DoneBotMediaUnitPrice struct {
 	Total  float64 `json:"total"`
 }
 
+type DoneBotMediaCandidatePriceSnapshot struct {
+	Kind           string                           `json:"kind"`
+	Rates          map[string]DoneBotMediaUnitPrice `json:"rates"`
+	MaxUnits       float64                          `json:"max_units"`
+	InputSeconds   float64                          `json:"input_seconds,omitempty"`
+	Tier           string                           `json:"tier,omitempty"`
+	RateMultiplier float64                          `json:"rate_multiplier"`
+}
+
 type DoneBotMediaPriceSnapshot struct {
-	Kind                  string                           `json:"kind"`
-	Rates                 map[string]DoneBotMediaUnitPrice `json:"rates"`
-	MaxUnits              float64                          `json:"max_units"`
-	InputSeconds          float64                          `json:"input_seconds,omitempty"`
-	Tier                  string                           `json:"tier,omitempty"`
-	RateMultiplier        float64                          `json:"rate_multiplier"`
-	AccountRateMultiplier float64                          `json:"account_rate_multiplier"`
+	Kind                  string                                        `json:"kind"`
+	Rates                 map[string]DoneBotMediaUnitPrice              `json:"rates"`
+	CandidateSnapshots    map[string]DoneBotMediaCandidatePriceSnapshot `json:"candidate_snapshots,omitempty"`
+	MaxUnits              float64                                       `json:"max_units"`
+	InputSeconds          float64                                       `json:"input_seconds,omitempty"`
+	Tier                  string                                        `json:"tier,omitempty"`
+	RateMultiplier        float64                                       `json:"rate_multiplier"`
+	AccountRateMultiplier float64                                       `json:"account_rate_multiplier"`
 }
 
 type DoneBotMediaPrecharge struct {
@@ -48,6 +58,17 @@ type DoneBotMediaPrepaidSettlement struct {
 	ActualAmount, TotalAmount    float64
 	Failure                      bool
 	Effects                      *UsageBillingCommand
+}
+
+type doneBotMediaPrepaidSettlementContextKey struct{}
+
+func WithDoneBotMediaPrepaidSettlement(ctx context.Context) context.Context {
+	return context.WithValue(ctx, doneBotMediaPrepaidSettlementContextKey{}, true)
+}
+
+func DoneBotMediaPrepaidSettlementEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(doneBotMediaPrepaidSettlementContextKey{}).(bool)
+	return enabled
 }
 
 // DoneBotMediaPrepaidRepository atomically couples wallet movements, append-only
@@ -114,6 +135,213 @@ func (s *OpenAIGatewayService) PrepayDoneBotAPIMart(ctx context.Context, key *AP
 		snapshot.Rates[tier] = DoneBotMediaUnitPrice{Actual: cost.ActualCost, Total: cost.TotalCost}
 	}
 	return s.prepayDoneBotMedia(ctx, key, account, info.Model, snapshot)
+}
+
+func (s *OpenAIGatewayService) doneBotMediaCandidatesPriceSnapshot(ctx context.Context, key *APIKey, account *Account, candidates []DoneBotDispatchCandidate) (DoneBotMediaPriceSnapshot, error) {
+	if len(candidates) == 0 || len(candidates) > DoneBotDispatchCandidateLimit {
+		return DoneBotMediaPriceSnapshot{}, ErrDoneBotMediaInvalid
+	}
+	rate := s.doneBotMediaBaseRate(ctx, key)
+	_, imageRate := computePeakAwareMultipliers(key, rate, time.Now())
+	candidateSnapshots := make(map[string]DoneBotMediaCandidatePriceSnapshot, len(candidates))
+	var reserveActual, reserveTotal decimal.Decimal
+	var base DoneBotMediaCandidatePriceSnapshot
+	for index, candidate := range candidates {
+		if candidate.PublicModel == "" || candidate.BillingModel == "" {
+			return DoneBotMediaPriceSnapshot{}, ErrDoneBotMediaInvalid
+		}
+		var snapshot DoneBotMediaCandidatePriceSnapshot
+		switch candidate.Protocol {
+		case DoneBotDispatchImages:
+			count := int(candidate.Info.Units)
+			if count == 0 {
+				c, _ := doneBotDispatchContext(ctx, &DoneBotDispatch{Path: candidate.Path, ContentType: candidate.ContentType, Body: candidate.Body})
+				parsed, err := s.ParseOpenAIImagesRequest(c, candidate.Body)
+				if err != nil {
+					return DoneBotMediaPriceSnapshot{}, ErrDoneBotMediaInvalid
+				}
+				count = parsed.N
+			}
+			var err error
+			snapshot, err = s.doneBotImageCandidatePriceSnapshot(ctx, key, candidate.BillingModel, count)
+			if err != nil {
+				return DoneBotMediaPriceSnapshot{}, err
+			}
+		case DoneBotDispatchAPIMartImages, DoneBotDispatchAPIMartMusic:
+			endpoint := APIMartImages
+			if candidate.Protocol == DoneBotDispatchAPIMartMusic {
+				endpoint = APIMartSuno
+			}
+			info := candidate.Info
+			info.Model = candidate.PublicModel
+			info.BillingModel = candidate.BillingModel
+			var err error
+			snapshot, err = s.doneBotAPIMartCandidatePriceSnapshot(ctx, key, rate, imageRate, info, endpoint)
+			if err != nil {
+				return DoneBotMediaPriceSnapshot{}, err
+			}
+		case DoneBotDispatchSeedance:
+			var err error
+			snapshot, err = s.doneBotSeedanceCandidatePriceSnapshot(ctx, key, rate, candidate.BillingModel, candidate.VideoInfo)
+			if err != nil {
+				return DoneBotMediaPriceSnapshot{}, err
+			}
+		default:
+			return DoneBotMediaPriceSnapshot{}, ErrDoneBotMediaInvalid
+		}
+		if _, exists := candidateSnapshots[candidate.PublicModel]; exists {
+			return DoneBotMediaPriceSnapshot{}, ErrDoneBotMediaInvalid
+		}
+		candidateSnapshots[candidate.PublicModel] = snapshot
+		actual, total, err := doneBotMediaCandidatePriceBound(snapshot)
+		if err != nil {
+			return DoneBotMediaPriceSnapshot{}, err
+		}
+		if index == 0 {
+			base = snapshot
+		}
+		reserveActual = decimal.Max(reserveActual, actual)
+		reserveTotal = decimal.Max(reserveTotal, total)
+	}
+	actualFloat, _ := reserveActual.Float64()
+	totalFloat, _ := reserveTotal.Float64()
+	return DoneBotMediaPriceSnapshot{
+		Kind:                  base.Kind,
+		Rates:                 map[string]DoneBotMediaUnitPrice{"reservation": {Actual: actualFloat, Total: totalFloat}},
+		CandidateSnapshots:    candidateSnapshots,
+		MaxUnits:              1,
+		RateMultiplier:        base.RateMultiplier,
+		AccountRateMultiplier: account.BillingRateMultiplier(),
+	}, nil
+}
+
+func (s *OpenAIGatewayService) doneBotAPIMartCandidatePriceSnapshot(ctx context.Context, key *APIKey, rate, imageRate float64, info APIMartRequestInfo, endpoint APIMartEndpoint) (DoneBotMediaCandidatePriceSnapshot, error) {
+	if endpoint == APIMartTTS || info.Model == "" {
+		return DoneBotMediaCandidatePriceSnapshot{}, ErrDoneBotMediaInvalid
+	}
+	snapshot := DoneBotMediaCandidatePriceSnapshot{Kind: "music", MaxUnits: info.Units, Tier: info.Tier, Rates: map[string]DoneBotMediaUnitPrice{}, RateMultiplier: rate}
+	if endpoint == APIMartImages {
+		snapshot.Kind = "image"
+		snapshot.RateMultiplier = imageRate
+		snapshot.MaxUnits = 1
+		if info.LayerDecomposition {
+			snapshot.MaxUnits = 17
+		}
+	}
+	if snapshot.MaxUnits <= 0 {
+		return DoneBotMediaCandidatePriceSnapshot{}, ErrDoneBotMediaInvalid
+	}
+	tiers := []string{info.Tier}
+	if endpoint == APIMartImages {
+		tiers = []string{"1K"}
+		if info.Tier == "2K" {
+			tiers = append(tiers, "2K")
+		}
+	}
+	for _, tier := range tiers {
+		result := &OpenAIForwardResult{AudioUsage: &AudioUsage{Mode: tier, DurationOrUnits: 1}}
+		if endpoint == APIMartImages {
+			result.AudioUsage = nil
+			result.ImageCount = 1
+			result.ImageSize = tier
+		}
+		cost, err := s.calculateAPIMartUsageCost(ctx, key, result, firstNonEmpty(info.BillingModel, info.Model), imageRate, rate)
+		if err != nil {
+			return DoneBotMediaCandidatePriceSnapshot{}, err
+		}
+		snapshot.Rates[tier] = DoneBotMediaUnitPrice{Actual: cost.ActualCost, Total: cost.TotalCost}
+	}
+	return snapshot, nil
+}
+
+func (s *OpenAIGatewayService) doneBotSeedanceCandidatePriceSnapshot(ctx context.Context, key *APIKey, rate float64, model string, info GrokMediaRequestInfo) (DoneBotMediaCandidatePriceSnapshot, error) {
+	resolution := firstNonEmpty(info.Resolution, "720p")
+	videoRate := resolveVideoRateMultiplier(key, rate)
+	billingModel := s.SeedanceBillingModel(ctx, key, model)
+	resolved, err := s.seedanceResolvedPrice(ctx, key, billingModel, resolution, info.HasReferenceVideo)
+	if err != nil {
+		return DoneBotMediaCandidatePriceSnapshot{}, err
+	}
+	cost, err := s.billingService.CalculateCostUnified(CostInput{Ctx: ctx, Model: billingModel, GroupID: key.GroupID, Group: key.Group, UsageUnits: 1, RateMultiplier: videoRate, Resolver: s.resolver, Resolved: resolved})
+	if err != nil {
+		return DoneBotMediaCandidatePriceSnapshot{}, err
+	}
+	input := 0.0
+	if info.HasReferenceVideo {
+		input = info.ReferenceVideoDurationSeconds
+		if input <= 0 || math.IsNaN(input) || math.IsInf(input, 0) {
+			return DoneBotMediaCandidatePriceSnapshot{}, ErrDoneBotMediaReconciliation
+		}
+	}
+	return DoneBotMediaCandidatePriceSnapshot{Kind: "video", MaxUnits: 30 + input, InputSeconds: input, Tier: resolution, Rates: map[string]DoneBotMediaUnitPrice{resolution: {Actual: cost.ActualCost, Total: cost.TotalCost}}, RateMultiplier: videoRate}, nil
+}
+
+func (s *OpenAIGatewayService) doneBotImageCandidatePriceSnapshot(ctx context.Context, key *APIKey, model string, count int) (DoneBotMediaCandidatePriceSnapshot, error) {
+	if count <= 0 || count > 10 {
+		return DoneBotMediaCandidatePriceSnapshot{}, ErrDoneBotMediaInvalid
+	}
+	rate := s.doneBotMediaBaseRate(ctx, key)
+	_, rate = computePeakAwareMultipliers(key, rate, time.Now())
+	snapshot := DoneBotMediaCandidatePriceSnapshot{Kind: "image", MaxUnits: float64(count), Rates: map[string]DoneBotMediaUnitPrice{}, RateMultiplier: rate}
+	resolved := s.resolveOpenAIChannelPricing(ctx, model, key)
+	for _, tier := range []string{"1K", "2K", "4K"} {
+		if !apiKeyHasConfiguredImagePrice(key, tier) && (resolved == nil || resolved.Mode != BillingModeImage && resolved.Mode != BillingModePerRequest) {
+			return DoneBotMediaCandidatePriceSnapshot{}, ErrModelPricingUnavailable
+		}
+		cost := s.calculateOpenAIImageCost(ctx, model, key, &OpenAIForwardResult{ImageCount: 1, ImageSize: tier, ImageEndpoint: true}, rate)
+		if cost == nil {
+			return DoneBotMediaCandidatePriceSnapshot{}, ErrModelPricingUnavailable
+		}
+		snapshot.Rates[tier] = DoneBotMediaUnitPrice{Actual: cost.ActualCost, Total: cost.TotalCost}
+	}
+	return snapshot, nil
+}
+
+func doneBotMediaCandidatePriceBound(snapshot DoneBotMediaCandidatePriceSnapshot) (decimal.Decimal, decimal.Decimal, error) {
+	if snapshot.MaxUnits <= 0 || math.IsNaN(snapshot.MaxUnits) || math.IsInf(snapshot.MaxUnits, 0) || len(snapshot.Rates) == 0 {
+		return decimal.Zero, decimal.Zero, ErrDoneBotMediaInvalid
+	}
+	var actual, total decimal.Decimal
+	for _, price := range snapshot.Rates {
+		if price.Actual < 0 || price.Total < 0 || math.IsNaN(price.Actual) || math.IsInf(price.Actual, 0) || math.IsNaN(price.Total) || math.IsInf(price.Total, 0) {
+			return decimal.Zero, decimal.Zero, ErrModelPricingUnavailable
+		}
+		actual = decimal.Max(actual, decimal.NewFromFloat(price.Actual))
+		total = decimal.Max(total, decimal.NewFromFloat(price.Total))
+	}
+	units := decimal.NewFromFloat(snapshot.MaxUnits)
+	return actual.Mul(units).RoundCeil(UsageBillingMonetaryScale), total.Mul(units).RoundCeil(UsageBillingMonetaryScale), nil
+}
+
+func doneBotMediaSnapshotForModel(snapshot DoneBotMediaPriceSnapshot, model string) DoneBotMediaPriceSnapshot {
+	candidate, ok := snapshot.CandidateSnapshots[model]
+	if !ok {
+		return snapshot
+	}
+	return DoneBotMediaPriceSnapshot{
+		Kind:                  candidate.Kind,
+		Rates:                 candidate.Rates,
+		MaxUnits:              candidate.MaxUnits,
+		InputSeconds:          candidate.InputSeconds,
+		Tier:                  candidate.Tier,
+		RateMultiplier:        candidate.RateMultiplier,
+		AccountRateMultiplier: snapshot.AccountRateMultiplier,
+	}
+}
+
+func doneBotMediaSettlementSnapshot(snapshot DoneBotMediaPriceSnapshot, result *OpenAIForwardResult) (DoneBotMediaPriceSnapshot, error) {
+	if len(snapshot.CandidateSnapshots) == 0 {
+		return snapshot, nil
+	}
+	if result == nil {
+		return DoneBotMediaPriceSnapshot{}, ErrDoneBotMediaReconciliation
+	}
+	for _, model := range []string{result.Model, result.BillingModel} {
+		if _, ok := snapshot.CandidateSnapshots[model]; ok {
+			return doneBotMediaSnapshotForModel(snapshot, model), nil
+		}
+	}
+	return DoneBotMediaPriceSnapshot{}, ErrDoneBotMediaReconciliation
 }
 
 func (s *OpenAIGatewayService) PrepayDoneBotSeedance(ctx context.Context, key *APIKey, account *Account, model string, info GrokMediaRequestInfo) error {
@@ -315,6 +543,9 @@ func doneBotPrepaidActual(snapshot DoneBotMediaPriceSnapshot, result *OpenAIForw
 }
 
 func (s *OpenAIGatewayService) recordDoneBotPrepaidUsage(ctx context.Context, input *OpenAIRecordUsageInput) (bool, error) {
+	if !DoneBotMediaPrepaidSettlementEnabled(ctx) {
+		return false, nil
+	}
 	if input.APIKey == nil || input.User == nil || input.Account == nil {
 		return false, nil
 	}
@@ -339,7 +570,7 @@ func (s *OpenAIGatewayService) recordDoneBotPrepaidUsage(ctx context.Context, in
 		}
 		return false, nil
 	}
-	if p.UserID != input.User.ID || p.AccountID != input.Account.ID {
+	if p.UserID != input.User.ID {
 		return true, ErrDoneBotMediaInvalid
 	}
 	if p.State != "prepaid" {
@@ -351,17 +582,22 @@ func (s *OpenAIGatewayService) recordDoneBotPrepaidUsage(ctx context.Context, in
 	if p.Kind == "image" && !strings.HasPrefix(input.Result.ResponseID, "apimart:") {
 		ApplyOpenAIImageBillingResolution(input.Result)
 	}
-	cost, err := doneBotPrepaidActual(p.Snapshot, input.Result)
+	snapshot, err := doneBotMediaSettlementSnapshot(p.Snapshot, input.Result)
 	if err != nil {
 		return true, err
 	}
-	log := &UsageLog{Model: p.Model, BillingType: BillingTypeBalance, ImageCount: input.Result.ImageCount}
-	params := &postUsageBillingParams{BalanceAlreadyApplied: true, Cost: cost, User: input.User, APIKey: input.APIKey, Account: input.Account, APIKeyService: input.APIKeyService, AccountRateMultiplier: p.Snapshot.AccountRateMultiplier, Platform: input.QuotaPlatform}
+	cost, err := doneBotPrepaidActual(snapshot, input.Result)
+	if err != nil {
+		return true, err
+	}
+	log := &UsageLog{Model: firstNonEmpty(input.Result.Model, input.Result.BillingModel, p.Model), BillingType: BillingTypeBalance, ImageCount: input.Result.ImageCount}
+	params := &postUsageBillingParams{BalanceAlreadyApplied: true, Cost: cost, User: input.User, APIKey: input.APIKey, Account: input.Account, APIKeyService: input.APIKeyService, AccountRateMultiplier: snapshot.AccountRateMultiplier, Platform: input.QuotaPlatform}
 	cmd := buildUsageBillingCommand(input.Result.RequestID, log, params)
 	if cmd == nil {
 		return true, fmt.Errorf("missing prepaid billing effects")
 	}
 	cmd.BalanceCost = 0
+	cmd.AccountID = p.AccountID
 	cmd.RequestID = "dbm:settle:" + p.ReceiptID
 	cmd.RequestFingerprint = ""
 	cmd.Normalize()

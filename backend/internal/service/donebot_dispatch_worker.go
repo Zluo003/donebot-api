@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
@@ -69,7 +70,7 @@ func (w *apimartSettlementWorker) dispatchDoneBot(ctx context.Context) {
 func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *DoneBotDispatch) error {
 	s := w.service
 	repo := s.doneBotDispatchRepository()
-	ctx = WithDoneBotDispatch(WithDoneBotPriority(WithDoneBotMediaReceipt(ctx, task.ReceiptID)), task)
+	ctx = WithDoneBotDispatch(WithDoneBotPriority(WithDoneBotMediaPrepaidSettlement(WithDoneBotMediaReceipt(ctx, task.ReceiptID))), task)
 	ctx = WithOpenAIProfitControlSuppressed(WithResolvedTargetPlatform(ctx, PlatformOpenAI))
 	ctx = WithAssetOwnerKeyID(ctx, task.APIKeyID)
 	ctx = context.WithValue(ctx, ctxkey.ClientRequestID, task.ReceiptID)
@@ -108,38 +109,46 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 		for _, id := range task.FailedAccounts {
 			excluded[id] = struct{}{}
 		}
-		capability := OpenAIEndpointCapability("")
-		imageCapability := OpenAIImagesCapability("")
-		switch task.Protocol {
-		case DoneBotDispatchImages:
-			c, _ := doneBotDispatchContext(ctx, task)
-			parsed, parseErr := s.ParseOpenAIImagesRequest(c, task.Body)
-			if parseErr != nil {
-				return parseErr
-			}
-			imageCapability = parsed.RequiredCapabilityForModel(task.ForwardModel)
-		case DoneBotDispatchAPIMartImages:
-			capability = OpenAIEndpointCapabilityAPIMartImages
-		case DoneBotDispatchAPIMartMusic:
-			capability = OpenAIEndpointCapabilityAPIMartSuno
-		case DoneBotDispatchSeedance:
-			capability = OpenAIEndpointCapabilitySeedance
+		capability, imageCapability, capabilityErr := doneBotDispatchRequiredCapabilities(ctx, s, task)
+		if capabilityErr != nil {
+			return capabilityErr
 		}
 		selection, _, selectErr := s.selectAccountWithScheduler(ctx, &task.GroupID, "", "", task.RoutingModel, excluded, OpenAIUpstreamTransportHTTPSSE, capability, imageCapability, false, PlatformOpenAI, false, false)
 		if selectErr != nil {
 			if !errors.Is(selectErr, ErrNoAvailableAccounts) {
 				return selectErr
 			}
-			// Unavailable capacity is not evidence that all accounts failed.
-			if len(task.FailedAccounts) == 0 {
+			exhausted, exhaustionErr := s.doneBotDispatchCandidateExhausted(ctx, task, capability, imageCapability)
+			if exhaustionErr != nil {
+				_ = save(10 * time.Second)
+				return exhaustionErr
+			}
+			if !exhausted {
 				return save(10 * time.Second)
+			}
+			if task.advanceCandidate() {
+				return save(0)
 			}
 			task.State = "refunding"
 			if err = save(0); err != nil {
 				return err
 			}
 		} else if selection == nil || selection.Account == nil {
-			return save(10 * time.Second)
+			exhausted, exhaustionErr := s.doneBotDispatchCandidateExhausted(ctx, task, capability, imageCapability)
+			if exhaustionErr != nil {
+				_ = save(10 * time.Second)
+				return exhaustionErr
+			}
+			if !exhausted {
+				return save(10 * time.Second)
+			}
+			if task.advanceCandidate() {
+				return save(0)
+			}
+			task.State = "refunding"
+			if err = save(0); err != nil {
+				return err
+			}
 		} else {
 			if !selection.Acquired {
 				return save(5 * time.Second)
@@ -150,30 +159,41 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 				task.failed(account.ID, nil)
 				return save(time.Second)
 			}
-			task.AccountID = account.ID
-			task.UpstreamModel = account.GetMappedModel(task.ForwardModel)
-			task.State = "dispatching"
-			if err = save(90 * time.Second); err != nil {
-				return err
-			}
-			if err = repo.ReassignDoneBotMediaAccount(ctx, task.ReceiptID, task.APIKeyID, account.ID, account.BillingRateMultiplier()); err != nil {
-				task.State = "queued"
-				if saveErr := save(time.Second); saveErr != nil {
-					return saveErr
+			requestBody, referenceErr := s.resolveDoneBotDispatchReferences(ctx, task)
+			if referenceErr != nil {
+				task.Diagnostic = DoneBotMediaErrorDiagnostic(http.StatusBadRequest, "", []byte(ErrAssetNotFound.Error()))
+				task.State = "refunding"
+				if err = save(0); err != nil {
+					return err
 				}
-				if errors.Is(err, ErrDoneBotMediaDispatchSpacing) {
-					return nil
+			} else {
+				task.AccountID = account.ID
+				task.UpstreamModel = account.GetMappedModel(task.ForwardModel)
+				task.State = "dispatching"
+				if err = save(90 * time.Second); err != nil {
+					return err
 				}
-				return err
-			}
-			if err = w.sendDoneBot(ctx, task, account); err != nil {
-				return err
-			}
-			if task.State == "queued" {
-				return save(time.Second)
-			}
-			if err = save(90 * time.Second); err != nil {
-				return err
+				if err = repo.ReassignDoneBotMediaAccount(ctx, task.ReceiptID, task.APIKeyID, account.ID, account.BillingRateMultiplier()); err != nil {
+					task.State = "queued"
+					if saveErr := save(time.Second); saveErr != nil {
+						return saveErr
+					}
+					if errors.Is(err, ErrDoneBotMediaDispatchSpacing) {
+						return nil
+					}
+					return err
+				}
+				if err = w.sendDoneBot(ctx, task, account, requestBody); err != nil {
+					return err
+				}
+				if task.State == "queued" {
+					return save(time.Second)
+				}
+				if !task.DoneBotIntent || task.State != "retrieving" {
+					if err = save(90 * time.Second); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	}
@@ -189,43 +209,80 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 		if task.State == "queued" {
 			return save(time.Second)
 		}
-		if err = save(90 * time.Second); err != nil {
-			return err
+		if !task.DoneBotIntent || task.State != "retrieving" {
+			if err = save(90 * time.Second); err != nil {
+				return err
+			}
 		}
 	}
 	if task.State == "retrieving" {
-		if task.Result == nil || len(task.Response) == 0 {
+		if task.DoneBotIntent && len(task.Artifacts) > 0 && len(task.Response) == 0 {
+			task.State = "settling"
+		} else if task.Result == nil || len(task.Response) == 0 {
 			return fmt.Errorf("completed task is missing durable output")
-		}
-		provider := "apimart"
-		if task.Protocol == DoneBotDispatchSeedance {
-			provider = "seedance"
-		}
-		if task.Protocol == DoneBotDispatchImages {
-			if s.generatedMedia == nil {
-				return fmt.Errorf("image storage unavailable")
-			}
-			storage, ok := s.generatedMedia.assets.(ImageStorage)
-			if !ok {
-				return fmt.Errorf("image storage does not retain results")
-			}
-			uploaded, uploadErr := NewImageResultUploader(storage, "", 0, nil).Rewrite(ctx, task.TaskID, json.RawMessage(task.Response))
-			if uploadErr != nil {
-				_ = save(10 * time.Second)
-				return uploadErr
-			}
-			task.Response = uploaded
 		} else {
-			uploaded, uploadErr := s.RewriteGeneratedMedia(ctx, task.APIKeyID, task.TaskID, provider, task.Response)
-			if uploadErr != nil {
-				_ = save(10 * time.Second)
-				return uploadErr
+			provider := "apimart"
+			if task.Protocol == DoneBotDispatchSeedance {
+				provider = "seedance"
 			}
-			task.Response = uploaded
-		}
-		task.State = "settling"
-		if err = save(90 * time.Second); err != nil {
-			return err
+			if task.DoneBotIntent {
+				kind := task.Kind
+				if len(task.Candidates) > 0 && task.CandidateIndex >= 0 && task.CandidateIndex < len(task.Candidates) {
+					kind = task.Candidates[task.CandidateIndex].Kind
+				}
+				rewritten, artifacts, artifactErr := s.PersistDoneBotDispatchArtifacts(ctx, task.APIKeyID, task.TaskID, provider, kind, task.Response)
+				if artifactErr != nil || len(artifacts) == 0 {
+					if artifactErr == nil {
+						artifactErr = fmt.Errorf("completed media response has no persistable artifacts")
+					}
+					task.Response = nil
+					task.Result = nil
+					if task.ProviderTaskID != "" {
+						task.State, task.Response, task.Result = "polling", nil, nil
+						_ = save(10 * time.Second)
+					} else {
+						task.Diagnostic = DoneBotMediaErrorDiagnostic(http.StatusBadGateway, "", []byte(artifactErr.Error()))
+						task.State = "refunding"
+						if saveErr := save(0); saveErr != nil {
+							return saveErr
+						}
+					}
+					return artifactErr
+				}
+				task.Artifacts = artifacts
+				if task.Protocol == DoneBotDispatchSeedance && task.Result != nil {
+					task.Result.SeedanceResponseBody = rewritten
+				}
+				task.Response = nil
+				if task.Result != nil {
+					task.Result.SeedanceResponseBody = nil
+				}
+			} else if task.Protocol == DoneBotDispatchImages {
+				if s.generatedMedia == nil {
+					return fmt.Errorf("image storage unavailable")
+				}
+				storage, ok := s.generatedMedia.assets.(ImageStorage)
+				if !ok {
+					return fmt.Errorf("image storage does not retain results")
+				}
+				uploaded, uploadErr := NewImageResultUploader(storage, "", 0, nil).Rewrite(ctx, task.TaskID, json.RawMessage(task.Response))
+				if uploadErr != nil {
+					_ = save(10 * time.Second)
+					return uploadErr
+				}
+				task.Response = uploaded
+			} else {
+				uploaded, uploadErr := s.RewriteGeneratedMedia(ctx, task.APIKeyID, task.TaskID, provider, task.Response)
+				if uploadErr != nil {
+					_ = save(10 * time.Second)
+					return uploadErr
+				}
+				task.Response = uploaded
+			}
+			task.State = "settling"
+			if err = save(90 * time.Second); err != nil {
+				return err
+			}
 		}
 	}
 	if task.State == "settling" {
@@ -233,16 +290,19 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 		if accountErr != nil {
 			return accountErr
 		}
+		if task.DoneBotIntent && task.Result == nil && len(task.Artifacts) > 0 {
+			task.Result = &OpenAIForwardResult{Model: task.Model, BillingModel: task.BillingModel}
+		}
 		task.Result.ResponseID = task.TaskID
 		task.Result.RequestID = "dbdispatch:" + task.ReceiptID
-		task.Result.Model, task.Result.BillingModel = task.Model, task.Model
+		task.Result.Model, task.Result.BillingModel = task.Model, task.BillingModel
 		_, err = s.recordDoneBotPrepaidUsage(ctx, &OpenAIRecordUsageInput{Result: task.Result, APIKey: key, User: key.User, Account: account, APIKeyService: w.keys, QuotaPlatform: PlatformOpenAI})
 		if err != nil {
 			_ = save(10 * time.Second)
 			return err
 		}
 		task.State = "completed"
-		task.Attempts = append(task.Attempts, DoneBotDispatchAttempt{AccountID: task.AccountID, ProviderTaskID: task.ProviderTaskID, Status: "completed"})
+		task.Attempts = append(task.Attempts, DoneBotDispatchAttempt{PublicModel: task.Model, AccountID: task.AccountID, UpstreamModel: task.UpstreamModel, ProviderTaskID: task.ProviderTaskID, Status: "completed"})
 		task.Body = nil
 		task.Result = nil
 		task.Diagnostic = nil
@@ -263,29 +323,90 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 	return nil
 }
 
+func doneBotDispatchRequiredCapabilities(ctx context.Context, service *OpenAIGatewayService, task *DoneBotDispatch) (OpenAIEndpointCapability, OpenAIImagesCapability, error) {
+	capability := OpenAIEndpointCapability("")
+	imageCapability := OpenAIImagesCapability("")
+	switch task.Protocol {
+	case DoneBotDispatchImages:
+		c, _ := doneBotDispatchContext(ctx, task)
+		parsed, err := service.ParseOpenAIImagesRequest(c, task.Body)
+		if err != nil {
+			return "", "", err
+		}
+		imageCapability = parsed.RequiredCapabilityForModel(task.ForwardModel)
+	case DoneBotDispatchAPIMartImages:
+		capability = OpenAIEndpointCapabilityAPIMartImages
+	case DoneBotDispatchAPIMartMusic:
+		capability = OpenAIEndpointCapabilityAPIMartSuno
+	case DoneBotDispatchSeedance:
+		capability = OpenAIEndpointCapabilitySeedance
+	default:
+		return "", "", ErrDoneBotMediaInvalid
+	}
+	return capability, imageCapability, nil
+}
+
+func (s *OpenAIGatewayService) doneBotDispatchCandidateExhausted(ctx context.Context, task *DoneBotDispatch, capability OpenAIEndpointCapability, imageCapability OpenAIImagesCapability) (bool, error) {
+	if s == nil || s.accountRepo == nil || task == nil {
+		return false, ErrDoneBotMediaPrepaidUnavailable
+	}
+	groupID := &task.GroupID
+	includeGrouped := false
+	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
+		groupID = nil
+		includeGrouped = true
+	}
+	accounts, err := s.accountRepo.ListModelAvailabilityCandidates(ctx, groupID, []string{PlatformOpenAI}, includeGrouped)
+	if err != nil {
+		return false, err
+	}
+	failed := make(map[int64]struct{}, len(task.FailedAccounts))
+	for _, id := range task.FailedAccounts {
+		failed[id] = struct{}{}
+	}
+	for i := range accounts {
+		account := &accounts[i]
+		if NormalizeOpenAICompatiblePlatform(account.Platform) != PlatformOpenAI || !account.IsOpenAICompatible() ||
+			!account.IsModelSupported(task.RoutingModel) || !accountSupportsOpenAICapabilities(account, capability, imageCapability) {
+			continue
+		}
+		if task.Protocol == DoneBotDispatchSeedance && !account.SeedanceAllowsResolution(task.RoutingModel, task.VideoInfo.Resolution) {
+			continue
+		}
+		if _, hasFailed := failed[account.ID]; !hasFailed {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 func doneBotDispatchContext(ctx context.Context, task *DoneBotDispatch) (*gin.Context, *httptest.ResponseRecorder) {
+	return doneBotDispatchContextWithBody(ctx, task, task.Body)
+}
+
+func doneBotDispatchContextWithBody(ctx context.Context, task *DoneBotDispatch, body []byte) (*gin.Context, *httptest.ResponseRecorder) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request, _ = http.NewRequestWithContext(ctx, http.MethodPost, "http://gateway.invalid"+task.Path, bytes.NewReader(task.Body))
+	c.Request, _ = http.NewRequestWithContext(ctx, http.MethodPost, "http://gateway.invalid"+task.Path, bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", task.ContentType)
 	return c, recorder
 }
 
-func (w *apimartSettlementWorker) sendDoneBot(ctx context.Context, task *DoneBotDispatch, account *Account) error {
+func (w *apimartSettlementWorker) sendDoneBot(ctx context.Context, task *DoneBotDispatch, account *Account, requestBody []byte) error {
 	s := w.service
-	c, recorder := doneBotDispatchContext(ctx, task)
+	c, recorder := doneBotDispatchContextWithBody(ctx, task, requestBody)
 	var err error
 	var status int
 	var body []byte
 	switch task.Protocol {
 	case DoneBotDispatchImages:
 		var parsed *OpenAIImagesRequest
-		parsed, err = s.ParseOpenAIImagesRequest(c, task.Body)
+		parsed, err = s.ParseOpenAIImagesRequest(c, requestBody)
 		if err == nil {
 			err = parsed.ApplyDoneBotImagePolicy(task.Model)
 		}
 		if err == nil {
-			task.Result, err = s.ForwardImages(ctx, c, account, task.Body, parsed, task.ForwardModel)
+			task.Result, err = s.ForwardImages(ctx, c, account, requestBody, parsed, task.ForwardModel)
 		}
 		status, body = recorder.Code, recorder.Body.Bytes()
 		var failover *UpstreamFailoverError
@@ -298,7 +419,7 @@ func (w *apimartSettlementWorker) sendDoneBot(ctx context.Context, task *DoneBot
 			return nil
 		}
 	case DoneBotDispatchSeedance:
-		task.Result, err = s.ForwardSeedanceForBilling(ctx, c, account, SeedanceEndpointCreate, "", task.Body)
+		task.Result, err = s.ForwardSeedanceForBilling(ctx, c, account, SeedanceEndpointCreate, "", requestBody)
 		status, body = recorder.Code, recorder.Body.Bytes()
 		if err == nil && task.Result != nil && task.Result.ResponseID != "" {
 			task.ProviderTaskID = strings.TrimPrefix(task.Result.ResponseID, "seedance:")
@@ -311,7 +432,7 @@ func (w *apimartSettlementWorker) sendDoneBot(ctx context.Context, task *DoneBot
 			endpoint = APIMartSuno
 		}
 		var response *APIMartResponse
-		response, err = s.ForwardAPIMart(ctx, c, account, endpoint, "", task.Body)
+		response, err = s.ForwardAPIMart(ctx, c, account, endpoint, "", requestBody)
 		if response != nil {
 			status, body = response.Status, response.Body
 			if err == nil && !response.IsFailure() && response.TaskID != "" {
@@ -341,7 +462,7 @@ func (w *apimartSettlementWorker) pollDoneBot(ctx context.Context, task *DoneBot
 			return err
 		}
 		response = result.SeedanceResponseBody
-		pending := &GrokVideoPendingBilling{Model: task.Model, BillingModel: task.Model, OriginalModel: task.Model, UpstreamModel: task.UpstreamModel, VideoResolution: task.VideoInfo.Resolution, VideoInputDurationSeconds: task.VideoInfo.ReferenceVideoDurationSeconds, VideoReference: task.VideoInfo.HasReferenceVideo, CreatedAt: task.CreatedAt.Format(time.RFC3339Nano)}
+		pending := &GrokVideoPendingBilling{Model: task.Model, BillingModel: task.BillingModel, OriginalModel: task.Model, UpstreamModel: task.UpstreamModel, VideoResolution: task.VideoInfo.Resolution, VideoInputDurationSeconds: task.VideoInfo.ReferenceVideoDurationSeconds, VideoReference: task.VideoInfo.HasReferenceVideo, CreatedAt: task.CreatedAt.Format(time.RFC3339Nano)}
 		task.Result = MergeSeedanceCompletion(result, pending, task.TaskID)
 	} else {
 		endpoint := APIMartImageTask
@@ -362,7 +483,7 @@ func (w *apimartSettlementWorker) pollDoneBot(ctx context.Context, task *DoneBot
 			return fmt.Errorf("upstream task query status %d", result.Status)
 		}
 		response = result.Body
-		pending := &APIMartPending{Endpoint: create, Model: task.Model, BillingModel: task.Model, OriginalModel: task.Model, UpstreamModel: task.UpstreamModel, Tier: task.Info.Tier, Units: task.Info.Units, LayerDecomposition: task.Info.LayerDecomposition, CreatedAt: task.CreatedAt.Format(time.RFC3339Nano)}
+		pending := &APIMartPending{Endpoint: create, Model: task.Model, BillingModel: task.BillingModel, OriginalModel: task.Model, UpstreamModel: task.UpstreamModel, Tier: task.Info.Tier, Units: task.Info.Units, LayerDecomposition: task.Info.LayerDecomposition, CreatedAt: task.CreatedAt.Format(time.RFC3339Nano)}
 		task.Result = APIMartCompletionResult(pending, response, task.TaskID)
 	}
 	if task.Result != nil {

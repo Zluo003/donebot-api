@@ -137,11 +137,18 @@ func RegisterGatewayRoutes(
 	gateway.Use(opsErrorLogger)
 	gateway.Use(endpointNorm)
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
-	gateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot))
-	gateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
-	registerDoneBotWebToolsRoutes(gateway, h.DoneBot)
+	doneBotGateway := gateway.Group("")
+	doneBotGateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot))
+	doneBotGateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
+	registerDoneBotWebToolsRoutes(doneBotGateway, h.DoneBot)
+	if h.OpenAIGateway != nil {
+		doneBotGateway.POST("/donebot/media/intent", groupModelAllowlist, h.OpenAIGateway.DoneBotMediaIntent)
+		doneBotGateway.GET("/donebot/media/jobs/by-idempotency/:key", h.OpenAIGateway.DoneBotMediaIntentByIdempotency)
+		doneBotGateway.GET("/donebot/media/jobs/:job_id", h.OpenAIGateway.DoneBotMediaIntentJob)
+	}
 	gateway.Use(groupModelAllowlist)
 	gateway.Use(compositeTarget)
+	gateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot))
 	gateway.Use(requireGroupAnthropic)
 	{
 		// /v1/messages: auto-route based on group platform

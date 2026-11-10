@@ -81,6 +81,9 @@ func (s *AssetService) Upload(ctx context.Context, owner int64, filename, conten
 func (s *AssetService) UploadGenerated(ctx context.Context, owner int64, filename, contentType string, data []byte, baseURL string) (*GatewayAsset, error) {
 	return s.upload(ctx, AssetPurposeGenerated, owner, filename, contentType, data, baseURL)
 }
+func (s *AssetService) UploadDoneBotOutput(ctx context.Context, owner int64, filename, contentType string, data []byte) (*GatewayAsset, error) {
+	return s.upload(ctx, AssetPurposeDoneBotOutput, owner, filename, contentType, data, "")
+}
 func (s *AssetService) GeneratedStoragePolicy(ctx context.Context) (DoneBotStoragePolicy, error) {
 	if s.storageSettings != nil {
 		return s.storageSettings.Policy(ctx, AssetPurposeGenerated)
@@ -101,7 +104,11 @@ func (s *AssetService) upload(ctx context.Context, purpose string, owner int64, 
 	if s.storageSettings == nil {
 		return s.uploadStored(ctx, purpose, owner, filename, contentType, data, baseURL, nil)
 	}
-	policy, err := s.storageSettings.Policy(ctx, purpose)
+	policyPurpose := purpose
+	if purpose == AssetPurposeDoneBotOutput {
+		policyPurpose = AssetPurposeGenerated
+	}
+	policy, err := s.storageSettings.Policy(ctx, policyPurpose)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +116,11 @@ func (s *AssetService) upload(ctx context.Context, purpose string, owner int64, 
 		return nil, ErrAssetStorageUnavailable
 	}
 	var out *GatewayAsset
-	err = s.withPurposeLock(ctx, purpose, func(tx context.Context) error {
+	lockPurpose := purpose
+	if purpose == AssetPurposeDoneBotOutput {
+		lockPurpose = AssetPurposeGenerated
+	}
+	err = s.withPurposeLock(ctx, lockPurpose, func(tx context.Context) error {
 		var e error
 		out, e = s.uploadStored(context.WithValue(tx, assetCleanupContextKey{}, tx), purpose, owner, filename, contentType, data, baseURL, &policy)
 		return e
@@ -212,7 +223,11 @@ func (s *AssetService) uploadStored(ctx context.Context, purpose string, owner i
 			if cleanupCtx == nil {
 				cleanupCtx = ctx
 			}
-			if err = s.ensureStorageCapacity(cleanupCtx, purpose, *policy, int64(len(data))); err != nil {
+			capacityPurpose := purpose
+			if purpose == AssetPurposeDoneBotOutput {
+				capacityPurpose = AssetPurposeGenerated
+			}
+			if err = s.ensureStorageCapacity(cleanupCtx, capacityPurpose, *policy, int64(len(data))); err != nil {
 				return err
 			}
 			storage, err = s.storageSettings.storage(tx, *policy)
@@ -236,7 +251,8 @@ func (s *AssetService) uploadStored(ctx context.Context, purpose string, owner i
 			ttl = 168
 		}
 		now := s.now().UTC()
-		out = &GatewayAsset{ID: "ast_" + strings.ReplaceAll(uuid.NewString(), "-", ""), SHA256: digest, MIME: contentType, Size: int64(len(data)), Storage: storage.Kind(), Purpose: purpose, StorageConfig: snapshot, ObjectKey: objectKey, URL: storedURL, OwnerKeyID: owner, CreatedAt: now, ExpiresAt: now.Add(time.Duration(ttl) * time.Hour)}
+		expiresAt := now.Add(time.Duration(ttl) * time.Hour)
+		out = &GatewayAsset{ID: "ast_" + strings.ReplaceAll(uuid.NewString(), "-", ""), SHA256: digest, MIME: contentType, Size: int64(len(data)), Storage: storage.Kind(), Purpose: purpose, StorageConfig: snapshot, ObjectKey: objectKey, URL: storedURL, OwnerKeyID: owner, CreatedAt: now, ExpiresAt: expiresAt}
 		if err = s.repo.Create(tx, out); err != nil {
 			_ = storage.Delete(context.WithoutCancel(tx), objectKey)
 			return err
@@ -366,6 +382,30 @@ func (s *AssetService) Download(ctx context.Context, id, token string) (*Gateway
 	body, err := reader.Open(ctx, a.ObjectKey)
 	return a, body, err
 }
+
+func (s *AssetService) OpenOwned(ctx context.Context, owner int64, id string) (*GatewayAsset, io.ReadCloser, error) {
+	if owner <= 0 {
+		return nil, nil, ErrAssetNotFound
+	}
+	asset, err := s.Get(ctx, owner, id, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	storage, err := s.storageForAsset(ctx, asset)
+	if err != nil {
+		return nil, nil, err
+	}
+	reader, ok := storage.(AssetReader)
+	if !ok {
+		return nil, nil, ErrAssetStorageUnavailable
+	}
+	body, err := reader.Open(ctx, asset.ObjectKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	return asset, body, nil
+}
+
 func (s *AssetService) CleanupExpired(ctx context.Context, limit int) (int, error) {
 	expired, err := s.repo.ListExpired(ctx, s.now(), limit)
 	if err != nil {

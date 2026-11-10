@@ -83,7 +83,7 @@ func (r *usageBillingRepository) LookupDoneBotDispatch(ctx context.Context, user
 	return &task, nil
 }
 
-func (r *usageBillingRepository) ReassignDoneBotMediaAccount(ctx context.Context, receipt string, keyID, accountID int64, rate float64) error {
+func (r *usageBillingRepository) ReassignDoneBotMediaAccount(ctx context.Context, receipt string, keyID, accountID int64, _ float64) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -111,17 +111,17 @@ func (r *usageBillingRepository) ReassignDoneBotMediaAccount(ctx context.Context
 	if err != nil {
 		return err
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE donebot_media_precharges p SET account_id=$3,price_snapshot=jsonb_set(price_snapshot,'{account_rate_multiplier}',to_jsonb($4::double precision)),updated_at=NOW()
- WHERE receipt_id=$1::uuid AND api_key_id=$2 AND state='prepaid' AND settlement_input IS NULL
- AND EXISTS(SELECT 1 FROM donebot_media_dispatches d WHERE d.receipt_id=p.receipt_id AND d.state='dispatching' AND (d.payload->>'account_id')::bigint=$3)`, receipt, keyID, accountID, rate)
+	var settlementValid bool
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS(
+	 SELECT 1 FROM donebot_media_precharges p
+	 JOIN donebot_media_dispatches d ON d.receipt_id=p.receipt_id
+	 WHERE p.receipt_id=$1::uuid AND p.api_key_id=$2 AND p.state='prepaid' AND p.settlement_input IS NULL
+	 AND d.state='dispatching' AND (d.payload->>'account_id')::bigint=$3
+	)`, receipt, keyID, accountID).Scan(&settlementValid)
 	if err != nil {
 		return err
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n != 1 {
+	if !settlementValid {
 		return service.ErrDoneBotMediaPending
 	}
 	return tx.Commit()

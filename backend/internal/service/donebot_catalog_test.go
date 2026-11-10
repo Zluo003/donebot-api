@@ -26,7 +26,7 @@ func TestDoneBotPublicCatalogFiltersAndSanitizes(t *testing.T) {
 	g, rows, accounts := doneBotPublicCatalogFixture(t)
 	result, err := buildDoneBotPublicCatalog(g, 42, "9c6048be-395d-4d9b-bc00-a7c7b508fa55", rows, accounts, nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, 3, result.GatewayContractVersion)
+	require.Equal(t, 4, result.GatewayContractVersion)
 	require.Len(t, result.Models, 1)
 	model := result.Models[0]
 	require.Equal(t, "gpt-test", model.ID)

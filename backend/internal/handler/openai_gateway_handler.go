@@ -35,6 +35,8 @@ import (
 
 // OpenAIGatewayHandler handles OpenAI API gateway requests
 type OpenAIGatewayHandler struct {
+	doneBot                           *DoneBotHandler
+	assets                            *service.AssetService
 	compositeResolver                 *service.CompositeRouteResolver
 	gatewayService                    *service.OpenAIGatewayService
 	billingCacheService               *service.BillingCacheService

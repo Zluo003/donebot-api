@@ -28,7 +28,7 @@ func (r *policyAssetRepo) GetByPurposeSHA256(ctx context.Context, purpose, hash 
 func (r *policyAssetRepo) ListOldest(_ context.Context, purpose string, limit int) ([]GatewayAsset, error) {
 	var out []GatewayAsset
 	for _, a := range r.rows {
-		if a.Purpose == purpose {
+		if a.Purpose == purpose || purpose == AssetPurposeGenerated && a.Purpose == AssetPurposeDoneBotOutput {
 			out = append(out, *a)
 		}
 	}
@@ -41,7 +41,7 @@ func (r *policyAssetRepo) ListOldest(_ context.Context, purpose string, limit in
 func (r *policyAssetRepo) StorageUsage(_ context.Context, purpose string) (int64, int64, error) {
 	var size, count int64
 	for _, a := range r.rows {
-		if a.Purpose == purpose {
+		if a.Purpose == purpose || purpose == AssetPurposeGenerated && a.Purpose == AssetPurposeDoneBotOutput {
 			size += a.Size
 			count++
 		}

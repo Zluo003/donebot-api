@@ -23,6 +23,21 @@ type assetHandlerStub struct {
 	data  []byte
 }
 
+type doneBotArtifactOpenerStub struct {
+	calls      int
+	taskID     string
+	artifactID string
+	asset      *service.GatewayAsset
+	reader     io.ReadCloser
+	err        error
+}
+
+func (s *doneBotArtifactOpenerStub) Open(_ context.Context, taskID, artifactID string) (*service.GatewayAsset, io.ReadCloser, error) {
+	s.calls++
+	s.taskID, s.artifactID = taskID, artifactID
+	return s.asset, s.reader, s.err
+}
+
 func (s *assetHandlerStub) Upload(_ context.Context, owner int64, _, _ string, data []byte, _ string) (*service.GatewayAsset, error) {
 	s.calls++
 	s.owner = owner
@@ -66,4 +81,25 @@ func TestAssetHandlerUploadUsesCredentialOwnerAndRejectsOversizedWithoutStorage(
 	response = request("abcd")
 	require.Equal(t, http.StatusRequestEntityTooLarge, response.Code)
 	require.Equal(t, 1, stub.calls)
+}
+
+func TestAssetHandlerDownloadsDoneBotArtifactWithoutCredentialsOrQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	reader := io.NopCloser(bytes.NewReader([]byte("artifact-bytes")))
+	opener := &doneBotArtifactOpenerStub{asset: &service.GatewayAsset{ID: "ast_private", MIME: "image/png", Size: 14}, reader: reader}
+	h := &AssetHandler{artifacts: opener}
+	router := gin.New()
+	router.GET("/v1/donebot/media/jobs/:job_id/artifacts/:artifact_id", h.DownloadDoneBotArtifact)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/donebot/media/jobs/dbtask_opaque/artifacts/artifact_opaque", nil))
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Equal(t, "artifact-bytes", response.Body.String())
+	require.Equal(t, "dbtask_opaque", opener.taskID)
+	require.Equal(t, "artifact_opaque", opener.artifactID)
+
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/donebot/media/jobs/dbtask_opaque/artifacts/artifact_opaque?token=signature", nil))
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Equal(t, 1, opener.calls, "query parameters must be rejected before opening an artifact")
 }

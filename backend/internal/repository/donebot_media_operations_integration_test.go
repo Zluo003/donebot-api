@@ -85,6 +85,10 @@ func TestDoneBotMediaDatabaseConcurrentBeginAndCrashRecovery(t *testing.T) {
 	require.Equal(t, first.ReceiptID, recovered.ReceiptID)
 	require.Equal(t, "dispatching", recovered.Status)
 	require.Equal(t, "1.2345678901", recovered.EstimatedCents.String())
+	keyHash := sha256.Sum256([]byte("same-idempotency-key"))
+	byKey, err := restarted.LookupByIdempotencyHash(context.Background(), owner, hex.EncodeToString(keyHash[:]))
+	require.NoError(t, err)
+	require.Equal(t, first.ReceiptID, byKey.ReceiptID)
 	op, err := restarted.Complete(context.Background(), owner, first.ReceiptID, service.DoneBotMediaCompletion{Status: "accepted", TaskID: "task-1", TaskKey: "seedance:task-1", Provider: "seedance", UsageRequestID: "grok_video:stable", HTTPStatus: 200, ContentType: "application/json", RetryAfter: "30", Body: []byte(`{"id":"task-1"}`)})
 	require.NoError(t, err)
 	require.Equal(t, "accepted", op.Status)
@@ -98,6 +102,8 @@ func TestDoneBotMediaDatabaseConcurrentBeginAndCrashRecovery(t *testing.T) {
 	otherOwner := owner
 	otherOwner.APIKeyID++
 	_, err = restarted.Lookup(context.Background(), otherOwner, first.ReceiptID)
+	require.ErrorIs(t, err, service.ErrDoneBotMediaNotFound)
+	_, err = restarted.LookupByIdempotencyHash(context.Background(), otherOwner, hex.EncodeToString(keyHash[:]))
 	require.ErrorIs(t, err, service.ErrDoneBotMediaNotFound)
 	_, err = restarted.LookupTask(context.Background(), otherOwner, "task-1", "video")
 	require.ErrorIs(t, err, service.ErrDoneBotMediaNotFound)

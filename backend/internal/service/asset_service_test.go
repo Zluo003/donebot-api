@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,6 +85,32 @@ func (s *assetTestStorage) Delete(context.Context, string) error {
 	return nil
 }
 func (*assetTestStorage) Kind() string { return "local" }
+func (*assetTestStorage) Open(context.Context, string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("asset-bytes")), nil
+}
+
+func TestAssetOpenOwnedChecksOwnerAndExpiry(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &assetTestRepo{
+		rows:   map[string]*GatewayAsset{"ast_owned": {ID: "ast_owned", MIME: "image/png", Storage: "local", ObjectKey: "generated/a.png", ExpiresAt: now.Add(time.Hour)}},
+		owners: map[string]map[int64]bool{"ast_owned": {42: true}},
+	}
+	svc := NewAssetService(repo, &assetTestStorage{}, &config.Config{})
+	svc.now = func() time.Time { return now }
+	asset, body, err := svc.OpenOwned(context.Background(), 42, "ast_owned")
+	require.NoError(t, err)
+	require.Equal(t, "image/png", asset.MIME)
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+	require.NoError(t, body.Close())
+	require.Equal(t, "asset-bytes", string(data))
+	_, _, err = svc.OpenOwned(context.Background(), 43, "ast_owned")
+	require.ErrorIs(t, err, ErrAssetNotFound)
+	svc.now = func() time.Time { return now.Add(time.Hour) }
+	_, _, err = svc.OpenOwned(context.Background(), 42, "ast_owned")
+	require.ErrorIs(t, err, ErrAssetNotFound)
+}
+
 func TestAssetUploadDeduplicatesAndKeepsOwnerAccessSeparate(t *testing.T) {
 	repo := &assetTestRepo{rows: map[string]*GatewayAsset{}, owners: map[string]map[int64]bool{}}
 	storage := &assetTestStorage{}
@@ -106,6 +134,7 @@ func TestAssetUploadDeduplicatesAndKeepsOwnerAccessSeparate(t *testing.T) {
 	require.NoError(t, svc.Delete(context.Background(), 2, first.ID))
 	require.Equal(t, 1, storage.deletes)
 }
+
 func TestAssetSignedURLExpiresAndCannotBeRebound(t *testing.T) {
 	cfg := &config.Config{AssetStorage: config.AssetStorageConfig{PublicBaseURL: "https://assets.example.com"}}
 	cfg.JWT.Secret = "asset-test-signing-secret"

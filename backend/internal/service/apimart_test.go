@@ -387,7 +387,8 @@ func TestAPIMartCompletedImageStatusSettlesPrepaidReceipt(t *testing.T) {
 				require.Equal(t, []string{tc.size}, result.ImageOutputSizes)
 				stub := &doneBotPrepaidStub{p: &DoneBotMediaPrecharge{ReceiptID: "completed-receipt", UserID: 1, APIKeyID: 2, AccountID: 3, Kind: "image", State: "prepaid", Snapshot: DoneBotMediaPriceSnapshot{Kind: "image", MaxUnits: 17, Rates: map[string]DoneBotMediaUnitPrice{"1K": {Actual: 0.25, Total: 0.1}, "2K": {Actual: 0.5, Total: 0.2}}}}}
 				svc := &OpenAIGatewayService{usageBillingRepo: stub}
-				err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{Result: result, APIKey: &APIKey{ID: 2, UserID: 1, Key: "sk-donebot-isolated"}, User: &User{ID: 1}, Account: &Account{ID: 3}})
+				ctx := WithDoneBotMediaPrepaidSettlement(WithDoneBotMediaReceipt(context.Background(), "completed-receipt"))
+				err := svc.RecordUsage(ctx, &OpenAIRecordUsageInput{Result: result, APIKey: &APIKey{ID: 2, UserID: 1, Key: "sk-donebot-isolated"}, User: &User{ID: 1}, Account: &Account{ID: 3}})
 				require.NoError(t, err)
 				require.NotNil(t, stub.stage)
 				require.NotNil(t, stub.settled)
@@ -424,7 +425,8 @@ func TestAPIMartCompletedLayersSettleActualCountFromSeventeenPrepaid(t *testing.
 			require.Equal(t, tc.count, result.ImageCount)
 			require.Equal(t, map[string]int{"1K": tc.count}, result.ImageSizeBreakdown)
 			stub := &doneBotPrepaidStub{p: &DoneBotMediaPrecharge{ReceiptID: "layers-receipt", UserID: 1, APIKeyID: 2, AccountID: 3, Kind: "image", State: "prepaid", Amount: 4.25, Snapshot: DoneBotMediaPriceSnapshot{Kind: "image", MaxUnits: 17, Rates: map[string]DoneBotMediaUnitPrice{"1K": {Actual: 0.25, Total: 0.1}}}}}
-			err = (&OpenAIGatewayService{usageBillingRepo: stub}).RecordUsage(context.Background(), &OpenAIRecordUsageInput{Result: result, APIKey: &APIKey{ID: 2, UserID: 1, Key: "sk-donebot-isolated"}, User: &User{ID: 1}, Account: &Account{ID: 3}})
+			ctx := WithDoneBotMediaPrepaidSettlement(WithDoneBotMediaReceipt(context.Background(), "layers-receipt"))
+			err = (&OpenAIGatewayService{usageBillingRepo: stub}).RecordUsage(ctx, &OpenAIRecordUsageInput{Result: result, APIKey: &APIKey{ID: 2, UserID: 1, Key: "sk-donebot-isolated"}, User: &User{ID: 1}, Account: &Account{ID: 3}})
 			require.NoError(t, err)
 			require.Equal(t, tc.actual, stub.settled.ActualAmount)
 			require.Equal(t, tc.refund, stub.p.Amount-stub.settled.ActualAmount)

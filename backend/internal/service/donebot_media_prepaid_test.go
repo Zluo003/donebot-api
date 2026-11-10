@@ -117,6 +117,9 @@ func TestDoneBotMediaPrepaidRecordStagesDurableSettlementAndNeverOrdinaryDebit(t
 	svc := &OpenAIGatewayService{usageBillingRepo: stub}
 	input := &OpenAIRecordUsageInput{Result: &OpenAIForwardResult{RequestID: "upstream", Model: "image-model", ImageCount: 1, ImageOutputSizes: []string{"1024x1024"}}, User: &User{ID: 1}, APIKey: &APIKey{ID: 2, UserID: 1, Key: "sk-donebot-isolated"}, Account: &Account{ID: 3}}
 	handled, err := svc.recordDoneBotPrepaidUsage(WithDoneBotMediaReceipt(context.Background(), id), input)
+	require.False(t, handled, "synchronous image billing must not enter durable async prepayment settlement")
+	require.NoError(t, err)
+	handled, err = svc.recordDoneBotPrepaidUsage(WithDoneBotMediaPrepaidSettlement(WithDoneBotMediaReceipt(context.Background(), id)), input)
 	require.True(t, handled)
 	require.Equal(t, stub.settleErr, err)
 	require.NotNil(t, stub.stage)
@@ -124,13 +127,51 @@ func TestDoneBotMediaPrepaidRecordStagesDurableSettlementAndNeverOrdinaryDebit(t
 	require.Equal(t, 0.0, stub.stage.Effects.BalanceCost)
 	require.Equal(t, "dbm:settle:"+id, stub.stage.Effects.RequestID)
 	stub.p = nil
-	handled, err = svc.recordDoneBotPrepaidUsage(context.Background(), input)
+	handled, err = svc.recordDoneBotPrepaidUsage(WithDoneBotMediaPrepaidSettlement(WithDoneBotMediaReceipt(context.Background(), id)), input)
 	require.True(t, handled)
 	require.ErrorIs(t, err, ErrDoneBotMediaPrepaidUnavailable)
 	input.Result = &OpenAIForwardResult{Model: "text-model"}
 	handled, err = svc.recordDoneBotPrepaidUsage(context.Background(), input)
 	require.False(t, handled)
 	require.NoError(t, err)
+}
+
+func TestDoneBotMediaPrepaidSettlementUsesWinningCandidateSnapshotAndOriginalAccount(t *testing.T) {
+	id := uuid.NewString()
+	stub := &doneBotPrepaidStub{p: &DoneBotMediaPrecharge{
+		ReceiptID: id,
+		UserID:    1,
+		APIKeyID:  2,
+		AccountID: 3,
+		Model:     "public-model-a",
+		Kind:      "image",
+		Amount:    0.6,
+		State:     "prepaid",
+		Snapshot: DoneBotMediaPriceSnapshot{
+			Kind:                  "image",
+			Rates:                 map[string]DoneBotMediaUnitPrice{"reservation": {Actual: 0.6, Total: 0.6}},
+			AccountRateMultiplier: 1.4,
+			CandidateSnapshots: map[string]DoneBotMediaCandidatePriceSnapshot{
+				"public-model-a": {Kind: "image", MaxUnits: 1, Rates: map[string]DoneBotMediaUnitPrice{"1K": {Actual: 0.1, Total: 0.1}}},
+				"public-model-b": {Kind: "image", MaxUnits: 1, Rates: map[string]DoneBotMediaUnitPrice{"1K": {Actual: 0.35, Total: 0.4}}},
+			},
+		},
+	}}
+	svc := &OpenAIGatewayService{usageBillingRepo: stub}
+	input := &OpenAIRecordUsageInput{
+		Result:  &OpenAIForwardResult{RequestID: "provider-attempt", Model: "public-model-b", BillingModel: "billing-model-b", ImageCount: 1, ImageSize: "1K"},
+		User:    &User{ID: 1},
+		APIKey:  &APIKey{ID: 2, UserID: 1, Key: "sk-donebot-isolated"},
+		Account: &Account{ID: 99, Type: AccountTypeAPIKey},
+	}
+	handled, err := svc.recordDoneBotPrepaidUsage(WithDoneBotMediaPrepaidSettlement(WithDoneBotMediaReceipt(context.Background(), id)), input)
+	require.True(t, handled)
+	require.NoError(t, err)
+	require.NotNil(t, stub.stage)
+	require.Equal(t, 0.35, stub.stage.ActualAmount)
+	require.Equal(t, 0.4, stub.stage.TotalAmount)
+	require.Equal(t, "public-model-b", stub.stage.Effects.Model)
+	require.Equal(t, int64(3), stub.stage.Effects.AccountID, "settlement keeps the account attribution established by the original precharge")
 }
 
 func TestDoneBotMediaPrepaidAdmissionFreezesConservativeNativeBounds(t *testing.T) {

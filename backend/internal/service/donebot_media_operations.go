@@ -48,6 +48,7 @@ type DoneBotMediaOperation struct {
 	IdempotencyHash   string
 	Fingerprint       string
 	Kind              string
+	Operation         string
 	Model             string
 	Method            string
 	Path              string
@@ -70,6 +71,7 @@ type DoneBotMediaBeginInput struct {
 	IdempotencyKey string
 	Fingerprint    string
 	Kind           string
+	Operation      string
 	Model          string
 	Method         string
 	Path           string
@@ -98,6 +100,7 @@ type DoneBotMediaOperationRepository interface {
 	Begin(context.Context, *DoneBotMediaOperation) (*DoneBotMediaOperation, bool, error)
 	Complete(context.Context, DoneBotMediaOwner, string, DoneBotMediaCompletion) (*DoneBotMediaOperation, error)
 	Lookup(context.Context, DoneBotMediaOwner, string) (*DoneBotMediaOperation, error)
+	LookupByIdempotencyHash(context.Context, DoneBotMediaOwner, string) (*DoneBotMediaOperation, error)
 	LookupTask(context.Context, DoneBotMediaOwner, string, string) (*DoneBotMediaOperation, error)
 	SetEstimate(context.Context, DoneBotMediaOwner, string, *json.Number) error
 }
@@ -182,6 +185,19 @@ func DoneBotMediaFingerprint(method, path, contentType string, body []byte) stri
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+func doneBotMediaIdempotencyHash(key string) (string, error) {
+	if len(key) == 0 || len(key) > 256 || strings.TrimSpace(key) != key {
+		return "", infraerrors.BadRequest("DONEBOT_IDEMPOTENCY_KEY_REQUIRED", "a nonempty Idempotency-Key of at most 256 characters is required")
+	}
+	for _, c := range key {
+		if c < 33 || c > 126 {
+			return "", ErrDoneBotMediaInvalid
+		}
+	}
+	hash := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(hash[:]), nil
+}
+
 func (s *DoneBotMediaService) Begin(ctx context.Context, input DoneBotMediaBeginInput) (*DoneBotMediaBeginResult, error) {
 	owner, err := s.checkedOwner(ctx, input.Owner)
 	if err != nil {
@@ -190,26 +206,32 @@ func (s *DoneBotMediaService) Begin(ctx context.Context, input DoneBotMediaBegin
 	if !doneBotMediaHash.MatchString(input.Fingerprint) || !doneBotMediaPath(input.Kind, input.Method, input.Path) || !safeMediaModel(input.Model) {
 		return nil, ErrDoneBotMediaInvalid
 	}
-	key := input.IdempotencyKey
-	if len(key) == 0 || len(key) > 256 || strings.TrimSpace(key) != key {
-		return nil, infraerrors.BadRequest("DONEBOT_IDEMPOTENCY_KEY_REQUIRED", "a nonempty Idempotency-Key of at most 256 characters is required")
-	}
-	for _, c := range key {
-		if c < 33 || c > 126 {
+	if input.Path == "/v1/donebot/media/intent" {
+		intentKind := input.Kind
+		if intentKind == "music" {
+			intentKind = "audio"
+		}
+		if !doneBotMediaIntentOperation(intentKind, input.Operation) {
 			return nil, ErrDoneBotMediaInvalid
 		}
+	}
+	idempotencyHash, err := doneBotMediaIdempotencyHash(input.IdempotencyKey)
+	if err != nil {
+		return nil, err
 	}
 	if !doneBotMediaValidEstimate(input.EstimatedCents) {
 		return nil, ErrDoneBotMediaInvalid
 	}
 	id := uuid.NewString()
-	hash := sha256.Sum256([]byte(key))
-	op := &DoneBotMediaOperation{ReceiptID: id, Owner: owner, IdempotencyHash: hex.EncodeToString(hash[:]), Fingerprint: input.Fingerprint,
-		Kind: input.Kind, Model: input.Model, Method: input.Method, Path: input.Path, Status: "dispatching", UsageRequestID: "client:" + id, EstimatedCents: input.EstimatedCents}
+	op := &DoneBotMediaOperation{ReceiptID: id, Owner: owner, IdempotencyHash: idempotencyHash, Fingerprint: input.Fingerprint,
+		Kind: input.Kind, Operation: input.Operation, Model: input.Model, Method: input.Method, Path: input.Path, Status: "dispatching", UsageRequestID: "client:" + id, EstimatedCents: input.EstimatedCents}
 	if input.Kind == "speech" {
 		op.UsageRequestID = DoneBotSpeechBillingRequestID(id)
 	}
-	if input.Kind == "image" && strings.HasSuffix(input.Path, "/async") {
+	if input.Path == "/v1/donebot/media/intent" {
+		op.TaskID = "dbtask_" + strings.ReplaceAll(id, "-", "")
+		op.TaskKey, op.Provider = op.TaskID, "donebot"
+	} else if input.Kind == "image" && strings.HasSuffix(input.Path, "/async") {
 		op.TaskID, op.TaskKey, op.Provider = DoneBotImageTaskID(id), DoneBotImageTaskID(id), "donebot"
 	}
 	op, created, err := s.repo.Begin(ctx, op)
@@ -217,7 +239,7 @@ func (s *DoneBotMediaService) Begin(ctx context.Context, input DoneBotMediaBegin
 		return nil, err
 	}
 	result := &DoneBotMediaBeginResult{Operation: op}
-	if op.Fingerprint != input.Fingerprint || op.Kind != input.Kind || op.Method != input.Method || op.Path != input.Path {
+	if op.Fingerprint != input.Fingerprint || op.Kind != input.Kind || op.Operation != input.Operation || op.Method != input.Method || op.Path != input.Path {
 		return result, ErrDoneBotMediaConflict
 	}
 	if created {
@@ -262,6 +284,9 @@ func (s *DoneBotMediaService) SetEstimate(ctx context.Context, owner DoneBotMedi
 func doneBotMediaPath(kind, method, path string) bool {
 	if method != "POST" {
 		return false
+	}
+	if path == "/v1/donebot/media/intent" {
+		return kind == "image" || kind == "video" || kind == "music"
 	}
 	switch kind {
 	case "image":
@@ -378,6 +403,18 @@ func (s *DoneBotMediaService) Lookup(ctx context.Context, owner DoneBotMediaOwne
 		return nil, ErrDoneBotMediaNotFound
 	}
 	return s.repo.Lookup(ctx, owner, receiptID)
+}
+
+func (s *DoneBotMediaService) LookupByIdempotencyKey(ctx context.Context, owner DoneBotMediaOwner, key string) (*DoneBotMediaOperation, error) {
+	owner, err := s.checkedOwner(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	hash, err := doneBotMediaIdempotencyHash(key)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.LookupByIdempotencyHash(ctx, owner, hash)
 }
 
 func (s *DoneBotMediaService) LookupAcceptedTask(ctx context.Context, owner DoneBotMediaOwner, taskID, kind string) (*DoneBotMediaOperation, error) {

@@ -20,13 +20,25 @@ type assetHandlerService interface {
 	Delete(context.Context, int64, string) error
 	Download(context.Context, string, string) (*service.GatewayAsset, io.ReadCloser, error)
 }
+
+type doneBotMediaArtifactOpener interface {
+	Open(context.Context, string, string) (*service.GatewayAsset, io.ReadCloser, error)
+}
+
 type AssetHandler struct {
-	assets assetHandlerService
-	cfg    *config.Config
+	assets    assetHandlerService
+	artifacts doneBotMediaArtifactOpener
+	cfg       *config.Config
 }
 
 func NewAssetHandler(assets *service.AssetService, cfg *config.Config) *AssetHandler {
-	return &AssetHandler{assets, cfg}
+	return &AssetHandler{assets: assets, cfg: cfg}
+}
+
+func ProvideAssetHandler(assets *service.AssetService, cfg *config.Config, artifacts *service.DoneBotMediaArtifactService) *AssetHandler {
+	handler := NewAssetHandler(assets, cfg)
+	handler.artifacts = artifacts
+	return handler
 }
 func assetError(c *gin.Context, err error) {
 	status := infraerrors.Code(err)
@@ -165,5 +177,26 @@ func (h *AssetHandler) Download(c *gin.Context) {
 	if a.MIME != "image/png" && a.MIME != "image/jpeg" && a.MIME != "image/webp" && a.MIME != "image/gif" {
 		c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": a.ID}))
 	}
+	c.DataFromReader(http.StatusOK, a.Size, a.MIME, reader, nil)
+}
+
+func (h *AssetHandler) DownloadDoneBotArtifact(c *gin.Context) {
+	if c.Request.URL.RawQuery != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": "media artifact URLs do not accept query parameters"}})
+		return
+	}
+	if h.artifacts == nil {
+		assetError(c, service.ErrAssetStorageUnavailable)
+		return
+	}
+	a, reader, err := h.artifacts.Open(c.Request.Context(), c.Param("job_id"), c.Param("artifact_id"))
+	if err != nil {
+		assetError(c, err)
+		return
+	}
+	defer func() { _ = reader.Close() }()
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": a.ID}))
 	c.DataFromReader(http.StatusOK, a.Size, a.MIME, reader, nil)
 }

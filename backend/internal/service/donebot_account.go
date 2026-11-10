@@ -106,7 +106,7 @@ func (s *DoneBotAccountService) Account(ctx context.Context, userID int64, insta
 	}
 	return &DoneBotAccount{Concurrency: user.Concurrency, ID: strconv.FormatInt(user.ID, 10), Currency: "CNY", BalanceCents: balance, FrozenCents: frozen,
 		Usage:       DoneBotAccountUsage{Requests: stats.TotalRequests, InputTokens: stats.TotalInputTokens, OutputTokens: stats.TotalOutputTokens, ActualCents: actual},
-		GroupStatus: StatusActive, CatalogScopeID: catalog.CatalogScopeID, CatalogVersion: catalog.CatalogVersion, GatewayContractVersion: 3}, nil
+		GroupStatus: StatusActive, CatalogScopeID: catalog.CatalogScopeID, CatalogVersion: catalog.CatalogVersion, GatewayContractVersion: 4}, nil
 }
 
 func (s *DoneBotAccountService) Receipt(ctx context.Context, userID int64, installationUUID, receiptID string) (*DoneBotReceipt, error) {

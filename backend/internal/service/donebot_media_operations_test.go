@@ -105,6 +105,17 @@ func (r *doneBotMediaMemoryRepository) Lookup(_ context.Context, owner DoneBotMe
 	return cloneDoneBotMedia(op), nil
 }
 
+func (r *doneBotMediaMemoryRepository) LookupByIdempotencyHash(_ context.Context, owner DoneBotMediaOwner, hash string) (*DoneBotMediaOperation, error) {
+	r.Lock()
+	defer r.Unlock()
+	for _, op := range r.ops {
+		if op.Owner == owner && op.IdempotencyHash == hash {
+			return cloneDoneBotMedia(op), nil
+		}
+	}
+	return nil, ErrDoneBotMediaNotFound
+}
+
 func (r *doneBotMediaMemoryRepository) LookupTask(_ context.Context, owner DoneBotMediaOwner, task, kind string) (*DoneBotMediaOperation, error) {
 	r.Lock()
 	defer r.Unlock()
@@ -185,6 +196,49 @@ func TestDoneBotMediaBeginConcurrentAndUncertainNeverRedispatch(t *testing.T) {
 	input.Fingerprint = strings.Repeat("f", 64)
 	_, err = s.Begin(context.Background(), input)
 	require.ErrorIs(t, err, ErrDoneBotMediaConflict)
+}
+
+func TestDoneBotMediaLookupByIdempotencyKeyIsOwnerScoped(t *testing.T) {
+	s, input, _ := doneBotMediaFixture(t)
+	started, err := s.Begin(context.Background(), input)
+	require.NoError(t, err)
+
+	recovered, err := s.LookupByIdempotencyKey(context.Background(), input.Owner, input.IdempotencyKey)
+	require.NoError(t, err)
+	require.Equal(t, started.Operation.ReceiptID, recovered.ReceiptID)
+	require.Equal(t, started.Operation.IdempotencyHash, recovered.IdempotencyHash)
+
+	otherOwner := input.Owner
+	otherOwner.APIKeyID++
+	_, err = s.LookupByIdempotencyKey(context.Background(), otherOwner, input.IdempotencyKey)
+	require.ErrorIs(t, err, ErrDoneBotInstallNotFound)
+
+	_, err = s.LookupByIdempotencyKey(context.Background(), input.Owner, "")
+	require.Error(t, err)
+}
+
+func TestDoneBotMediaIntentBeginCreatesOneDurableTaskIdentity(t *testing.T) {
+	s, input, _ := doneBotMediaFixture(t)
+	input.Kind = "image"
+	input.Operation = "edit"
+	input.Model = "image-public"
+	input.Path = "/v1/donebot/media/intent"
+	input.Fingerprint = DoneBotMediaFingerprint("POST", input.Path, "application/json", []byte(`{"intent":{"kind":"image","operation":"edit"}}`))
+	started, err := s.Begin(context.Background(), input)
+	require.NoError(t, err)
+	require.Equal(t, "edit", started.Operation.Operation)
+	require.Equal(t, "donebot", started.Operation.Provider)
+	require.Equal(t, "dbtask_"+strings.ReplaceAll(started.Operation.ReceiptID, "-", ""), started.Operation.TaskID)
+	require.Equal(t, started.Operation.TaskID, started.Operation.TaskKey)
+
+	duplicate, err := s.Begin(context.Background(), input)
+	require.ErrorIs(t, err, ErrDoneBotMediaPending)
+	require.Equal(t, started.Operation.ReceiptID, duplicate.Operation.ReceiptID)
+	require.Equal(t, started.Operation.TaskID, duplicate.Operation.TaskID)
+
+	input.Operation = "delete"
+	_, err = s.Begin(context.Background(), input)
+	require.ErrorIs(t, err, ErrDoneBotMediaInvalid)
 }
 
 func TestDoneBotMediaAcceptedReplayAndReceiptUseStableMoneyID(t *testing.T) {

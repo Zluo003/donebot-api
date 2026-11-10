@@ -73,13 +73,22 @@ func TestGatewayRoutesGroupModelAllowlistMountedOnEveryGatewayRoute(t *testing.T
 	require.Regexp(t, rootHelper, source,
 		"root alias helper must place the allowlist between apiKeyAuth and compositeTarget")
 
+	gatewayAuth := strings.Index(source, `gateway.Use(gin.HandlerFunc(apiKeyAuth))`)
+	doneBotGroup := strings.Index(source, `doneBotGateway := gateway.Group("")`)
+	gatewayAllowlist := strings.Index(source, `gateway.Use(groupModelAllowlist)`)
+	gatewayComposite := strings.Index(source, `gateway.Use(compositeTarget)`)
+	require.True(t, gatewayAuth >= 0 && gatewayAuth < doneBotGroup && doneBotGroup < gatewayAllowlist && gatewayAllowlist < gatewayComposite,
+		"DoneBot routes must branch after API key authentication, while ordinary gateway routes retain allowlist-before-composite ordering")
+	doneBotRoutes := source[doneBotGroup:gatewayAllowlist]
+	require.Contains(t, doneBotRoutes, `registerDoneBotWebToolsRoutes(doneBotGateway`)
+	require.Contains(t, doneBotRoutes, `doneBotGateway.POST("/donebot/media/intent", groupModelAllowlist,`)
+
 	chains := []struct {
 		group     string
 		auth      string
 		marker    string
 		composite string
 	}{
-		{group: "gateway", auth: "gin.HandlerFunc(apiKeyAuth)", marker: "gateway.Use(groupModelAllowlist)", composite: "gateway.Use(compositeTarget)"},
 		{group: "gemini", auth: "middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg)", marker: "gemini.Use(groupModelAllowlist)", composite: "gemini.Use(compositeGeminiTarget)"},
 		{group: "antigravityV1", auth: "gin.HandlerFunc(apiKeyAuth)", marker: "antigravityV1.Use(groupModelAllowlist)", composite: "antigravityV1.Use(requireGroupAnthropic)"},
 		{group: "antigravityV1Beta", auth: "middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg)", marker: "antigravityV1Beta.Use(groupModelAllowlist)", composite: "antigravityV1Beta.Use(requireGroupGoogle)"},

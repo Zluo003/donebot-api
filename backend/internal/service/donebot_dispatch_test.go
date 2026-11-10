@@ -42,9 +42,7 @@ func (r *doneBotDispatchMemory) LookupDoneBotDispatch(context.Context, int64, in
 	copy := r.job
 	return &copy, nil
 }
-func (r *doneBotDispatchMemory) ReassignDoneBotMediaAccount(_ context.Context, _ string, _ int64, account int64, rate float64) error {
-	r.p.AccountID = account
-	r.p.Snapshot.AccountRateMultiplier = rate
+func (r *doneBotDispatchMemory) ReassignDoneBotMediaAccount(_ context.Context, _ string, _ int64, account int64, _ float64) error {
 	r.reassign = append(r.reassign, account)
 	return nil
 }
@@ -200,6 +198,63 @@ func TestDoneBotDispatchAllAccountsFailRefundOnlyAtEnd(t *testing.T) {
 	require.Equal(t, []int64{1, 2, 3}, upstream.posts)
 }
 
+func TestDoneBotDispatchTransientlyUnavailableAccountDoesNotRefund(t *testing.T) {
+	w, repo, upstream, task := doneBotDispatchFixture(t, DoneBotDispatchAPIMartImages)
+	until := time.Now().Add(time.Hour)
+	accountRepo := w.service.accountRepo.(schedulerTestOpenAIAccountRepo)
+	for i := range accountRepo.accounts {
+		accountRepo.accounts[i].RateLimitResetAt = &until
+	}
+	w.service.accountRepo = accountRepo
+	require.NoError(t, w.processDoneBot(context.Background(), &task))
+	require.Equal(t, "queued", task.State)
+	require.Nil(t, repo.settled)
+	require.Empty(t, upstream.posts)
+	require.Empty(t, task.FailedAccounts)
+}
+
+func TestDoneBotDispatchAdvancesPublicModelOnlyAfterAccountsExplicitlyFail(t *testing.T) {
+	w, repo, upstream, task := doneBotDispatchFixture(t, DoneBotDispatchAPIMartImages)
+	accountRepo := w.service.accountRepo.(schedulerTestOpenAIAccountRepo)
+	for i := range accountRepo.accounts {
+		mapping := accountRepo.accounts[i].Credentials["model_mapping"].(map[string]any)
+		mapping["public-model-b"] = fmt.Sprintf("vendor-b-%d", accountRepo.accounts[i].ID)
+	}
+	w.service.accountRepo = accountRepo
+	first := DoneBotDispatchCandidate{
+		PublicModel: "seedream-5-0-flash", RoutingModel: "seedream-5-0-flash", BillingModel: "billing-a", ForwardModel: "seedream-5-0-flash",
+		Kind: "image", Protocol: DoneBotDispatchAPIMartImages, Path: "/v1/images/generations", ContentType: "application/json",
+		Body: []byte(`{"model":"seedream-5-0-flash","prompt":"fixture","resolution":"1K"}`),
+		Info: APIMartRequestInfo{Model: "seedream-5-0-flash", Tier: "1K", Units: 1},
+	}
+	second := DoneBotDispatchCandidate{
+		PublicModel: "public-model-b", RoutingModel: "public-model-b", BillingModel: "billing-b", ForwardModel: "public-model-b",
+		Kind: "image", Protocol: DoneBotDispatchAPIMartImages, Path: "/v1/images/generations", ContentType: "application/json",
+		Body: []byte(`{"model":"public-model-b","prompt":"fixture","resolution":"1K"}`),
+		Info: APIMartRequestInfo{Model: "public-model-b", Tier: "1K", Units: 1},
+	}
+	task.Candidates = []DoneBotDispatchCandidate{first, second}
+	require.NoError(t, task.activateCandidate(0))
+	task.FailedAccounts = []int64{1, 2, 3}
+	originalTaskID, originalReceipt := task.TaskID, task.ReceiptID
+	require.NoError(t, w.processDoneBot(context.Background(), &task))
+	require.Equal(t, "queued", task.State)
+	require.Equal(t, 1, task.CandidateIndex)
+	require.Equal(t, "public-model-b", task.Model)
+	require.Empty(t, task.FailedAccounts)
+	require.Nil(t, repo.settled)
+	require.Equal(t, originalTaskID, task.TaskID)
+	require.Equal(t, originalReceipt, task.ReceiptID)
+	require.Empty(t, upstream.posts, "candidate advancement itself does not dispatch or charge again")
+
+	task = repo.job
+	require.NoError(t, w.processDoneBot(context.Background(), &task))
+	require.Equal(t, "completed", task.State)
+	require.Equal(t, "public-model-b", task.Model)
+	require.Equal(t, []int64{1}, upstream.posts)
+	require.Equal(t, originalTaskID, task.TaskID)
+}
+
 func TestDoneBotDispatchAcceptedTerminalFailureResumesNextAccount(t *testing.T) {
 	for _, protocol := range []string{DoneBotDispatchAPIMartImages, DoneBotDispatchAPIMartMusic, DoneBotDispatchSeedance} {
 		t.Run(protocol, func(t *testing.T) {
@@ -229,4 +284,30 @@ func TestDoneBotDispatchUnknownAcceptanceAndRestartNeverResubmit(t *testing.T) {
 	require.NoError(t, w.processDoneBot(context.Background(), &task))
 	require.Equal(t, "uncertain", task.State)
 	require.Equal(t, []int64{1}, upstream.posts)
+}
+
+func TestDoneBotIntentJobHidesAccountErrorsUntilTerminalFailure(t *testing.T) {
+	task := DoneBotDispatch{
+		ReceiptID: "receipt-1", TaskID: "dbtask_receipt1", State: "queued", AccountID: 12,
+		DoneBotIntent: true, IntentKind: "image", IntentOperation: "generate",
+		Attempts: []DoneBotDispatchAttempt{{PublicModel: "image", AccountID: 12, Status: "failed", Diagnostic: &DoneBotMediaDiagnostic{Message: "private provider detail"}}},
+	}
+	queued := task.IntentJob(task.IntentKind, task.IntentOperation)
+	require.Equal(t, "queued", queued.Status)
+	require.Empty(t, queued.Attempts)
+	require.Nil(t, queued.Diagnostic)
+	queuedJSON, err := json.Marshal(queued)
+	require.NoError(t, err)
+	require.NotContains(t, string(queuedJSON), "private provider detail")
+	require.NotContains(t, string(queuedJSON), "12")
+
+	task.State = "failed"
+	failed := task.IntentJob(task.IntentKind, task.IntentOperation)
+	require.Equal(t, "failed", failed.Status)
+	require.Len(t, failed.Attempts, 1)
+	require.NotContains(t, failed.Attempts[0].Status, "private provider detail")
+	failedJSON, err := json.Marshal(failed)
+	require.NoError(t, err)
+	require.NotContains(t, string(failedJSON), "private provider detail")
+	require.NotContains(t, string(failedJSON), "account_id")
 }
