@@ -39,9 +39,8 @@ func (s *OpenAIGatewayService) IsSeedanceVideoRequest(ctx context.Context, key *
 	return false, nil
 }
 
-type doneBotLocalMediaReader interface {
-	Get(context.Context, int64, string, string) (*GatewayAsset, error)
-	Download(context.Context, string, string) (*GatewayAsset, io.ReadCloser, error)
+type doneBotOwnedMediaReader interface {
+	OpenOwned(context.Context, int64, string) (*GatewayAsset, io.ReadCloser, error)
 }
 
 func (s *OpenAIGatewayService) WriteSeedanceVideoContent(ctx context.Context, c *gin.Context, result *OpenAIForwardResult, owner int64) error {
@@ -55,27 +54,24 @@ func (s *OpenAIGatewayService) WriteSeedanceVideoContent(ctx context.Context, c 
 	c.Header("Cache-Control", "no-store")
 	c.Header("X-Content-Type-Options", "nosniff")
 	if strings.HasPrefix(source.Path, "/assets/ast_") && !strings.Contains(strings.TrimPrefix(source.Path, "/assets/"), "/") && s.generatedMedia != nil {
-		if reader, ok := s.generatedMedia.assets.(doneBotLocalMediaReader); ok {
+		if reader, ok := s.generatedMedia.assets.(doneBotOwnedMediaReader); ok {
 			id := strings.TrimPrefix(source.Path, "/assets/")
-			asset, err := reader.Get(ctx, owner, id, "")
+			asset, body, err := reader.OpenOwned(ctx, owner, id)
 			if err != nil {
 				return err
 			}
-			if asset.Storage == "local" {
-				asset, body, err := reader.Download(ctx, id, source.Query().Get("token"))
-				if err != nil {
-					return err
-				}
-				defer func() { _ = body.Close() }()
-				c.Header("Content-Type", asset.MIME)
-				c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": id + ".mp4"}))
-				if seeker, ok := body.(io.ReadSeeker); ok {
-					MarkResponseCommitted(c)
-					http.ServeContent(c.Writer, c.Request, id, asset.CreatedAt, seeker)
-					return nil
-				}
-				return writeGrokMediaContentResponse(c, &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: body, ContentLength: asset.Size})
+			defer func() { _ = body.Close() }()
+			if !strings.HasPrefix(asset.MIME, "video/") {
+				return fmt.Errorf("video content response is not video")
 			}
+			c.Header("Content-Type", asset.MIME)
+			c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": id + ".mp4"}))
+			if seeker, ok := body.(io.ReadSeeker); ok {
+				MarkResponseCommitted(c)
+				http.ServeContent(c.Writer, c.Request, id, asset.CreatedAt, seeker)
+				return nil
+			}
+			return writeGrokMediaContentResponse(c, &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: body, ContentLength: asset.Size})
 		}
 	}
 	if source.Host == "" || source.Scheme == "" {

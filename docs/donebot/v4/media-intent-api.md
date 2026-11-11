@@ -26,6 +26,17 @@ DoneBot 客户端登记媒体模型能力、原生参数、默认值及限制，
 | 视频 | `seedance-2-5` | `POST /v1/videos` | `GET /v1/videos/{task_id}` |
 | 音乐 | `suno`，`version=v6` | `POST /v1/music/generations` | `GET /v1/music/tasks/{task_id}` |
 
+视频下载契约为 `GET /v1/videos/{task_id}/content`，接受创建及查询返回的
+`dbtask_...` ID。网关按当前用户与 API Key 从持久化 dispatch 读取已完成结果，
+再按资源 ID 和 API Key 归属读取已存文件；不依赖上游账号、provider task 或
+sticky-session，不重复提交生成或结算。原生上游任务 ID 的旧下载接口继续保留。
+查询响应保留 `content.video_url`，客户端无需依赖该字段中的临时签名进行任务下载。
+本地已存资源通过归属鉴权直接读取，旧链接签名过期不妨碍仍在保留期内的资源下载；
+资源本身过期、已清理或无归属时返回404，不延长资源保留期。
+下载成功返回200，支持文件范围请求返回206；处理中返回409及 `Retry-After: 3`，
+失败任务返回409且不提示继续等待；不存在或非归属任务返回404。数据库读取失败
+返回5xx，不能降级为旧任务绑定查询。
+
 视频账号需将公开 ID `seedance-2-5` 映射至上游 `doubao-seedance-2-5-260628`，
 并给公开 ID 配置价格与分组授权；这是同一个模型的账号路由，不能换用其他模型。
 图片模型公开 ID 和上游 ID 均为 `seedream-5-5`。
@@ -87,6 +98,30 @@ pnpm exec vue-tsc --noEmit
 覆盖原生请求透传、5.5参数模式、输入计费、图层实际像素结算、旧入口拒绝、
 目录不下发媒体能力，以及管理界面的5.5模型与输入价格保存。
 DoneBot 仓库另有隔离 HOME/data/server 的媒体端到端验证。
+
+### 按视频任务 ID 下载回归
+
+2026-11-11：`TestDoneBotDispatchVideoContentSurvivesRestartAndAccountFailover`
+使用真实查询 repository、SQL mock 的已完成 dispatch、临时视频文件和独立 HTTP
+服务器，验证查询返回 `dbtask_...` 及原生结果，再用该 ID 下载完整文件和范围片段。
+在无 sticky-session、含失败账号及最终成功账号记录、重新构建 handler/service 实例、
+保存的资源签名已过期时，仍返回200/206；文件自身必须在保留期内。
+用 Go overlay 仅移除新增入口分支时，同一用例稳定复现原来的404。
+
+`TestDoneBotDispatchVideoContentEnforcesOwnershipAndState` 覆盖跨用户、跨 Key、
+不存在、数据库故障、未完成、失败、非视频协议、资源过期及资源归属缺失。
+下载只执行归属限定的 SELECT；测试不允许额外 SQL、模型上游请求或计费变更。
+这是隔离的 SQL mock/文件/HTTP 验证，不是线上数据库或实际进程重启验收。
+
+```sh
+cd backend
+go test -tags=unit ./internal/service ./internal/handler ./internal/repository ./internal/server/routes ./internal/server/middleware -run '^Test(DoneBot|GrokMedia|ForwardGrokMedia|Seedance|Asset|GatewayRoutes)' -count=1
+```
+
+本次专项977个测试及子用例通过。DoneBot 客户端原有 `server/donebot.e2e.test.ts`
+另有2项隔离端到端通过，覆盖视频提交、后台查询、附件投递与账号隔离。未修改
+客户端代码、用户数据或生产服务，未发起真实媒体生成。
+
 ## 媒体参考上传容量
 
 客户端登记的 Seedance 2.5 原生视频输入上限为每个 200 MB。网关上传存储的未配置

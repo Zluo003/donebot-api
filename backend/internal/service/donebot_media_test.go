@@ -114,25 +114,18 @@ type doneBotLocalVideoAssets struct {
 	owner int64
 }
 
-func (a *doneBotLocalVideoAssets) Get(_ context.Context, owner int64, id, _ string) (*GatewayAsset, error) {
+func (a *doneBotLocalVideoAssets) OpenOwned(_ context.Context, owner int64, id string) (*GatewayAsset, io.ReadCloser, error) {
 	if owner != a.owner || id != "ast_video" {
-		return nil, ErrAssetNotFound
-	}
-	return &GatewayAsset{ID: id, Storage: "local"}, nil
-}
-
-func (a *doneBotLocalVideoAssets) Download(_ context.Context, id, token string) (*GatewayAsset, io.ReadCloser, error) {
-	if id != "ast_video" || token != "signed" {
-		return nil, nil, ErrAssetTokenInvalid
+		return nil, nil, ErrAssetNotFound
 	}
 	return &GatewayAsset{ID: id, Storage: "local", MIME: "video/mp4", Size: 5, CreatedAt: time.Now()}, io.NopCloser(strings.NewReader("video")), nil
 }
 
-func TestDoneBotSeedanceContentReadsLocalAssetWithOwnerAndToken(t *testing.T) {
+func TestDoneBotSeedanceContentReadsOwnedAssetWithoutStoredToken(t *testing.T) {
 	s := &OpenAIGatewayService{generatedMedia: &generatedMediaUploader{assets: &doneBotLocalVideoAssets{owner: 20}}}
 	for _, owner := range []int64{20, 21} {
 		c, recorder := grokMediaContentTestContext(http.MethodGet, "/v1/videos/task/content", nil)
-		result := &OpenAIForwardResult{SeedanceResponseBody: []byte(`{"status":"succeeded","content":{"video_url":"http://127.0.0.1/assets/ast_video?token=signed"}}`)}
+		result := &OpenAIForwardResult{SeedanceResponseBody: []byte(`{"status":"succeeded","content":{"video_url":"http://127.0.0.1/assets/ast_video?token=1.expired"}}`)}
 		err := s.WriteSeedanceVideoContent(context.Background(), c, result, owner)
 		if owner == 20 {
 			require.NoError(t, err)

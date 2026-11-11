@@ -74,6 +74,9 @@ func (h *OpenAIGatewayHandler) DoneBotVideoStatus(c *gin.Context) {
 }
 
 func (h *OpenAIGatewayHandler) DoneBotVideoContent(c *gin.Context) {
+	if h.serveDoneBotDispatchVideoContent(c) {
+		return
+	}
 	if seedance, ok := h.doneBotSeedanceTask(c); ok {
 		if seedance {
 			setActualUpstreamEndpoint(c, EndpointSeedanceTasks)
