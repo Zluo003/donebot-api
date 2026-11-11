@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+const DefaultAssetMaxBytes int64 = 200 << 20
+
 // AssetStorageConfig reuses ImageStorageConfig for connection compatibility.
 // S3.Enabled and S3.Driver are ignored; Driver selects the upload backend.
 type AssetStorageConfig struct {
@@ -24,7 +26,7 @@ func setAssetStorageDefaults() {
 	viper.SetDefault("asset_storage.local_path", "data/assets")
 	viper.SetDefault("asset_storage.public_base_url", "")
 	viper.SetDefault("asset_storage.ttl_hours", 168)
-	viper.SetDefault("asset_storage.max_bytes", int64(32<<20))
+	viper.SetDefault("asset_storage.max_bytes", DefaultAssetMaxBytes)
 	for _, field := range []string{"endpoint", "bucket", "access_key_id", "secret_access_key", "public_base_url"} {
 		viper.SetDefault("asset_storage.s3."+field, "")
 	}
@@ -55,7 +57,7 @@ func (c *AssetStorageConfig) Validate() error {
 		return fmt.Errorf("asset_storage.ttl_hours must be between 1 and 8760")
 	}
 	if c.MaxBytes == 0 {
-		c.MaxBytes = 32 << 20
+		c.MaxBytes = DefaultAssetMaxBytes
 	}
 	if c.MaxBytes < 1 {
 		return fmt.Errorf("asset_storage.max_bytes must be positive")

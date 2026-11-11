@@ -25,7 +25,10 @@ func TestAssetStorageDefaultsEnvironmentAndValidation(t *testing.T) {
 	cfg := AssetStorageConfig{}
 	require.NoError(t, cfg.Validate())
 	require.Equal(t, "local", cfg.Driver)
-	require.Equal(t, int64(32<<20), cfg.MaxBytes)
+	require.Equal(t, int64(200<<20), cfg.MaxBytes)
+	explicit := AssetStorageConfig{MaxBytes: 32 << 20}
+	require.NoError(t, explicit.Validate())
+	require.Equal(t, int64(32<<20), explicit.MaxBytes)
 	for _, value := range []string{"ftp://assets.example.com", "https://user:secret@assets.example.com", "https://assets.example.com?secret=x"} {
 		candidate := AssetStorageConfig{PublicBaseURL: value}
 		require.Error(t, candidate.Validate())

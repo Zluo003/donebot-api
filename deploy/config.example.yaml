@@ -1365,7 +1365,7 @@ asset_storage:
   # 反代 /assets/* 到本网关。后台保存后可为上传与生成产物分别设置公开地址。
   public_base_url: ""
   ttl_hours: 168
-  max_bytes: 33554432
+  max_bytes: 209715200
   s3:
     endpoint: ""
     region: "auto"

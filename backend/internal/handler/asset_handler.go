@@ -76,7 +76,7 @@ func (h *AssetHandler) Upload(c *gin.Context) {
 		}
 	}
 	if limit <= 0 {
-		limit = 32 << 20
+		limit = config.DefaultAssetMaxBytes
 	}
 	requestLimit := limit + (1 << 20)
 	if max := h.cfg.Gateway.MaxBodySize; max > 0 && max < requestLimit {

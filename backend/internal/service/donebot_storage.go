@@ -114,7 +114,7 @@ func NewDoneBotStorageService(repo SettingRepository, encryptor SecretEncryptor,
 	return &DoneBotStorageService{repo: repo, encryptor: encryptor, factory: factory, cfg: cfg, assets: assets}
 }
 func (s *DoneBotStorageService) defaults() DoneBotStoragePolicies {
-	p := DoneBotStoragePolicy{Enabled: true, Driver: "local", LocalPath: "data/assets", MaxStorageBytes: 10 << 30, TTLHours: 168, CleanupThresholdPercent: 90, MaxFileBytes: 32 << 20, S3: DoneBotStorageS3{Region: "auto", Prefix: "uploads/"}}
+	p := DoneBotStoragePolicy{Enabled: true, Driver: "local", LocalPath: "data/assets", MaxStorageBytes: 10 << 30, TTLHours: 168, CleanupThresholdPercent: 90, MaxFileBytes: config.DefaultAssetMaxBytes, S3: DoneBotStorageS3{Region: "auto", Prefix: "uploads/"}}
 	if s.cfg != nil {
 		c := s.cfg.AssetStorage
 		if c.Driver != "" {

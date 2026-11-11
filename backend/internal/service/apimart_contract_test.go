@@ -55,6 +55,7 @@ func TestAPIMartSpeechUsesServerReceiptBeforeUpstreamID(t *testing.T) {
 
 func TestAPIMartSunoNativeDefaultsAndCustomParametersStayOnWire(t *testing.T) {
 	for _, body := range []string{
+		`{"model":"suno","version":"v6","custom":true,"instrumental":false,"auto_lyrics":false,"prompt":"[Verse]\n保留原词","style":"Mandarin piano pop","vocal_gender":"Female","duration":60,"audio_format":"mp3"}`,
 		`{"version":"v6-mini","prompt":"rain over the city","instrumental":true}`,
 		`{"model":"suno","custom":true,"custom_model_id":"17d74d9e-77e5-45ac-b2e9-f4bca540c012","instrumental":true,"style":"ambient","negative_tags":"vocals","max_mode":true,"duration":180,"audio_format":"wav","variety":"extra","style_weight":0,"audio_weight":1,"weirdness_constraint":0.5,"future_option":{"keep":true}}`,
 	} {

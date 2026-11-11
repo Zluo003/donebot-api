@@ -139,7 +139,7 @@ func (s *AssetService) uploadStored(ctx context.Context, purpose string, owner i
 		limit = policy.MaxFileBytes
 	}
 	if limit <= 0 {
-		limit = 32 << 20
+		limit = config.DefaultAssetMaxBytes
 	}
 	if int64(len(data)) > limit {
 		return nil, ErrAssetTooLarge
