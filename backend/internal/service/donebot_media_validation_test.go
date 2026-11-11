@@ -143,7 +143,7 @@ func TestDoneBotMediaValidationEnforcesCustomDurationAndNumberPrecision(t *testi
 		{`{"version":"v6","audio_format":"mp3"}`, true},
 		{`{"version":"v6","audio_format":"mp3","duration":10}`, false},
 		{`{"version":"v6","audio_format":"mp3","duration":10,"custom":true}`, true},
-		{`{"version":"v6","audio_format":"mp3","custom":true}`, false},
+		{`{"version":"v6","audio_format":"mp3","custom":true}`, true},
 		{`{"version":"v6","audio_format":"mp3","duration":-1,"custom":true}`, false},
 		{`{"version":"v6","audio_format":"mp3","duration":10.5,"custom":true}`, false},
 		{`{"version":"v6","audio_format":"mp3","duration":9223372036854775808,"custom":true}`, false},

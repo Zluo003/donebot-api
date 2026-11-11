@@ -30,6 +30,13 @@ DoneBot 客户端登记媒体模型能力、原生参数、默认值及限制，
 并给公开 ID 配置价格与分组授权；这是同一个模型的账号路由，不能换用其他模型。
 图片模型公开 ID 和上游 ID 均为 `seedream-5-5`。
 
+Suno 自定义歌曲及纯音乐的 `duration` 均为可选字段；只有调用方提供时才检查
+10–360 秒整数限制，网关不补目标时长。官方契约：
+<https://docs.apimart.ai/cn/api-reference/audios/suno/generation>。
+在 DoneBot 媒体校验阶段被拒绝、明确未转发的请求不记录上游端点；音乐端点
+单独识别为 `/v1/music/generations` 和 `/v1/music/tasks`，不套用文本 Responses 的
+日志推导规则。该识别只影响日志归因，不改变原生转发路由。
+
 客户端提交原生 JSON，携带安装身份、Authorization 与 `Idempotency-Key`。
 图片返回 `data[0].task_id` 后立即结束提交等待；客户端在后台查询任务、下载产物并
 投递原会话。前 30 秒以 3 秒为默认查询间隔，此后 7.5 秒；失败查询单独退避。

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,9 @@ func TestNormalizeInboundEndpoint(t *testing.T) {
 		{"/v1/images/generations", EndpointImagesGenerations},
 		{"/v1/images/edits", EndpointImagesEdits},
 		{"/v1/images/tasks/imgtask_123", EndpointImageTasks},
+		{"/v1/music/generations", EndpointMusicGenerations},
+		{"/v1/music/tasks/music_123", EndpointMusicTasks},
+		{"/openai/v1/music/tasks/music_123", EndpointMusicTasks},
 		{"/v1/videos/generations", EndpointVideosGenerations},
 		{"/v1/videos/req_123", EndpointVideos},
 		{"/v1beta/models", EndpointGeminiModels},
@@ -108,6 +112,8 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 
 		// OpenAI — root Responses.
 		{"openai responses root", EndpointResponses, "/v1/responses", service.PlatformOpenAI, EndpointResponses},
+		{"openai music generation", EndpointMusicGenerations, "/v1/music/generations", service.PlatformOpenAI, EndpointMusicGenerations},
+		{"openai music task", EndpointMusicTasks, "/v1/music/tasks/music_123", service.PlatformOpenAI, EndpointMusicTasks},
 		{"openai responses input tokens", EndpointResponsesInputTokens, "/v1/responses/input_tokens", service.PlatformOpenAI, EndpointResponsesInputTokens},
 
 		// OpenAI — compact, raw path carries the derivable "/compact"
@@ -197,6 +203,14 @@ func TestGetUpstreamEndpointUsesOpenAIRuntimeOverride(t *testing.T) {
 
 	service.SetActualOpenAIUpstreamEndpoint(c, EndpointChatCompletions)
 	require.Equal(t, EndpointChatCompletions, GetUpstreamEndpoint(c, service.PlatformOpenAI))
+}
+
+func TestGetUpstreamEndpointDoesNotAttributeRejectedMediaToUpstream(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, EndpointMusicGenerations, nil)
+	require.Equal(t, EndpointMusicGenerations, GetUpstreamEndpoint(c, service.PlatformOpenAI))
+	c.Set(middleware.DoneBotMediaNotDispatched, true)
+	require.Empty(t, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 }
 
 func TestResolveOpenAIUpstreamEndpointPrefersForwardResult(t *testing.T) {

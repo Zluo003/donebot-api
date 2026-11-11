@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -11,6 +12,42 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestDoneBotSunoCustomModesWithoutDurationReachNativeMusicEndpoint(t *testing.T) {
+	for _, body := range []string{
+		`{"model":"music","version":"v6","custom":true,"auto_lyrics":false,"instrumental":false,"prompt":"[Verse]\n雨夜的晚安","title":"晚安","style":"sad piano ballad","audio_format":"mp3"}`,
+		`{"model":"music","version":"v6","custom":true,"auto_lyrics":false,"instrumental":true,"style":"piano, no vocals","audio_format":"mp3"}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			catalog, owner, _, _ := doneBotMediaValidationFixture(t)
+			parameters := decodeDoneBotMediaTest(t, body)
+			require.NoError(t, catalog.ValidateMediaPath(t.Context(), owner, "music", "music", "/v1/music/generations", parameters))
+			upstream := &grokMediaContentUpstreamStub{responses: []*http.Response{
+				grokMediaContentStatusResponse(`{"code":200,"data":[{"status":"submitted","task_id":"suno-fixture"}]}`),
+				grokMediaContentStatusResponse(`{"code":200,"data":{"status":"completed","result":{"music":[{"audio_url":"https://example.invalid/fixture.mp3"}]}}}`),
+			}}
+			svc := &OpenAIGatewayService{httpUpstream: upstream}
+			account := apimartTestAccount()
+			account.Credentials["model_mapping"] = map[string]any{"music": "suno"}
+			c, _ := grokMediaContentTestContext(http.MethodPost, "/v1/music/generations", nil)
+			result, err := svc.ForwardAPIMart(t.Context(), c, account, APIMartSuno, "", []byte(body))
+			require.NoError(t, err)
+			require.Equal(t, "suno-fixture", result.TaskID)
+			require.Equal(t, "/v1/music/generations", upstream.request.URL.Path)
+			forwarded, err := io.ReadAll(upstream.request.Body)
+			require.NoError(t, err)
+			parameters["model"] = "suno"
+			expected, err := json.Marshal(parameters)
+			require.NoError(t, err)
+			require.JSONEq(t, string(expected), string(forwarded))
+			c, _ = grokMediaContentTestContext(http.MethodGet, "/v1/music/tasks/suno-fixture", nil)
+			_, err = svc.ForwardAPIMart(t.Context(), c, account, APIMartMusicTask, result.TaskID, nil)
+			require.NoError(t, err)
+			require.Equal(t, "/v1/music/tasks/suno-fixture", upstream.request.URL.Path)
+			require.Len(t, upstream.requests, 2)
+		})
+	}
+}
 
 func TestAPIMartAdaptersRejectOtherNativeModelsBeforeUpstream(t *testing.T) {
 	requests := []struct {

@@ -195,11 +195,6 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 		if _, exists := parameters["custom_model_id"]; exists {
 			return ErrDoneBotMediaInvalid
 		}
-		if parameters["custom"] == true {
-			if _, exists := parameters["duration"]; !exists {
-				return ErrDoneBotMediaInvalid
-			}
-		}
 		if parameters["max_mode"] == true && parameters["custom"] != true {
 			return ErrDoneBotMediaInvalid
 		}
