@@ -206,15 +206,6 @@ func (s *DoneBotMediaService) Begin(ctx context.Context, input DoneBotMediaBegin
 	if !doneBotMediaHash.MatchString(input.Fingerprint) || !doneBotMediaPath(input.Kind, input.Method, input.Path) || !safeMediaModel(input.Model) {
 		return nil, ErrDoneBotMediaInvalid
 	}
-	if input.Path == "/v1/donebot/media/intent" {
-		intentKind := input.Kind
-		if intentKind == "music" {
-			intentKind = "audio"
-		}
-		if !doneBotMediaIntentOperation(intentKind, input.Operation) {
-			return nil, ErrDoneBotMediaInvalid
-		}
-	}
 	idempotencyHash, err := doneBotMediaIdempotencyHash(input.IdempotencyKey)
 	if err != nil {
 		return nil, err
@@ -228,10 +219,7 @@ func (s *DoneBotMediaService) Begin(ctx context.Context, input DoneBotMediaBegin
 	if input.Kind == "speech" {
 		op.UsageRequestID = DoneBotSpeechBillingRequestID(id)
 	}
-	if input.Path == "/v1/donebot/media/intent" {
-		op.TaskID = "dbtask_" + strings.ReplaceAll(id, "-", "")
-		op.TaskKey, op.Provider = op.TaskID, "donebot"
-	} else if input.Kind == "image" && strings.HasSuffix(input.Path, "/async") {
+	if input.Kind == "image" && strings.HasSuffix(input.Path, "/async") {
 		op.TaskID, op.TaskKey, op.Provider = DoneBotImageTaskID(id), DoneBotImageTaskID(id), "donebot"
 	}
 	op, created, err := s.repo.Begin(ctx, op)
@@ -284,9 +272,6 @@ func (s *DoneBotMediaService) SetEstimate(ctx context.Context, owner DoneBotMedi
 func doneBotMediaPath(kind, method, path string) bool {
 	if method != "POST" {
 		return false
-	}
-	if path == "/v1/donebot/media/intent" {
-		return kind == "image" || kind == "video" || kind == "music"
 	}
 	switch kind {
 	case "image":

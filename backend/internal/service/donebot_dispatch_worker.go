@@ -483,7 +483,7 @@ func (w *apimartSettlementWorker) pollDoneBot(ctx context.Context, task *DoneBot
 			return fmt.Errorf("upstream task query status %d", result.Status)
 		}
 		response = result.Body
-		pending := &APIMartPending{Endpoint: create, Model: task.Model, BillingModel: task.BillingModel, OriginalModel: task.Model, UpstreamModel: task.UpstreamModel, Tier: task.Info.Tier, Units: task.Info.Units, LayerDecomposition: task.Info.LayerDecomposition, CreatedAt: task.CreatedAt.Format(time.RFC3339Nano)}
+		pending := &APIMartPending{Endpoint: create, Model: task.Model, BillingModel: task.BillingModel, OriginalModel: task.Model, UpstreamModel: task.UpstreamModel, Tier: task.Info.Tier, Units: task.Info.Units, InputImages: task.Info.InputImages, LayerDecomposition: task.Info.LayerDecomposition, CreatedAt: task.CreatedAt.Format(time.RFC3339Nano)}
 		task.Result = APIMartCompletionResult(pending, response, task.TaskID)
 	}
 	if task.Result != nil {

@@ -22,6 +22,7 @@ type DoneBotMediaUnitPrice struct {
 }
 
 type DoneBotMediaCandidatePriceSnapshot struct {
+	InputImages    int                              `json:"input_images,omitempty"`
 	Kind           string                           `json:"kind"`
 	Rates          map[string]DoneBotMediaUnitPrice `json:"rates"`
 	MaxUnits       float64                          `json:"max_units"`
@@ -31,6 +32,7 @@ type DoneBotMediaCandidatePriceSnapshot struct {
 }
 
 type DoneBotMediaPriceSnapshot struct {
+	InputImages           int                                           `json:"input_images,omitempty"`
 	Kind                  string                                        `json:"kind"`
 	Rates                 map[string]DoneBotMediaUnitPrice              `json:"rates"`
 	CandidateSnapshots    map[string]DoneBotMediaCandidatePriceSnapshot `json:"candidate_snapshots,omitempty"`
@@ -112,14 +114,15 @@ func (s *OpenAIGatewayService) PrepayDoneBotAPIMart(ctx context.Context, key *AP
 	if endpoint == APIMartImages {
 		snapshot.Kind = "image"
 		snapshot.RateMultiplier = imageRate
-		snapshot.MaxUnits = 1
+		snapshot.MaxUnits = info.Units
+		snapshot.InputImages = info.InputImages
 		tiers = []string{"1K"}
 		if info.Tier == "2K" {
 			tiers = append(tiers, "2K")
 		}
-		if info.LayerDecomposition {
-			snapshot.MaxUnits = 17
-		}
+	}
+	if snapshot.InputImages > 0 {
+		tiers = append(tiers, "input")
 	}
 	for _, tier := range tiers {
 		r := &OpenAIForwardResult{AudioUsage: &AudioUsage{Mode: tier, DurationOrUnits: 1}}
@@ -127,6 +130,10 @@ func (s *OpenAIGatewayService) PrepayDoneBotAPIMart(ctx context.Context, key *AP
 			r.AudioUsage = nil
 			r.ImageCount = 1
 			r.ImageSize = tier
+			if tier == "input" {
+				r.ImageCount = 0
+				r.ImageInputCount = 1
+			}
 		}
 		cost, err := s.calculateAPIMartUsageCost(ctx, key, r, firstNonEmpty(info.BillingModel, info.Model), imageRate, rate)
 		if err != nil {
@@ -223,10 +230,8 @@ func (s *OpenAIGatewayService) doneBotAPIMartCandidatePriceSnapshot(ctx context.
 	if endpoint == APIMartImages {
 		snapshot.Kind = "image"
 		snapshot.RateMultiplier = imageRate
-		snapshot.MaxUnits = 1
-		if info.LayerDecomposition {
-			snapshot.MaxUnits = 17
-		}
+		snapshot.MaxUnits = info.Units
+		snapshot.InputImages = info.InputImages
 	}
 	if snapshot.MaxUnits <= 0 {
 		return DoneBotMediaCandidatePriceSnapshot{}, ErrDoneBotMediaInvalid
@@ -238,12 +243,19 @@ func (s *OpenAIGatewayService) doneBotAPIMartCandidatePriceSnapshot(ctx context.
 			tiers = append(tiers, "2K")
 		}
 	}
+	if snapshot.InputImages > 0 {
+		tiers = append(tiers, "input")
+	}
 	for _, tier := range tiers {
 		result := &OpenAIForwardResult{AudioUsage: &AudioUsage{Mode: tier, DurationOrUnits: 1}}
 		if endpoint == APIMartImages {
 			result.AudioUsage = nil
 			result.ImageCount = 1
 			result.ImageSize = tier
+			if tier == "input" {
+				result.ImageCount = 0
+				result.ImageInputCount = 1
+			}
 		}
 		cost, err := s.calculateAPIMartUsageCost(ctx, key, result, firstNonEmpty(info.BillingModel, info.Model), imageRate, rate)
 		if err != nil {
@@ -298,19 +310,36 @@ func (s *OpenAIGatewayService) doneBotImageCandidatePriceSnapshot(ctx context.Co
 }
 
 func doneBotMediaCandidatePriceBound(snapshot DoneBotMediaCandidatePriceSnapshot) (decimal.Decimal, decimal.Decimal, error) {
-	if snapshot.MaxUnits <= 0 || math.IsNaN(snapshot.MaxUnits) || math.IsInf(snapshot.MaxUnits, 0) || len(snapshot.Rates) == 0 {
+	return doneBotMediaPriceBound(snapshot.Rates, snapshot.MaxUnits, snapshot.InputImages)
+}
+
+func doneBotMediaPriceBound(rates map[string]DoneBotMediaUnitPrice, maxUnits float64, inputImages int) (decimal.Decimal, decimal.Decimal, error) {
+	if maxUnits <= 0 || math.IsNaN(maxUnits) || math.IsInf(maxUnits, 0) || len(rates) == 0 || inputImages < 0 {
 		return decimal.Zero, decimal.Zero, ErrDoneBotMediaInvalid
 	}
-	var actual, total decimal.Decimal
-	for _, price := range snapshot.Rates {
+	actual, total := decimal.Zero, decimal.Zero
+	for tier, price := range rates {
 		if price.Actual < 0 || price.Total < 0 || math.IsNaN(price.Actual) || math.IsInf(price.Actual, 0) || math.IsNaN(price.Total) || math.IsInf(price.Total, 0) {
 			return decimal.Zero, decimal.Zero, ErrModelPricingUnavailable
+		}
+		if tier == "input" {
+			continue
 		}
 		actual = decimal.Max(actual, decimal.NewFromFloat(price.Actual))
 		total = decimal.Max(total, decimal.NewFromFloat(price.Total))
 	}
-	units := decimal.NewFromFloat(snapshot.MaxUnits)
-	return actual.Mul(units).RoundCeil(UsageBillingMonetaryScale), total.Mul(units).RoundCeil(UsageBillingMonetaryScale), nil
+	units := decimal.NewFromFloat(maxUnits)
+	actual, total = actual.Mul(units), total.Mul(units)
+	if inputImages > 0 {
+		input, ok := rates["input"]
+		if !ok {
+			return decimal.Zero, decimal.Zero, ErrModelPricingUnavailable
+		}
+		count := decimal.NewFromInt(int64(inputImages))
+		actual = actual.Add(decimal.NewFromFloat(input.Actual).Mul(count))
+		total = total.Add(decimal.NewFromFloat(input.Total).Mul(count))
+	}
+	return actual.RoundCeil(UsageBillingMonetaryScale), total.RoundCeil(UsageBillingMonetaryScale), nil
 }
 
 func doneBotMediaSnapshotForModel(snapshot DoneBotMediaPriceSnapshot, model string) DoneBotMediaPriceSnapshot {
@@ -322,6 +351,7 @@ func doneBotMediaSnapshotForModel(snapshot DoneBotMediaPriceSnapshot, model stri
 		Kind:                  candidate.Kind,
 		Rates:                 candidate.Rates,
 		MaxUnits:              candidate.MaxUnits,
+		InputImages:           candidate.InputImages,
 		InputSeconds:          candidate.InputSeconds,
 		Tier:                  candidate.Tier,
 		RateMultiplier:        candidate.RateMultiplier,
@@ -407,19 +437,11 @@ func (s *OpenAIGatewayService) prepayDoneBotMedia(ctx context.Context, key *APIK
 	if key == nil || key.User == nil || key.Group == nil || key.Group.IsSubscriptionType() || account == nil {
 		return ErrDoneBotMediaInvalid
 	}
-	amount, total := decimal.Zero, decimal.Zero
-	for _, price := range snapshot.Rates {
-		if price.Actual < 0 || price.Total < 0 || math.IsNaN(price.Actual) || math.IsInf(price.Actual, 0) || math.IsNaN(price.Total) || math.IsInf(price.Total, 0) {
-			return ErrModelPricingUnavailable
-		}
-		amount = decimal.Max(amount, decimal.NewFromFloat(price.Actual))
-		total = decimal.Max(total, decimal.NewFromFloat(price.Total))
+	amount, total, boundErr := doneBotMediaPriceBound(snapshot.Rates, snapshot.MaxUnits, snapshot.InputImages)
+	if boundErr != nil {
+		return boundErr
 	}
-	if snapshot.MaxUnits <= 0 || math.IsNaN(snapshot.MaxUnits) || math.IsInf(snapshot.MaxUnits, 0) {
-		return ErrDoneBotMediaInvalid
-	}
-	amount = amount.Mul(decimal.NewFromFloat(snapshot.MaxUnits)).RoundCeil(UsageBillingMonetaryScale)
-	total = total.Mul(decimal.NewFromFloat(snapshot.MaxUnits)).RoundCeil(UsageBillingMonetaryScale)
+
 	a, _ := amount.Float64()
 	t, _ := total.Float64()
 	err := repo.PrepayDoneBotMedia(ctx, &DoneBotMediaPrecharge{ReceiptID: DoneBotMediaReceiptID(ctx), UserID: key.UserID, APIKeyID: key.ID, AccountID: account.ID, GroupID: key.Group.ID, Model: model, Kind: snapshot.Kind, Amount: a, TotalAmount: t, Snapshot: snapshot})
@@ -516,6 +538,18 @@ func doneBotPrepaidActual(snapshot DoneBotMediaPriceSnapshot, result *OpenAIForw
 		}
 		if units != float64(result.ImageCount) {
 			return nil, ErrDoneBotMediaReconciliation
+		}
+		if result.ImageInputCount != snapshot.InputImages {
+			return nil, ErrDoneBotMediaReconciliation
+		}
+		if snapshot.InputImages > 0 {
+			price, ok := snapshot.Rates["input"]
+			if !ok {
+				return nil, ErrDoneBotMediaReconciliation
+			}
+			count := decimal.NewFromInt(int64(snapshot.InputImages))
+			actual = actual.Add(decimal.NewFromFloat(price.Actual).Mul(count))
+			total = total.Add(decimal.NewFromFloat(price.Total).Mul(count))
 		}
 	case "video":
 		if result.VideoActualDurationSeconds <= 0 || result.VideoResolution != snapshot.Tier {

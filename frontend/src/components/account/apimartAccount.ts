@@ -8,6 +8,7 @@ export const APIMART_SERVICES = [
 export type ApimartServiceKind = typeof APIMART_SERVICES[number]['kind']
 
 export const APIMART_MODELS = [
+	{ id: 'seedream-5-5', label: 'Seedream 5.5', capability: 'apimart_images', kind: 'image' },
   { id: 'seedream-5-0-flash', label: 'Seedream 5.0 Flash', capability: 'apimart_images', kind: 'image' },
   { id: 'suno', label: 'Suno V6', capability: 'apimart_suno', kind: 'music' },
   { id: 'gpt-4o-mini-tts', label: 'GPT-4o Mini TTS', capability: 'apimart_tts', kind: 'tts' }

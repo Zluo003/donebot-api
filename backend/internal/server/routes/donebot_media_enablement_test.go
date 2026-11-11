@@ -37,11 +37,10 @@ func TestDoneBotMediaRoutesReachAuthenticationWithLegacySwitchesDisabled(t *test
 		{http.MethodPost, "/v1/contents/generations/tasks"},
 		{http.MethodPost, "/contents/generations/tasks"},
 		{http.MethodGet, "/api/v3/contents/generations/tasks/task-1"},
+		{http.MethodGet, "/v1/donebot/media/jobs/task-1"},
+		{http.MethodGet, "/v1/donebot/media/jobs/by-idempotency/key-1"},
 		{http.MethodPost, "/v1/music/generations"},
 		{http.MethodGet, "/v1/music/tasks/task-1"},
-		{http.MethodPost, "/v1/donebot/media/intent"},
-		{http.MethodGet, "/v1/donebot/media/jobs/dbtask_0123456789abcdef"},
-		{http.MethodGet, "/v1/donebot/media/jobs/by-idempotency/fixture-key"},
 		{http.MethodPost, "/v1/audio/speech"},
 		{http.MethodPost, "/v1/tts"},
 		{http.MethodPost, "/tts"},
@@ -56,4 +55,17 @@ func TestDoneBotMediaRoutesReachAuthenticationWithLegacySwitchesDisabled(t *test
 			require.Equal(t, http.StatusUnauthorized, response.Code, response.Body.String())
 		})
 	}
+}
+
+func TestDoneBotGatewayDoesNotExposeIntentPlanningRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterGatewayRoutes(router, &handler.Handlers{Gateway: &handler.GatewayHandler{}, OpenAIGateway: &handler.OpenAIGatewayHandler{}},
+		middleware.APIKeyAuthMiddleware(func(c *gin.Context) { c.Next() }), nil, nil, nil, nil, nil, &config.Config{})
+	for _, route := range router.Routes() {
+		require.NotContains(t, route.Path, "/donebot/media/intent")
+	}
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/donebot/media/intent", strings.NewReader(`{"intent":{"kind":"image"}}`)))
+	require.Equal(t, http.StatusNotFound, recorder.Code)
 }

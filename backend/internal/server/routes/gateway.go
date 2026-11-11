@@ -142,10 +142,10 @@ func RegisterGatewayRoutes(
 	doneBotGateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
 	registerDoneBotWebToolsRoutes(doneBotGateway, h.DoneBot)
 	if h.OpenAIGateway != nil {
-		doneBotGateway.POST("/donebot/media/intent", groupModelAllowlist, h.OpenAIGateway.DoneBotMediaIntent)
-		doneBotGateway.GET("/donebot/media/jobs/by-idempotency/:key", h.OpenAIGateway.DoneBotMediaIntentByIdempotency)
-		doneBotGateway.GET("/donebot/media/jobs/:job_id", h.OpenAIGateway.DoneBotMediaIntentJob)
+		doneBotGateway.GET("/donebot/media/jobs/by-idempotency/:key", h.OpenAIGateway.DoneBotLegacyMediaByIdempotency)
+		doneBotGateway.GET("/donebot/media/jobs/:job_id", h.OpenAIGateway.DoneBotLegacyMediaJob)
 	}
+
 	gateway.Use(groupModelAllowlist)
 	gateway.Use(compositeTarget)
 	gateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot))

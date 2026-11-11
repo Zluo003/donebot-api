@@ -334,7 +334,7 @@ func (h *OpenAIGatewayHandler) handleAPIMart(c *gin.Context, endpoint service.AP
 	}
 	if !lookup && endpoint != service.APIMartTTS {
 		taskKey = service.APIMartTaskKey(endpoint, response.TaskID)
-		p := service.APIMartPending{Endpoint: endpoint, Model: info.Model, UpstreamModel: response.Result.UpstreamModel, OriginalModel: clientRequestedModel(c, info.Model), Tier: info.Tier, Units: info.Units, CreatedAt: service.GrokVideoPendingCreatedAtNow(), LayerDecomposition: info.LayerDecomposition, BillingModel: info.BillingModel}
+		p := service.APIMartPending{Endpoint: endpoint, Model: info.Model, UpstreamModel: response.Result.UpstreamModel, OriginalModel: clientRequestedModel(c, info.Model), Tier: info.Tier, Units: info.Units, CreatedAt: service.GrokVideoPendingCreatedAtNow(), InputImages: info.InputImages, LayerDecomposition: info.LayerDecomposition, BillingModel: info.BillingModel}
 		persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 		defer persistCancel()
 		if err := h.gatewayService.BindDoneBotMediaTask(persistCtx, key.ID, taskKey); err != nil {

@@ -68,7 +68,7 @@ watch(state, value => {
 const validPrices = computed(() => drafts.value.every(validPriceDraft))
 const descriptions = computed<Record<Modality, string>>(() => ({
   llm: 'LLM 按渠道价格 × 每模型倍率计费。',
-  images: '图片按模型与尺寸逐张计费（USD / 张）。Seedream 1.5K 与 1K 使用相同价格；2K 也须配置低档价，以便按实际产出结算。',
+  images: '图片按模型与尺寸逐张计费（USD / 张）。Seedream 1.5K 与 1K 使用相同价格；2K 也须配置低档价，以便按实际产出结算。Seedream 5.5 的输入参考图单独按张计费。',
   audio: 'Suno 按版本配置每次生成价格，Max 模式为 2 倍；TTS 按百万字符配置价格。',
   video: t('admin.donebot.pricing.videoDescription')
 }))

@@ -72,6 +72,7 @@ func TestAPIMartNativeForwardingAndNoMutation(t *testing.T) {
 		endpoint             APIMartEndpoint
 		body, path, response string
 	}{
+		{APIMartImages, `{"model":"seedream-5-5","layer_decomposition":true,"image_urls":["https://cdn.example/ref.png"],"layer_decomposition_options":{"max_images":100,"text_recognition":true},"future":{"keep":true}}`, "/v1/images/generations", `{"code":200,"data":[{"status":"submitted","task_id":"task-55"}]}`},
 		{APIMartImages, `{"model":"seedream-5-0-flash","prompt":"x","size":"2K","optimize_prompt_options":{"mode":"standard"},"future":{"keep":true}}`, "/v1/images/generations", `{"code":200,"data":[{"status":"submitted","task_id":"task-image"}]}`},
 		{APIMartSuno, `{"model":"suno","version":"v6","prompt":"x","future":{"keep":true}}`, "/v1/music/generations", `{"code":200,"data":[{"status":"submitted","task_id":"task-music"}]}`},
 		{APIMartTTS, `{"model":"gpt-4o-mini-tts","input":"x","voice":"alloy","response_format":"pcm","future":{"keep":true}}`, "/v1/audio/speech", "\x00\x01\x02audio"},

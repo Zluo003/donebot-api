@@ -44,6 +44,18 @@ describe('APIMart account panel', () => {
     expect(wrapper.get<HTMLInputElement>('[data-testid="apimart-api-key"]').element.value).toBe('')
   })
 
+  it('can enable only Seedream 5.5 without enabling legacy image models', async () => {
+    const wrapper = setup()
+    await wrapper.get('[data-testid="apimart-name"]').setValue('Seedream 5.5')
+    await wrapper.get('[data-testid="apimart-api-key"]').setValue('synthetic-key')
+    for (const model of APIMART_MODELS.filter(model => model.kind === 'image')) {
+      await wrapper.get(`[data-testid="apimart-model-${model.id}"]`).setValue(model.id === 'seedream-5-5')
+    }
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ credentials: expect.objectContaining({
+      model_mapping: { 'seedream-5-5': 'seedream-5-5' }, openai_capabilities: ['apimart_images']
+    }) }))
+  })
   it('keeps existing secrets private and preserves model aliases and custom credentials', async () => {
     const wrapper = setup({ id: 2, name: 'Existing', platform: 'openai', type: 'apikey', concurrency: 3, group_ids: [7], proxy_id: 5,
       credentials: { api_key: 'must-not-display', base_url: 'https://api.apimart.ai', openai_capabilities: ['apimart_images'], model_mapping: { 'my-image': 'seedream-5-0-flash' }, future: { keep: true } }

@@ -1,169 +1,82 @@
-# DoneBot Media Intent API
+# 客户端原生媒体请求（替代已移除的 Intent API）
 
-This is the intended DoneBot v4 contract for media generation. It is a DoneBot-only
-adapter over the gateway's existing native image, video, and music routes; it does
-not replace their provider execution mechanisms. The gateway resolves a request
-from its capability catalog and available accounts. Clients submit an intent and
-do not choose a provider model, protocol, credential, or native route.
+`POST /v1/donebot/media/intent` 已移除。
+客户端不能提交语义需求让网关选模型、转换参数或组装请求。对应 planner、handler 和
+intent option 的字段映射及默认值生成代码已删除。数据库中旧任务和结算字段保留，
+以供已受理任务恢复及账单核对。`GET /v1/donebot/media/jobs/{id}`、
+`GET /v1/donebot/media/jobs/by-idempotency/{key}` 及旧产物下载地址只读保留，
+防止已有付费任务失去查询和取回结果的入口；不能据此重新开放 Intent 提交。
 
-`audio` in this API means asynchronous music generation. Text-to-speech remains
-the existing synchronous streaming endpoint and has no media prepayment or refund.
+## 职责
 
-## Submit
+DoneBot 客户端登记媒体模型能力、原生参数、默认值及限制，生成完整请求。
+网关基于 sub2api 提供注册登录、鉴权、分组授权、上游账号路由、原生协议转发、
+幂等、异步任务持久化、计费和回执。原生字段解析仅用于安全检查和计费，
+不替客户端解释自然语言或选择其他媒体模型。
 
-`POST /v1/donebot/media/intent`
+`GET /api/v1/donebot/models` 仅为客户端提供已开放模型、接口和价格等访问资料，
+不发布 `media_parameters`、`intent_options`、媒体 fallback 优先级或媒体默认模型。
+原有内部协议校验及价格可用性检查保留，不能用其为客户端组装请求。
 
-Required header: `Idempotency-Key` (1-256 visible ASCII characters). The key is
-scoped to the authenticated user and installation. Repeating the same key with
-the same request returns the same task; reusing it with different content returns
-`409 Conflict`.
+## 固定客户端模型与异步接口
 
-Request body:
+| 类型 | 客户端 model | 提交 | 查询 |
+| --- | --- | --- | --- |
+| 图片 | `seedream-5-5` | `POST /v1/images/generations` | `GET /v1/tasks/{task_id}` |
+| 视频 | `seedance-2-5` | `POST /v1/videos` | `GET /v1/videos/{task_id}` |
+| 音乐 | `suno`，`version=v6` | `POST /v1/music/generations` | `GET /v1/music/tasks/{task_id}` |
 
-```json
-{
-  "intent": { "kind": "image", "operation": "generate" },
-  "parameters": {
-    "prompt": "A studio product photograph of a red ceramic mug",
-    "options": { "aspect_ratio": "4:3", "quality": "high" },
-    "references": [{ "asset_id": "ast_0123456789abcdef0123456789abcdef", "type": "image" }]
-  }
-}
-```
+视频账号需将公开 ID `seedance-2-5` 映射至上游 `doubao-seedance-2-5-260628`，
+并给公开 ID 配置价格与分组授权；这是同一个模型的账号路由，不能换用其他模型。
+图片模型公开 ID 和上游 ID 均为 `seedream-5-5`。
 
-`kind` is `image`, `video`, or `audio`. Supported operations are image
-`generate`/`edit`, video `generate`/`edit`/`extend`, and audio `generate` only.
-The body has no provider model, adapter, credential, native protocol field, or
-arbitrary URL. `references` contains only asset IDs previously uploaded under the
-same authenticated installation. Ownership and existence are checked again at
-dispatch time. Options are translated by the gateway and must be registered for
-the selected operation. Unsupported values fail before an asynchronous task is
-queued or prepayment is taken.
+客户端提交原生 JSON，携带安装身份、Authorization 与 `Idempotency-Key`。
+图片返回 `data[0].task_id` 后立即结束提交等待；客户端在后台查询任务、下载产物并
+投递原会话。前 30 秒以 3 秒为默认查询间隔，此后 7.5 秒；失败查询单独退避。
+任务未决或结果不确定时不得换一个幂等键重复付费提交。上传参考文件仍使用原有
+`/v1/assets` 以及归属验证，原生请求中引用上传后返回的 URL。
 
-Successful submission returns `202 Accepted`:
+例如客户端直接提交：
 
 ```json
-{
-  "task_id": "0e18472d-f50b-44fa-bff8-c0340d50ea5b",
-  "receipt_id": "cb018f0a-8854-49ef-81c9-48b08d756747",
-  "kind": "image",
-  "operation": "generate",
-  "status": "queued",
-  "retry_count": 0,
-  "payment": {
-    "state": "prepaid",
-    "currency": "CNY",
-    "prepaid_amount": "2.50",
-    "actual_amount": null,
-    "refunded_amount": "0",
-    "refund_complete": false
-  },
-  "artifacts": []
-}
+{"model":"seedream-5-5","prompt":"An orange cat sticker","background":"transparent","output_format":"png","size":"2K"}
 ```
 
-Each accepted intent has one stable gateway `task_id` and one stable billing
-`receipt_id`. The same IDs remain attached to every internal model or account
-attempt. Internal retries do not create another client task, require another
-idempotency key, expose per-attempt receipt IDs, or charge the user again. The
-`retry_count` is informational and counts gateway-managed dispatch attempts; it
-does not grant the client permission to resubmit.
+参考编辑同样走 generation 请求的 `image_urls`，图层拆分加
+`layer_decomposition:true` 及可选 `layer_decomposition_options`。网关转发客户端的
+原生字段，不生成 `options`、不转换语义参数、不调用 LLM 规划。
 
-The gateway may try another eligible model/account within the same task after a
-definitive retryable failure. It must not issue another paid submission when an
-upstream task may already have been accepted or when the outcome is uncertain;
-it polls or reconciles a known upstream task instead. Invalid requests and other
-non-retryable failures terminate without model fallback. The gateway owns retry
-eligibility and attempt ordering.
+## Seedream 5.5 计费与配置
 
-## Billing
+官方契约：<https://docs.apimart.ai/cn/api-reference/images/seedream-5-5/generation>。
 
-Image, video, and music tasks accepted by this asynchronous API use one prepayment
-and one logical billing receipt for the task. The gateway reserves a conservative
-amount that covers every candidate it may select. If any selectable candidate
-cannot be priced, the request is rejected before acceptance. Changing accounts
-or models internally does not create another prepayment or receipt.
+管理员先配置 APIMart 图片账号并选择 `seedream-5-5`，为模型设置输出 `1K`（含
+1.5K）、`2K` 和 `input`（每张输入参考图）价格，再在 DoneBot 聚合分组中开放。
+仅更改代码不会部署服务、添加上游密钥、设置真实价格或改变线上开放模型。
+旧模型的账号、价格和已受理任务不会自动删除，停用由管理员配置。
 
-After success, the gateway settles the task against measured usage and returns
-any unused amount through the same receipt. After all eligible attempts end in a
-definitive failure, it refunds the task prepayment once through that receipt. An
-accepted, running, or uncertain outcome is not refunded or automatically
-resubmitted until reconciliation establishes the result. Append-only balance
-ledger movements may record the original charge and a later settlement/refund,
-but they are all associated with this one task receipt, never with individual
-attempts.
+输出按每张实际像素计费：<=2,610,000 像素为 1K 档，其余为 2K 档。
+每张输入参考图另计费，没有首张免费。图层最大图片数为 2..100，默认30，包含底图；
+按请求上限和输出档位预扣，再逐张按实际像素与实际输出数结算，输入费用单独相加。
+缺输入价格时，带参考图请求在付费提交前拒绝。缺少有效实际产出尺寸时，
+不按请求档位猜测结算，保留任务等待核对。失败和不确定任务沿用已有退款及
+核对机制，不绕过账本、不重复预扣。
 
-`payment.state` is `prepaid`, `settled`, `refunded`, or `uncertain`. Amounts are
-decimal CNY values. `actual_amount` remains `null` until actual usage is known.
-The receipt exposes the gateway user's charge only; it does not represent a
-provider balance or provider refund.
+TTS 保留 `/v1/audio/speech` 的 PCM 流与既有完成回执；它是朗读功能，不改为
+音乐任务。`gpt-4o-mini-tts` 的音色与输出格式同样登记在客户端。
 
-## Read Task
+## 验证
 
-`GET /v1/donebot/media/tasks/{task_id}` returns the same task object, refreshed
-from durable dispatch state, the single billing receipt, and persisted results.
-Status is one of `queued`, `dispatching`, `retrying`, `running`, `completed`,
-`failed`, or `uncertain`. Internal retries update this task's status and
-`retry_count`; they do not create public child tasks. `uncertain` means acceptance
-or outcome is not confirmed and must not trigger another paid submission.
+所有测试使用合成账号、价格和产物，没有真实上游密钥或付费请求：
 
-`GET /v1/donebot/media/tasks/by-idempotency/{key}` resolves the same
-owner-scoped task after a client timeout. The path value is the original opaque
-key and is never logged or stored in plaintext; the server looks it up by its
-scoped hash. `404` means no task was accepted with that key. Any other failure
-means the client should continue querying and must not submit the same paid
-operation again with a new key.
-
-## Artifacts
-
-The gateway fetches each completed result and saves it to gateway-controlled
-storage before marking the task complete. Generated outputs use the retention
-period configured for generated storage in the admin panel. The client should
-download completed artifacts promptly and persist them locally. This output
-retention does not change the existing upload and ownership flow for input
-references.
-
-Each artifact has exactly these stable fields:
-
-```json
-{
-  "id": "artifact_0e18472df50b44fa",
-  "kind": "image",
-  "mime": "image/png",
-  "name": "generated-image.png",
-  "download_url": "/v1/donebot/media/tasks/0e18472d-f50b-44fa-bff8-c0340d50ea5b/artifacts/4f4e2c6f-caca-4a13-a42a-4f5f8cc9f882"
-}
+```sh
+cd backend
+go test -tags=unit ./internal/service ./internal/handler ./internal/server/routes ./internal/server/middleware -run 'Test(APIMart|DoneBot|GatewayRoutesGroup|PromptAuditRoute)' -count=1
+cd ../frontend
+pnpm exec vitest run src/components/account/__tests__/ApimartAccountModal.spec.ts src/components/admin/donebot/__tests__/ModelPricingPanel.spec.ts --minWorkers=1 --maxWorkers=1
+pnpm exec vue-tsc --noEmit
 ```
 
-`download_url` is a fixed relative capability path composed from the random task
-UUID and random artifact UUID. Download requires no API key and carries no
-signature or expiring query token. The server verifies that the artifact belongs
-to the task in the path and that its retention period, configured for generated
-storage in the admin panel, has not expired, then streams the stored bytes with
-the recorded content type. It never redirects to a provider or object-store URL.
-Invalid bindings and expired artifacts return the not-found response. The two
-random UUIDs make the path unguessable; the API must never log or expose provider
-or object-store URLs in its place.
-
-`GET /v1/donebot/media/tasks/{task_id}/artifacts/{artifact_id}` returns the
-stored bytes and exact `Content-Type`, without API-key authentication. Unknown
-task/artifact bindings and expired outputs return not found.
-
-## Text-to-Speech
-
-`POST /v1/audio/speech` remains the existing synchronous streaming endpoint; it
-does not create an asynchronous media task and does not use media prepayment or
-refund. The gateway streams native audio bytes and records actual usage through
-the existing usage-billing path after the stream completes. `X-DoneBot-Receipt-ID`
-identifies that stream's usage receipt; clients can query
-`GET /api/v1/donebot/receipts/{receipt_id}` after local audio EOF to confirm
-settlement. An interrupted or uncertain stream is not proof of a successful
-charge or a safe reason to resend a paid request.
-
-## Errors
-
-Malformed intent/options/references return `400` or `422` before billing.
-Authentication and ownership checks retain the existing API-key authentication
-and not-found behavior. Idempotency-key reuse with different content returns
-`409`. A task that is accepted or has an uncertain upstream outcome is never
-restarted as a new paid task by an idempotency retry.
+覆盖原生请求透传、5.5参数模式、输入计费、图层实际像素结算、旧入口拒绝、
+目录不下发媒体能力，以及管理界面的5.5模型与输入价格保存。
+DoneBot 仓库另有隔离 HOME/data/server 的媒体端到端验证。

@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -62,6 +64,7 @@ func (h *DoneBotHandler) Models(c *gin.Context) {
 	if response.ErrorFrom(c, err) {
 		return
 	}
+	catalog = doneBotForwardingCatalog(catalog)
 	c.Header("ETag", catalog.ETag)
 	for _, tag := range strings.Split(c.GetHeader("If-None-Match"), ",") {
 		tag = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(tag), "W/"))
@@ -119,4 +122,22 @@ func (h *DoneBotHandler) Receipt(c *gin.Context) {
 	if !response.ErrorFrom(c, err) {
 		c.JSON(http.StatusOK, receipt)
 	}
+}
+
+func doneBotForwardingCatalog(source *service.DoneBotCatalogResult) *service.DoneBotCatalogResult {
+	catalog := *source
+	catalog.CatalogVersion = "native-" + source.CatalogVersion
+	catalog.ETag = `"native-` + strings.Trim(source.ETag, `"`) + `"`
+	catalog.Models = slices.Clone(source.Models)
+	catalog.Defaults = maps.Clone(source.Defaults)
+	for key := range catalog.Defaults {
+		if key == "openai.images" || key == "openai.videos" || key == "openai.music" {
+			delete(catalog.Defaults, key)
+		}
+	}
+	for i := range catalog.Models {
+		catalog.Models[i].MediaParameters = nil
+		catalog.Models[i].MediaFallbackPriority = 0
+	}
+	return &catalog
 }

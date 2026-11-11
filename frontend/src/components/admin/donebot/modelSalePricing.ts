@@ -21,6 +21,7 @@ export function createModelPriceDraft(row: DoneBotModel, kind: Modality): ModelP
   } else if (kind === 'images') {
     const resolutions = row.image_resolutions ?? ['1K', '2K', '4K']
     fields = resolutions.filter(size => size !== '1.5K').map(size => ({ key: `image-${size}`, label: size === '1K' && resolutions.includes('1.5K') ? '1K / 1.5K' : size, factor: 1, value: display(p.image_prices?.[size] ?? row.effective_image_prices?.[size]) }))
+    if (row.image_input_billing) fields.push({ key: 'image-input', label: '输入参考图（每张）', factor: 1, value: display(p.image_prices?.input ?? row.effective_image_prices?.input) })
   } else if (kind === 'audio') {
     const tiers = p.tier_prices ?? row.effective_tier_prices ?? {}
     const defaults = row.audio_price_unit === 'million_characters' || row.model === 'gpt-4o-mini-tts' || 'tts' in tiers ? ['tts'] : ['v6', 'v6-wild', 'v6-mini', 'custom-model']

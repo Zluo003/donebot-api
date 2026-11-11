@@ -24,6 +24,9 @@ var apimartImagesAdapter = apimartNativeAdapter{
 }
 
 func parseAPIMartImageRequest(root gjson.Result, info APIMartRequestInfo) (APIMartRequestInfo, error) {
+	if info.Model == "seedream-5-5" {
+		return parseSeedream55Request(root, info)
+	}
 	if err := validateAPIMartNativeFields(root, []string{"prompt", "size", "resolution", "output_format", "layer_decomposition", "nsfw_check"}, []string{"layer_decomposition", "nsfw_check", "watermark"}); err != nil {
 		return info, err
 	}
@@ -117,7 +120,9 @@ func completeAPIMartImages(p *APIMartPending, root gjson.Result, r *OpenAIForwar
 			}
 			tier := p.Tier
 			if w, h, ok := parseImageBillingDimensions(size); ok && w > 0 && h > 0 {
-				tier = apimartImageAreaTier(int64(w) * int64(h))
+				tier = apimartModelImageAreaTier(p.UpstreamModel, p.Model, int64(w)*int64(h))
+			} else if p.UpstreamModel == seedream55Model || p.Model == seedream55Model {
+				return false
 			}
 			breakdown[tier]++
 			sizes = append(sizes, size)
@@ -131,6 +136,7 @@ func completeAPIMartImages(p *APIMartPending, root gjson.Result, r *OpenAIForwar
 		return false
 	}
 	r.ImageCount = count
+	r.ImageInputCount = p.InputImages
 	r.ImageSize = p.Tier
 	r.ImageInputSize = p.Tier
 	r.ImageSizeSource = ImageSizeSourceOutput

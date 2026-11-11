@@ -81,7 +81,7 @@ func TestGatewayRoutesGroupModelAllowlistMountedOnEveryGatewayRoute(t *testing.T
 		"DoneBot routes must branch after API key authentication, while ordinary gateway routes retain allowlist-before-composite ordering")
 	doneBotRoutes := source[doneBotGroup:gatewayAllowlist]
 	require.Contains(t, doneBotRoutes, `registerDoneBotWebToolsRoutes(doneBotGateway`)
-	require.Contains(t, doneBotRoutes, `doneBotGateway.POST("/donebot/media/intent", groupModelAllowlist,`)
+	require.NotContains(t, source, `"/donebot/media/intent"`)
 
 	chains := []struct {
 		group     string

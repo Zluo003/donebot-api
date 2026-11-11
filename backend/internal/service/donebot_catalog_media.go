@@ -1,36 +1,26 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
-	"math"
 	"reflect"
 	"slices"
 	"strings"
 )
 
 type DoneBotCatalogMediaParameters struct {
-	Operations      []string                             `json:"operations,omitempty"`
-	Sizes           []string                             `json:"sizes,omitempty"`
-	AspectRatios    []string                             `json:"aspect_ratios,omitempty"`
-	Resolutions     []string                             `json:"resolutions,omitempty"`
-	Quality         []string                             `json:"quality,omitempty"`
-	DurationSeconds *DoneBotCatalogDuration              `json:"duration_seconds,omitempty"`
-	Voices          []string                             `json:"voices,omitempty"`
-	Formats         []string                             `json:"formats,omitempty"`
-	MusicVersions   []string                             `json:"music_versions,omitempty"`
-	IntentOptions   map[string]DoneBotCatalogMediaOption `json:"intent_options,omitempty"`
-	Protocol        *DoneBotCatalogMediaProtocol         `json:"protocol,omitempty"`
-}
-
-type DoneBotCatalogMediaOption struct {
-	Type        string   `json:"type"`
-	NativeField string   `json:"native_field"`
-	Values      []string `json:"values,omitempty"`
-	Min         *int     `json:"min,omitempty"`
-	Max         *int     `json:"max,omitempty"`
-	Step        int      `json:"step,omitempty"`
-	Automatic   *int     `json:"automatic_value,omitempty"`
-	Default     any      `json:"default,omitempty"`
+	// RetiredIntentOptions accepts persisted configuration without applying request defaults or field mappings.
+	RetiredIntentOptions json.RawMessage              `json:"intent_options,omitempty"`
+	Operations           []string                     `json:"operations,omitempty"`
+	Sizes                []string                     `json:"sizes,omitempty"`
+	AspectRatios         []string                     `json:"aspect_ratios,omitempty"`
+	Resolutions          []string                     `json:"resolutions,omitempty"`
+	Quality              []string                     `json:"quality,omitempty"`
+	DurationSeconds      *DoneBotCatalogDuration      `json:"duration_seconds,omitempty"`
+	Voices               []string                     `json:"voices,omitempty"`
+	Formats              []string                     `json:"formats,omitempty"`
+	MusicVersions        []string                     `json:"music_versions,omitempty"`
+	Protocol             *DoneBotCatalogMediaProtocol `json:"protocol,omitempty"`
 }
 
 type DoneBotCatalogDuration struct {
@@ -41,9 +31,8 @@ type DoneBotCatalogDuration struct {
 	RequiresCustom bool `json:"requires_custom,omitempty"`
 }
 
-// DoneBotCatalogMediaProtocol identifies a client adapter from a fixed allowlist.
-// Paths describe that adapter's contract; clients must not execute arbitrary
-// paths or JSON selectors received from a catalog.
+// DoneBotCatalogMediaProtocol describes fixed native routes used for forwarding
+// validation. Configured metadata must not add executable paths or selectors.
 type DoneBotCatalogMediaProtocol struct {
 	Adapter    string                       `json:"adapter"`
 	Submit     DoneBotCatalogMediaEndpoint  `json:"submit"`
@@ -114,60 +103,6 @@ func validateDoneBotMediaMetadata(media *DoneBotCatalogMediaParameters) error {
 			return fmt.Errorf("unknown media operation")
 		}
 	}
-	for name, option := range media.IntentOptions {
-		if !doneBotMediaIntentOptionName(name) || option.NativeField == "" || strings.TrimSpace(option.NativeField) != option.NativeField {
-			return fmt.Errorf("invalid media intent option")
-		}
-		expected, ok := doneBotMediaIntentNativeField(media.ProtocolAdapter(), name)
-		if media.Protocol == nil {
-			ok = doneBotMediaNativeFieldAllowed(name, option.NativeField)
-			expected = option.NativeField
-		}
-		if !ok || option.NativeField != expected {
-			return fmt.Errorf("media intent option has an unsafe native field")
-		}
-		switch option.Type {
-		case "enum":
-			if len(option.Values) == 0 || option.Min != nil || option.Max != nil || option.Step != 0 || option.Automatic != nil {
-				return fmt.Errorf("invalid enum media intent option")
-			}
-			for i, value := range option.Values {
-				if value == "" || strings.TrimSpace(value) != value || slices.Contains(option.Values[:i], value) || !doneBotMediaOptionValueAvailable(media, name, value) {
-					return fmt.Errorf("media intent option expands native choices")
-				}
-			}
-			if option.Default != nil {
-				value, ok := option.Default.(string)
-				if !ok || !slices.Contains(option.Values, value) {
-					return fmt.Errorf("invalid media intent option default")
-				}
-			}
-		case "integer":
-			if option.Min == nil || option.Max == nil || *option.Min < 0 || *option.Max < *option.Min || *option.Max > 3600 || option.Step < 1 || (*option.Max-*option.Min)%option.Step != 0 || len(option.Values) != 0 || option.Automatic != nil && *option.Automatic != -1 {
-				return fmt.Errorf("invalid integer media intent option")
-			}
-			if option.Automatic != nil && media.DurationSeconds != nil && !media.DurationSeconds.Automatic {
-				return fmt.Errorf("media intent option expands automatic duration")
-			}
-			if option.Default != nil {
-				value, ok := option.Default.(float64)
-				if !ok || math.Trunc(value) != value || (int(value) < *option.Min || int(value) > *option.Max || (int(value)-*option.Min)%option.Step != 0) && (option.Automatic == nil || int(value) != *option.Automatic) {
-					return fmt.Errorf("invalid media intent option default")
-				}
-			}
-		case "boolean":
-			if option.Min != nil || option.Max != nil || option.Step != 0 || option.Automatic != nil || len(option.Values) != 0 {
-				return fmt.Errorf("invalid boolean media intent option")
-			}
-			if option.Default != nil {
-				if _, ok := option.Default.(bool); !ok {
-					return fmt.Errorf("invalid media intent option default")
-				}
-			}
-		default:
-			return fmt.Errorf("unknown media intent option type")
-		}
-	}
 	if duration := media.DurationSeconds; duration != nil {
 		if duration.Min < 1 || duration.Max < duration.Min || duration.Max > 3600 || duration.Step < 1 || duration.Step > duration.Max-duration.Min+1 || (duration.Max-duration.Min)%duration.Step != 0 {
 			return fmt.Errorf("invalid media duration range")
@@ -180,164 +115,6 @@ func validateDoneBotMediaMetadata(media *DoneBotCatalogMediaParameters) error {
 		}
 	}
 	return nil
-}
-
-func (media *DoneBotCatalogMediaParameters) ProtocolAdapter() string {
-	if media == nil || media.Protocol == nil {
-		return ""
-	}
-	return media.Protocol.Adapter
-}
-
-func doneBotMediaIntentOptionName(name string) bool {
-	return slices.Contains([]string{"size", "aspect_ratio", "resolution", "duration", "format", "quality", "version", "voice", "custom", "max_mode", "instrumental", "auto_lyrics"}, name)
-}
-
-func doneBotMediaIntentNativeField(adapter, name string) (string, bool) {
-	fields := map[string]map[string]string{
-		"openai.images.v1":        {"size": "size", "format": "output_format", "quality": "quality"},
-		"donebot.images.async.v1": {"size": "size", "format": "output_format", "quality": "quality"},
-		"apimart.images.v1":       {"size": "size", "resolution": "resolution", "format": "output_format"},
-		"seedance.videos.v1":      {"aspect_ratio": "ratio", "resolution": "resolution", "duration": "duration"},
-		"apimart.music.v1":        {"version": "version", "format": "audio_format", "duration": "duration", "custom": "custom", "max_mode": "max_mode", "instrumental": "instrumental", "auto_lyrics": "auto_lyrics"},
-		"apimart.speech.v1":       {"voice": "voice", "format": "response_format"},
-	}
-	field, ok := fields[adapter][name]
-	return field, ok
-}
-
-func doneBotMediaNativeFieldAllowed(name, field string) bool {
-	for _, adapter := range []string{"openai.images.v1", "donebot.images.async.v1", "apimart.images.v1", "seedance.videos.v1", "apimart.music.v1", "apimart.speech.v1"} {
-		if expected, ok := doneBotMediaIntentNativeField(adapter, name); ok && expected == field {
-			return true
-		}
-	}
-	return false
-}
-
-func doneBotMediaOptionValueAvailable(media *DoneBotCatalogMediaParameters, name, value string) bool {
-	switch name {
-	case "size":
-		return len(media.Sizes) == 0 && len(media.AspectRatios) == 0 || slices.Contains(media.Sizes, value) || slices.Contains(media.AspectRatios, value)
-	case "aspect_ratio":
-		return len(media.AspectRatios) == 0 || slices.Contains(media.AspectRatios, value)
-	case "resolution":
-		return len(media.Resolutions) == 0 || slices.Contains(media.Resolutions, value)
-	case "format":
-		return len(media.Formats) == 0 || slices.Contains(media.Formats, value)
-	case "quality":
-		return len(media.Quality) == 0 || slices.Contains(media.Quality, value)
-	case "version":
-		return len(media.MusicVersions) == 0 || slices.Contains(media.MusicVersions, value)
-	case "voice":
-		return len(media.Voices) == 0 || slices.Contains(media.Voices, value)
-	default:
-		return false
-	}
-}
-
-func doneBotMediaIntentOptions(media *DoneBotCatalogMediaParameters) map[string]DoneBotCatalogMediaOption {
-	if media == nil || media.Protocol == nil {
-		return nil
-	}
-	options := map[string]DoneBotCatalogMediaOption{}
-	addEnum := func(name string, values []string, native, defaultValue string) {
-		if len(values) == 0 {
-			return
-		}
-		option := DoneBotCatalogMediaOption{Type: "enum", NativeField: native, Values: slices.Clone(values)}
-		if defaultValue != "" && slices.Contains(values, defaultValue) {
-			option.Default = defaultValue
-		}
-		options[name] = option
-	}
-	addBool := func(name, native string) {
-		options[name] = DoneBotCatalogMediaOption{Type: "boolean", NativeField: native, Default: false}
-	}
-	switch media.Protocol.Adapter {
-	case "openai.images.v1", "donebot.images.async.v1":
-		addEnum("size", media.Sizes, "size", doneBotDefaultImageSize(media))
-		addEnum("quality", media.Quality, "quality", "")
-		addEnum("format", media.Formats, "output_format", firstDoneBotMediaFormat(media.Formats))
-	case "apimart.images.v1":
-		sizes := slices.Clone(media.Sizes)
-		for _, ratio := range media.AspectRatios {
-			if !slices.Contains(sizes, ratio) {
-				sizes = append(sizes, ratio)
-			}
-		}
-		addEnum("size", sizes, "size", doneBotDefaultImageSize(media))
-		addEnum("resolution", media.Resolutions, "resolution", "")
-		addEnum("format", media.Formats, "output_format", firstDoneBotMediaFormat(media.Formats))
-	case "seedance.videos.v1":
-		addEnum("aspect_ratio", media.AspectRatios, "ratio", doneBotDefaultVideoRatio(media.AspectRatios))
-		addEnum("resolution", media.Resolutions, "resolution", doneBotDefaultVideoResolution(media.Resolutions))
-		if duration := media.DurationSeconds; duration != nil {
-			defaultValue := any(duration.Min)
-			option := DoneBotCatalogMediaOption{Type: "integer", NativeField: "duration", Min: &duration.Min, Max: &duration.Max, Step: duration.Step, Default: defaultValue}
-			if duration.Automatic {
-				automatic := -1
-				option.Automatic, option.Default = &automatic, automatic
-			}
-			options["duration"] = option
-		}
-	case "apimart.music.v1":
-		addEnum("version", media.MusicVersions, "version", firstDoneBotMediaChoice(media.MusicVersions))
-		addEnum("format", media.Formats, "audio_format", firstDoneBotMediaFormat(media.Formats))
-		if duration := media.DurationSeconds; duration != nil {
-			option := DoneBotCatalogMediaOption{Type: "integer", NativeField: "duration", Min: &duration.Min, Max: &duration.Max, Step: duration.Step}
-			if !duration.RequiresCustom {
-				option.Default = duration.Min
-			}
-			options["duration"] = option
-		}
-		addBool("custom", "custom")
-		addBool("max_mode", "max_mode")
-		addBool("instrumental", "instrumental")
-		addBool("auto_lyrics", "auto_lyrics")
-	case "apimart.speech.v1":
-		addEnum("voice", media.Voices, "voice", firstDoneBotMediaChoice(media.Voices))
-		addEnum("format", media.Formats, "response_format", firstDoneBotMediaFormat(media.Formats))
-	}
-	return options
-}
-
-func firstDoneBotMediaChoice(values []string) string {
-	if len(values) == 0 {
-		return ""
-	}
-	return values[0]
-}
-
-func firstDoneBotMediaFormat(values []string) string {
-	if slices.Contains(values, "png") {
-		return "png"
-	}
-	if slices.Contains(values, "mp3") {
-		return "mp3"
-	}
-	return firstDoneBotMediaChoice(values)
-}
-
-func doneBotDefaultImageSize(media *DoneBotCatalogMediaParameters) string {
-	if slices.Contains(media.Sizes, "auto") {
-		return "auto"
-	}
-	return firstDoneBotMediaChoice(media.Sizes)
-}
-
-func doneBotDefaultVideoRatio(values []string) string {
-	if slices.Contains(values, "16:9") {
-		return "16:9"
-	}
-	return firstDoneBotMediaChoice(values)
-}
-
-func doneBotDefaultVideoResolution(values []string) string {
-	if slices.Contains(values, "720p") {
-		return "720p"
-	}
-	return firstDoneBotMediaChoice(values)
 }
 
 func doneBotPublicMediaParameters(groupID int64, row DoneBotModel, accounts []Account, routes []CompositeModelRoute, configured *DoneBotCatalogMediaParameters) (*DoneBotCatalogMediaParameters, error) {
@@ -422,10 +199,6 @@ func doneBotPublicMediaParameters(groupID int64, row DoneBotModel, accounts []Ac
 		common.Formats = append(common.Formats, "gif")
 	}
 	if err := doneBotRestrictMediaParameters(common, configured); err != nil {
-		return nil, err
-	}
-	common.IntentOptions = doneBotMediaIntentOptions(common)
-	if err := doneBotRestrictMediaIntentOptions(common, configured); err != nil {
 		return nil, err
 	}
 	if row.Kind == "video" && len(common.Resolutions) == 0 || row.Kind == "audio" && row.AudioPriceUnit == "request" && len(common.MusicVersions) == 0 {
@@ -579,48 +352,6 @@ func doneBotRestrictMediaParameters(media, configured *DoneBotCatalogMediaParame
 	}
 	if configured.Protocol != nil && !reflect.DeepEqual(configured.Protocol, media.Protocol) {
 		return fmt.Errorf("media metadata cannot change native adapter")
-	}
-	return nil
-}
-
-func doneBotRestrictMediaIntentOptions(media, configured *DoneBotCatalogMediaParameters) error {
-	if configured == nil || len(configured.IntentOptions) == 0 {
-		return nil
-	}
-	for name, restricted := range configured.IntentOptions {
-		actual, ok := media.IntentOptions[name]
-		if !ok || actual.Type != restricted.Type || actual.NativeField != restricted.NativeField {
-			return fmt.Errorf("media intent option is not supported by the native adapter")
-		}
-		switch actual.Type {
-		case "enum":
-			for _, value := range restricted.Values {
-				if !slices.Contains(actual.Values, value) {
-					return fmt.Errorf("media intent option expands native choices")
-				}
-			}
-			actual.Values = slices.Clone(restricted.Values)
-			if restricted.Default != nil {
-				actual.Default = restricted.Default
-			} else if defaultValue, ok := actual.Default.(string); ok && !slices.Contains(actual.Values, defaultValue) {
-				actual.Default = nil
-			}
-		case "integer":
-			if restricted.Min == nil || restricted.Max == nil || actual.Min == nil || actual.Max == nil || *restricted.Min < *actual.Min || *restricted.Max > *actual.Max || restricted.Step%actual.Step != 0 || (*restricted.Min-*actual.Min)%actual.Step != 0 || restricted.Automatic != nil && actual.Automatic == nil {
-				return fmt.Errorf("media intent option expands native range")
-			}
-			actual.Min, actual.Max, actual.Step, actual.Automatic = restricted.Min, restricted.Max, restricted.Step, restricted.Automatic
-			if restricted.Default != nil {
-				actual.Default = restricted.Default
-			} else {
-				actual.Default = nil
-			}
-		case "boolean":
-			if restricted.Default != nil {
-				actual.Default = restricted.Default
-			}
-		}
-		media.IntentOptions[name] = actual
 	}
 	return nil
 }

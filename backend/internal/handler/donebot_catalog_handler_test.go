@@ -62,8 +62,8 @@ func TestDoneBotCatalogChecksInstallationScopeBeforeConditionalResponse(t *testi
 		status     int
 	}{
 		{"fresh", "", http.StatusOK},
-		{"same scope", `"scoped-version"`, http.StatusNotModified},
-		{"weak validator", `W/"scoped-version"`, http.StatusNotModified},
+		{"same scope", `"native-scoped-version"`, http.StatusNotModified},
+		{"weak validator", `W/"native-scoped-version"`, http.StatusNotModified},
 		{"wildcard", "*", http.StatusNotModified},
 		{"different version", `"old-version"`, http.StatusOK},
 	} {
@@ -74,7 +74,7 @@ func TestDoneBotCatalogChecksInstallationScopeBeforeConditionalResponse(t *testi
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
 			require.Equal(t, tc.status, response.Code, response.Body.String())
-			require.Equal(t, `"scoped-version"`, response.Header().Get("ETag"))
+			require.Equal(t, `"native-scoped-version"`, response.Header().Get("ETag"))
 			require.Equal(t, "private, no-cache", response.Header().Get("Cache-Control"))
 			require.Equal(t, "Authorization, X-DoneBot-Installation", response.Header().Get("Vary"))
 			require.EqualValues(t, 7, stub.userID)
@@ -159,4 +159,17 @@ func TestDoneBotPendingReceiptReturnsRetryAfterWithoutCaching(t *testing.T) {
 	require.Equal(t, "3", response.Header().Get("Retry-After"))
 	require.Equal(t, "no-store", response.Header().Get("Cache-Control"))
 	require.Equal(t, "not-yet-persisted", stub.receiptID)
+}
+
+func TestDoneBotForwardingCatalogDoesNotPublishMediaCapabilityOrSelectionRules(t *testing.T) {
+	source := &service.DoneBotCatalogResult{ETag: `"fixture"`, CatalogVersion: "fixture", Defaults: map[string]string{"openai.images": "image", "openai.responses": "chat"}, Models: []service.DoneBotCatalogModel{
+		{ID: "seedream-5-5", MediaTypes: []string{"image"}, MediaParameters: &service.DoneBotCatalogMediaParameters{Operations: []string{"generate"}}, MediaFallbackPriority: 1},
+	}}
+	result := doneBotForwardingCatalog(source)
+	require.Nil(t, result.Models[0].MediaParameters)
+	require.Zero(t, result.Models[0].MediaFallbackPriority)
+	require.NotContains(t, result.Defaults, "openai.images")
+	require.Equal(t, "chat", result.Defaults["openai.responses"])
+	require.NotNil(t, source.Models[0].MediaParameters)
+	require.Contains(t, source.Defaults, "openai.images")
 }

@@ -66,6 +66,18 @@ describe('DoneBot individual model sale prices', () => {
       { model: 'gpt-image-1', enabled: true, pricing: { image_prices: { '1K': .1, '2K': .2, '4K': .3 } } }
     ] })
   })
+  it('saves Seedream 5.5 reference input prices separately from output tiers', async () => {
+    mockResult(fixture([{ ...row('seedream-5-5', 'images', { image_prices: { '1K': .04, '2K': .08, input: .01 } }),
+      image_resolutions: ['1K', '1.5K', '2K'], image_input_billing: true }]))
+    const wrapper = mount(ImageModelsPanel, { global: { stubs: { ImageTaskLookup: true } } }); await flushPromises()
+    expect(wrapper.text()).toContain('输入参考图（每张）')
+    expect(wrapper.find('[data-testid="price-seedream-5-5-image-4K"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="price-seedream-5-5-image-input"]').setValue('0.02')
+    await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
+    expect(donebot.saveConfiguration).toHaveBeenCalledWith('images', { models: [
+      { model: 'seedream-5-5', enabled: true, pricing: { image_prices: { '1K': .04, '2K': .08, input: .02 } } }
+    ] })
+  })
   it('edits Suno version and TTS character prices per model with backend pricing units', async () => {
     const music = row('my-music', 'audio', { tier_prices: { v6: .12, 'v6-mini': .06 } })
     const speech = { ...row('my-speech', 'audio', { tier_prices: { tts: 15 } }), audio_price_unit: 'million_characters' as const }

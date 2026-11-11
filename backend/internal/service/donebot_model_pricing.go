@@ -72,12 +72,27 @@ func doneBotImageResolutions(kind, model string, accounts []Account) []string {
 	return []string{"1K", "2K", "4K"}
 }
 
-func doneBotImagePricingTiers(resolutions []string) []string {
+func doneBotImageInputBilling(model string, accounts []Account) bool {
+	if model == seedream55Model {
+		return true
+	}
+	for i := range accounts {
+		if accounts[i].IsModelSupported(model) && accounts[i].GetMappedModel(model) == seedream55Model {
+			return true
+		}
+	}
+	return false
+}
+
+func doneBotImagePricingTiers(resolutions []string, inputBilling ...bool) []string {
 	var tiers []string
 	for _, resolution := range resolutions {
 		if resolution != "1.5K" && !slices.Contains(tiers, resolution) {
 			tiers = append(tiers, resolution)
 		}
+	}
+	if len(inputBilling) > 0 && inputBilling[0] {
+		tiers = append(tiers, "input")
 	}
 	return tiers
 }
@@ -262,7 +277,7 @@ func (s *DoneBotAdminService) prepareModelPricingUpdate(ctx context.Context, g *
 			}
 			p.BillingMode = BillingModeImage
 			for size, v := range value.ImagePrices {
-				if !slices.Contains(doneBotImagePricingTiers(row.ImageResolutions), size) {
+				if !slices.Contains(doneBotImagePricingTiers(row.ImageResolutions, row.ImageInputBilling), size) {
 					return nil, invalid()
 				}
 				if v != nil {

@@ -10,6 +10,10 @@ import (
 	"strings"
 )
 
+type DoneBotMediaAssetReader interface {
+	Get(context.Context, int64, string, string) (*GatewayAsset, error)
+}
+
 func (s *OpenAIGatewayService) resolveDoneBotDispatchReferences(ctx context.Context, task *DoneBotDispatch) ([]byte, error) {
 	if task == nil {
 		return nil, ErrDoneBotMediaInvalid
@@ -20,7 +24,7 @@ func (s *OpenAIGatewayService) resolveDoneBotDispatchReferences(ctx context.Cont
 	if task.APIKeyID <= 0 || s == nil || s.generatedMedia == nil {
 		return nil, ErrAssetNotFound
 	}
-	reader, ok := s.generatedMedia.assets.(DoneBotMediaIntentAssetReader)
+	reader, ok := s.generatedMedia.assets.(DoneBotMediaAssetReader)
 	if !ok {
 		return nil, ErrAssetNotFound
 	}

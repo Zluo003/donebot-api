@@ -42,36 +42,6 @@ func (s *DoneBotCatalogService) ValidateMediaPath(ctx context.Context, owner Don
 	return err
 }
 
-func (s *DoneBotCatalogService) ValidateMediaIntentPath(ctx context.Context, owner DoneBotMediaOwner, kind, modelID, operation, path string, parameters map[string]any) error {
-	model, err := s.validatedMediaModel(ctx, owner, kind, modelID, path, parameters)
-	if err != nil {
-		return err
-	}
-	media := model.MediaParameters
-	if media == nil || !slices.Contains(media.Operations, operation) {
-		return ErrDoneBotMediaInvalid
-	}
-	intentKind := kind
-	if kind == "music" || kind == "speech" {
-		intentKind = "audio"
-	}
-	if expected := doneBotMediaIntentPath(intentKind, operation, media.Protocol.Adapter); expected == "" || expected != path {
-		return ErrDoneBotMediaInvalid
-	}
-	if media.Protocol.Adapter == "seedance.videos.v1" {
-		mode, _ := parameters["omni_reference_task_type"].(string)
-		if operation == "edit" || operation == "extend" {
-			duration, validDuration := doneBotMediaInteger(parameters["duration"])
-			if mode != operation || parameters["ratio"] != "adaptive" || !validDuration || duration != -1 && operation == "edit" {
-				return ErrDoneBotMediaInvalid
-			}
-		} else if mode == "edit" || mode == "extend" {
-			return ErrDoneBotMediaInvalid
-		}
-	}
-	return nil
-}
-
 func (s *DoneBotCatalogService) validatedMediaModel(ctx context.Context, owner DoneBotMediaOwner, kind, modelID, path string, parameters map[string]any) (*DoneBotCatalogModel, error) {
 	install, err := s.installs.InstallationForUser(ctx, owner.UserID, owner.InstallationID)
 	if err != nil {
@@ -126,6 +96,22 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 	}
 	if selected, exists := parameters["model"]; exists && selected != model.ID {
 		return ErrDoneBotMediaInvalid
+	}
+
+	if model.ID == seedream55Model && protocol.Adapter == "apimart.images.v1" {
+		native := make(map[string]any, len(parameters)+1)
+		for key, value := range parameters {
+			native[key] = value
+		}
+		native["model"] = seedream55Model
+		body, err := json.Marshal(native)
+		if err != nil {
+			return ErrDoneBotMediaInvalid
+		}
+		if _, err := ParseAPIMartRequest(APIMartImages, body); err != nil {
+			return ErrDoneBotMediaInvalid
+		}
+		return nil
 	}
 	controlFields := map[string][]string{
 		"openai.images.v1":        {"size", "response_format", "output_format", "quality"},
@@ -330,6 +316,9 @@ func (s *DoneBotCatalogService) EstimateMedia(ctx context.Context, owner DoneBot
 }
 
 func estimateDoneBotMediaModel(model *DoneBotCatalogModel, parameters map[string]any) *json.Number {
+	if model.ID == seedream55Model {
+		return nil
+	}
 	if model.Pricing.Currency != "CNY" {
 		return nil
 	}

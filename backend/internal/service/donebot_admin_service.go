@@ -48,6 +48,7 @@ func NewDoneBotAdminService(installs *DoneBotService, admin AdminService, channe
 }
 
 type DoneBotModel struct {
+	ImageInputBilling        bool `json:"image_input_billing,omitempty"`
 	routingModel             string
 	routingEndpoint          string
 	pricingModel             string
@@ -317,6 +318,7 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 			}
 		}
 		if row.Kind == "images" {
+			row.ImageInputBilling = doneBotImageInputBilling(row.Model, accounts)
 			m := g.RateMultiplier
 			if g.ImageRateIndependent {
 				m = g.ImageRateMultiplier
@@ -325,13 +327,18 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 				row.ImageResolutions = doneBotImageResolutions(row.Kind, row.Model, accounts)
 			}
 			row.EffectiveImagePrices = map[string]*float64{}
-			for _, size := range doneBotImagePricingTiers(row.ImageResolutions) {
+			for _, size := range doneBotImagePricingTiers(row.ImageResolutions, row.ImageInputBilling) {
 				p := g.GetImagePrice(size)
+				if size == "input" {
+					p = nil
+				}
 				if matchGroupModelPricing(g, row.Model) != nil {
 					p = nil
 				}
 				if p == nil && price != nil {
-					p = price.PerRequestPrice
+					if size != "input" {
+						p = price.PerRequestPrice
+					}
 					for _, tier := range price.Intervals {
 						if strings.EqualFold(tier.TierLabel, size) && tier.PerRequestPrice != nil {
 							p = tier.PerRequestPrice

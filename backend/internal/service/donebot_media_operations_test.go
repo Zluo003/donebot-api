@@ -217,27 +217,10 @@ func TestDoneBotMediaLookupByIdempotencyKeyIsOwnerScoped(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestDoneBotMediaIntentBeginCreatesOneDurableTaskIdentity(t *testing.T) {
+func TestDoneBotMediaIntentCannotCreateNewOperations(t *testing.T) {
 	s, input, _ := doneBotMediaFixture(t)
-	input.Kind = "image"
-	input.Operation = "edit"
-	input.Model = "image-public"
 	input.Path = "/v1/donebot/media/intent"
-	input.Fingerprint = DoneBotMediaFingerprint("POST", input.Path, "application/json", []byte(`{"intent":{"kind":"image","operation":"edit"}}`))
-	started, err := s.Begin(context.Background(), input)
-	require.NoError(t, err)
-	require.Equal(t, "edit", started.Operation.Operation)
-	require.Equal(t, "donebot", started.Operation.Provider)
-	require.Equal(t, "dbtask_"+strings.ReplaceAll(started.Operation.ReceiptID, "-", ""), started.Operation.TaskID)
-	require.Equal(t, started.Operation.TaskID, started.Operation.TaskKey)
-
-	duplicate, err := s.Begin(context.Background(), input)
-	require.ErrorIs(t, err, ErrDoneBotMediaPending)
-	require.Equal(t, started.Operation.ReceiptID, duplicate.Operation.ReceiptID)
-	require.Equal(t, started.Operation.TaskID, duplicate.Operation.TaskID)
-
-	input.Operation = "delete"
-	_, err = s.Begin(context.Background(), input)
+	_, err := s.Begin(context.Background(), input)
 	require.ErrorIs(t, err, ErrDoneBotMediaInvalid)
 }
 

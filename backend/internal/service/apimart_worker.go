@@ -411,7 +411,7 @@ func (w *apimartSettlementWorker) recoverDoneBotMedia(ctx context.Context, now t
 					prefix = "apimart:music:"
 				}
 				job.TaskID = strings.TrimPrefix(p.TaskKey, prefix)
-				job.Pending = APIMartPending{Endpoint: endpoint, Model: p.Model, BillingModel: p.Model, OriginalModel: p.Model, Tier: p.Snapshot.Tier, Units: p.Snapshot.MaxUnits, LayerDecomposition: p.Snapshot.MaxUnits == 17, CreatedAt: created}
+				job.Pending = APIMartPending{Endpoint: endpoint, Model: p.Model, BillingModel: p.Model, OriginalModel: p.Model, Tier: p.Snapshot.Tier, Units: p.Snapshot.MaxUnits, InputImages: p.Snapshot.InputImages, LayerDecomposition: p.Snapshot.MaxUnits > 1, CreatedAt: created}
 			}
 			err = queue.EnsureAPIMartSettlement(ctx, job, now)
 		}

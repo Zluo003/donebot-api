@@ -39,7 +39,7 @@ func (e APIMartEndpoint) Capability() OpenAIEndpointCapability {
 	return ""
 }
 func IsAPIMartImageModel(model string) bool {
-	return model == "seedream-5-0-flash" || model == "seedream-5.0-pro"
+	return model == "seedream-5-5" || model == "seedream-5-0-flash" || model == "seedream-5.0-pro"
 }
 
 func (s *OpenAIGatewayService) IsAPIMartImageRequest(ctx context.Context, key *APIKey, model string) bool {
@@ -76,6 +76,7 @@ func APIMartTaskKey(e APIMartEndpoint, id string) string {
 // Suno is priced per submitted generation (Max = two units), TTS per million
 // Unicode characters, and Seedream per generated image in the existing size tiers.
 type APIMartRequestInfo struct {
+	InputImages         int
 	LayerDecomposition  bool
 	BillingModel        string
 	Model, Tier, Prompt string
@@ -122,6 +123,7 @@ func (s *OpenAIGatewayService) ForwardAPIMart(ctx context.Context, c *gin.Contex
 }
 
 type APIMartPending struct {
+	InputImages        int             `json:"input_images,omitempty"`
 	BillingModel       string          `json:"billing_model,omitempty"`
 	LayerDecomposition bool            `json:"layer_decomposition,omitempty"`
 	Endpoint           APIMartEndpoint `json:"endpoint"`
@@ -185,6 +187,9 @@ func (s *OpenAIGatewayService) APIMartPricingConfigured(ctx context.Context, key
 	if e == APIMartImages && info.Tier == "2K" {
 		tiers = []string{"1K", "2K"}
 	}
+	if e == APIMartImages && info.InputImages > 0 {
+		tiers = append(tiers, "input")
+	}
 	for _, tier := range tiers {
 		if s.apimartResolvedUnitTariff(ctx, key, firstNonEmpty(info.BillingModel, info.Model), tier, e) == nil {
 			return false
@@ -196,7 +201,7 @@ func (s *OpenAIGatewayService) APIMartPricingConfigured(ctx context.Context, key
 func (s *OpenAIGatewayService) apimartResolvedUnitTariff(ctx context.Context, key *APIKey, model, tier string, e APIMartEndpoint) *ResolvedPricing {
 	resolved := s.resolveOpenAIChannelPricing(ctx, model, key)
 	requestMode := resolved != nil && (resolved.Mode == BillingModePerRequest || e == APIMartImages && resolved.Mode == BillingModeImage)
-	if e == APIMartImages && (!requestMode || resolved.Source != PricingSourceGroup) {
+	if e == APIMartImages && tier != "input" && (!requestMode || resolved.Source != PricingSourceGroup) {
 		if price := key.Group.GetImagePrice(tier); price != nil && *price >= 0 && !math.IsNaN(*price) && !math.IsInf(*price, 0) {
 			return &ResolvedPricing{Mode: BillingModeImage, Source: PricingSourceGroup, DefaultPerRequestPrice: *price}
 		}
@@ -211,7 +216,7 @@ func (s *OpenAIGatewayService) apimartResolvedUnitTariff(ctx context.Context, ke
 			break
 		}
 	}
-	if selected == nil && resolved.channelPricing != nil {
+	if selected == nil && tier != "input" && resolved.channelPricing != nil {
 		selected = resolved.channelPricing.PerRequestPrice
 	}
 	if selected == nil {
@@ -230,9 +235,9 @@ func (s *OpenAIGatewayService) apimartResolvedUnitTariff(ctx context.Context, ke
 }
 
 func (s *OpenAIGatewayService) calculateAPIMartUsageCost(ctx context.Context, key *APIKey, r *OpenAIForwardResult, model string, imageRate, audioRate float64) (*CostBreakdown, error) {
-	if r.ImageCount > 0 {
+	if r.ImageCount > 0 || r.ImageInputCount > 0 {
 		breakdown := r.ImageSizeBreakdown
-		if len(breakdown) == 0 {
+		if len(breakdown) == 0 && r.ImageCount > 0 {
 			breakdown = map[string]int{r.ImageSize: r.ImageCount}
 		}
 		total := &CostBreakdown{BillingMode: string(BillingModeImage)}
@@ -247,6 +252,19 @@ func (s *OpenAIGatewayService) calculateAPIMartUsageCost(ctx context.Context, ke
 			total.TotalCost += part.TotalCost
 			total.ActualCost += part.ActualCost
 			total.ImageOutputCost += part.ImageOutputCost
+		}
+		if r.ImageInputCount > 0 {
+			resolved := s.apimartResolvedUnitTariff(ctx, key, model, "input", APIMartImages)
+			if resolved == nil {
+				return nil, fmt.Errorf("APIMart reference image tariff is unavailable")
+			}
+			part, err := s.billingService.CalculateCostUnified(CostInput{Ctx: ctx, Model: model, GroupID: key.GroupID, Group: key.Group, RequestCount: r.ImageInputCount, RateMultiplier: imageRate, Resolver: s.resolver, Resolved: resolved})
+			if err != nil {
+				return nil, err
+			}
+			total.TotalCost += part.TotalCost
+			total.ActualCost += part.ActualCost
+			total.ImageInputCost += part.TotalCost
 		}
 		return total, nil
 	}
@@ -282,6 +300,7 @@ func (e APIMartInflightEstimator) EstimateInflightReservation(ctx context.Contex
 		r.AudioUsage = nil
 		r.ImageCount = int(e.Info.Units)
 		r.ImageSize = e.Info.Tier
+		r.ImageInputCount = e.Info.InputImages
 	}
 	cost, err := e.Service.calculateAPIMartUsageCost(ctx, key, r, firstNonEmpty(e.Info.BillingModel, e.Info.Model), imageRate, rate)
 	if err != nil {
