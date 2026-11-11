@@ -1,11 +1,6 @@
 package service
 
-import (
-	"bytes"
-	"encoding/json"
-	"io"
-	"regexp"
-)
+import "regexp"
 
 const DoneBotMediaIntentBodyLimit = 1 << 20
 
@@ -81,58 +76,4 @@ func doneBotMediaIntentReferenceType(kind, referenceType string) bool {
 	default:
 		return false
 	}
-}
-
-func rejectDoneBotDuplicateJSONKeys(raw []byte) error {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var readValue func() error
-	readValue = func() error {
-		token, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		delim, ok := token.(json.Delim)
-		if !ok {
-			return nil
-		}
-		switch delim {
-		case '{':
-			seen := make(map[string]struct{})
-			for decoder.More() {
-				keyToken, err := decoder.Token()
-				if err != nil {
-					return err
-				}
-				key, ok := keyToken.(string)
-				if !ok {
-					return ErrDoneBotMediaInvalid
-				}
-				if _, exists := seen[key]; exists {
-					return ErrDoneBotMediaInvalid
-				}
-				seen[key] = struct{}{}
-				if err := readValue(); err != nil {
-					return err
-				}
-			}
-		case '[':
-			for decoder.More() {
-				if err := readValue(); err != nil {
-					return err
-				}
-			}
-		default:
-			return ErrDoneBotMediaInvalid
-		}
-		_, err = decoder.Token()
-		return err
-	}
-	if err := readValue(); err != nil {
-		return err
-	}
-	if _, err := decoder.Token(); err != io.EOF {
-		return ErrDoneBotMediaInvalid
-	}
-	return nil
 }
