@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
@@ -154,7 +155,6 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	doneBotWebToolsService := service.NewDoneBotWebToolsService(settingRepository, secretEncryptor, configConfig)
 	doneBotTemplateRepository := repository.NewDoneBotTemplateRepository(client)
 	doneBotTemplateService := service.NewDoneBotTemplateService(doneBotTemplateRepository)
-	doneBotHandler := handler.ProvideDoneBotUserHandler(doneBotService, settingRepository, configConfig, doneBotCatalogService, doneBotAccountService, doneBotMediaService, doneBotWebToolsService, doneBotTemplateService)
 	refreshTokenCache := repository.NewRefreshTokenCache(redisClient)
 	turnstileVerifier := repository.NewTurnstileVerifier()
 	turnstileService := service.NewTurnstileService(settingService, turnstileVerifier)
@@ -169,6 +169,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	mcpoAuthService := service.NewMCPOAuthService(mcpoAuthRepository, userRepository)
 	authService := service.ProvideAuthService(client, userRepository, redeemCodeRepository, refreshTokenCache, configConfig, settingService, emailService, turnstileService, tencentCaptchaService, aliyunCaptchaService, emailQueueService, promoService, subscriptionService, affiliateService, serviceUserPlatformQuotaRepository, mcpoAuthService)
 	userService := service.NewUserService(userRepository, settingRepository, apiKeyAuthCacheInvalidator, billingCache)
+	cloudbillingService := cloudbilling.NewService(db, settingRepository, billingCacheService, configConfig, authService, userService, doneBotService)
+	doneBotHandler := handler.ProvideDoneBotUserHandler(doneBotService, settingRepository, configConfig, doneBotCatalogService, doneBotAccountService, doneBotMediaService, doneBotWebToolsService, doneBotTemplateService, cloudbillingService)
 	redeemCache := repository.NewRedeemCache(redisClient)
 	redeemService := service.NewRedeemService(redeemCodeRepository, userRepository, subscriptionService, redeemCache, billingCacheService, client, apiKeyAuthCacheInvalidator, affiliateService)
 	totpCache := repository.NewTotpCache(redisClient)
@@ -220,7 +222,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorV2Repository := repository.NewChannelMonitorV2Repository(db)
 	channelMonitorV2Service := service.ProvideChannelMonitorV2Service(channelMonitorV2Repository, settingService)
 	channelMonitorV2Handler := handler.NewChannelMonitorV2Handler(channelMonitorV2Service, apiKeyService)
-	adminDoneBotHandler := admin.ProvideDoneBotHandler(doneBotService, doneBotAdminService, doneBotStorageService, doneBotWebToolsService, doneBotTemplateService)
+	adminDoneBotHandler := admin.ProvideDoneBotHandler(doneBotService, doneBotAdminService, doneBotStorageService, doneBotWebToolsService, doneBotTemplateService, cloudbillingService)
 	dashboardAggregationRepository := repository.NewDashboardAggregationRepository(db)
 	dashboardStatsCache := repository.NewDashboardCache(redisClient, configConfig)
 	dashboardService := service.NewDashboardService(usageLogRepository, dashboardAggregationRepository, dashboardStatsCache, configConfig)

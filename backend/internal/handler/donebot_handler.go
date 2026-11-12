@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -42,6 +43,7 @@ func doneBotUserInstallation(install *service.DoneBotInstall) doneBotUserInstall
 }
 
 type DoneBotHandler struct {
+	cloud        *cloudbilling.Service
 	templates    *service.DoneBotTemplateService
 	installs     doneBotClaimer
 	settings     service.SettingRepository

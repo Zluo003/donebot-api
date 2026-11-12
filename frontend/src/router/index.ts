@@ -204,6 +204,12 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/cloud',
+    name: 'DoneBotCloud',
+    component: () => import('@/views/user/CloudView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: false, title: 'DoneBot Cloud' }
+  },
+  {
     path: '/keys',
     name: 'Keys',
     component: () => import('@/views/user/KeysView.vue'),

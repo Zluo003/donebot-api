@@ -138,6 +138,14 @@ func RegisterGatewayRoutes(
 	gateway.Use(endpointNorm)
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
 	doneBotGateway := gateway.Group("")
+	if h.DoneBot != nil {
+		runtime := gateway.Group("/donebot/runtime", h.DoneBot.RuntimeInstallation())
+		runtime.GET("/models", h.DoneBot.Models)
+		runtime.GET("/account", h.DoneBot.Account)
+		runtime.GET("/receipts/:id", h.DoneBot.Receipt)
+		runtime.GET("/templates", h.DoneBot.Templates)
+		runtime.GET("/templates/:template_id/:release", h.DoneBot.Template)
+	}
 	doneBotGateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot))
 	doneBotGateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
 	registerDoneBotWebToolsRoutes(doneBotGateway, h.DoneBot)

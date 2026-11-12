@@ -728,6 +728,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
   if (withDashboard) {
     items.push({ path: '/dashboard', label: t('nav.dashboard'), icon: DashboardIcon })
   }
+  if (appStore.cachedPublicSettings?.donebot_enabled) items.push({ path: '/cloud', label: 'DoneBot Cloud', icon: ChannelIcon })
   if (shouldShowAPIKeyManagement(appStore.cachedPublicSettings)) {
     items.push({ path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon })
   }

@@ -203,6 +203,9 @@ export async function getCurrentUser() {
  */
 export async function logout(): Promise<void> {
   const refreshToken = getRefreshToken()
+  if (getAuthToken()) {
+    try { await apiClient.delete('/donebot/cloud/browser-sessions', { timeout: 5000 }) } catch { /* Local logout also works while the gateway is unavailable. */ }
+  }
 
   // Try to revoke the refresh token on the server
   if (refreshToken) {

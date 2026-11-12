@@ -8,6 +8,16 @@ import (
 
 func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handlers) {
 	if h.DoneBot != nil {
+		authenticated.GET("/donebot/cloud/plan", h.DoneBot.CloudPlanInfo)
+		authenticated.DELETE("/donebot/cloud/browser-sessions", h.DoneBot.CloudBrowserRevoke)
+		authenticated.POST("/donebot/cloud/instances/:id/browser-launch", h.DoneBot.CloudBrowserLaunch)
+		authenticated.POST("/donebot/cloud/instances/:id/desktop-launch", h.DoneBot.CloudBrowserLaunch)
+		authenticated.GET("/donebot/cloud/instances", h.DoneBot.CloudInstances)
+		authenticated.POST("/donebot/cloud/instances", h.DoneBot.CloudMutate)
+		authenticated.POST("/donebot/cloud/instances/:id/:action", h.DoneBot.CloudMutate)
+		authenticated.GET("/donebot/cloud/instances/:id/operations", h.DoneBot.CloudOperations)
+		authenticated.Any("/donebot/cloud/instances/:id/proxy/*path", h.DoneBot.CloudProxy)
+		authenticated.POST("/donebot/cloud/billing/instances/:id/purchase", h.DoneBot.Cloud)
 		authenticated.GET("/donebot/templates", h.DoneBot.Templates)
 		authenticated.GET("/donebot/templates/:template_id/:release", h.DoneBot.Template)
 		authenticated.POST("/donebot/installations/claim", h.DoneBot.Claim)
@@ -23,6 +33,14 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUp middleware.StepUpAuthMiddleware) {
 	if h.Admin.DoneBot != nil {
 		donebot := admin.Group("/donebot")
+		donebot.GET("/cloud/plan", h.Admin.DoneBot.CloudPlan)
+		donebot.PUT("/cloud/plan", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateCloudPlan)
+		donebot.GET("/cloud/events", h.Admin.DoneBot.CloudEvents)
+		donebot.GET("/cloud/nodes", h.Admin.DoneBot.CloudNodes)
+		donebot.POST("/cloud/nodes", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SaveCloudNode)
+		donebot.PUT("/cloud/nodes/:node", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SaveCloudNode)
+		donebot.POST("/cloud/nodes/:node/credential", gin.HandlerFunc(stepUp), h.Admin.DoneBot.ChangeCloudNodeCredential)
+		donebot.GET("/cloud/instances", h.Admin.DoneBot.CloudInstances)
 		donebot.GET("/templates", h.Admin.DoneBot.Templates)
 		donebot.POST("/templates/preview", h.Admin.DoneBot.PreviewTemplate)
 		donebot.POST("/templates", gin.HandlerFunc(stepUp), h.Admin.DoneBot.PublishTemplate)

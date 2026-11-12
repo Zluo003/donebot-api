@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -16,6 +17,7 @@ type doneBotInstallAdmin interface {
 }
 
 type DoneBotHandler struct {
+	cloud     *cloudbilling.Service
 	templates *service.DoneBotTemplateService
 	installs  doneBotInstallAdmin
 	catalog   *service.DoneBotAdminService
@@ -130,8 +132,9 @@ func (h *DoneBotHandler) UpdateVideoModels(c *gin.Context) { h.updateModels(c, "
 func (h *DoneBotHandler) VideoPricing(c *gin.Context)      { h.pricing(c, "video") }
 func (h *DoneBotHandler) SyncVideoModels(c *gin.Context)   { h.sync(c, "video") }
 
-func ProvideDoneBotHandler(installs *service.DoneBotService, catalog *service.DoneBotAdminService, storage *service.DoneBotStorageService, webTools *service.DoneBotWebToolsService, templates *service.DoneBotTemplateService) *DoneBotHandler {
+func ProvideDoneBotHandler(installs *service.DoneBotService, catalog *service.DoneBotAdminService, storage *service.DoneBotStorageService, webTools *service.DoneBotWebToolsService, templates *service.DoneBotTemplateService, cloud *cloudbilling.Service) *DoneBotHandler {
 	h := NewDoneBotHandler(installs, catalog)
+	h.cloud = cloud
 	h.storage = storage
 	h.webTools = webTools
 	h.templates = templates

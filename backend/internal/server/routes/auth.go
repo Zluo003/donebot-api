@@ -24,6 +24,25 @@ func RegisterAuthRoutes(
 ) {
 	// 创建速率限制器
 	rateLimiter := middleware.NewRateLimiter(redisClient)
+	if h.DoneBot != nil {
+		v1.POST("/donebot/cloud/nodes/:node/:verb", h.DoneBot.CloudNode)
+		cloud := v1.Group("/donebot/cloud/billing/instances/:id")
+		cloud.GET("/:action", func(c *gin.Context) {
+			if c.Param("action") != "status" {
+				c.AbortWithStatus(404)
+				return
+			}
+			h.DoneBot.Cloud(c)
+		})
+		cloud.POST("/:action", func(c *gin.Context) {
+			switch c.Param("action") {
+			case "renew", "activate", "cancel":
+				h.DoneBot.Cloud(c)
+			default:
+				c.AbortWithStatus(404)
+			}
+		})
+	}
 
 	// 公开接口
 	auth := v1.Group("/auth")

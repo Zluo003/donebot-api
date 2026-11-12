@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -25,8 +26,9 @@ type doneBotAccountReader interface {
 }
 
 func ProvideDoneBotUserHandler(installs *service.DoneBotService, settings service.SettingRepository, cfg *config.Config,
-	catalog *service.DoneBotCatalogService, account *service.DoneBotAccountService, media *service.DoneBotMediaService, webTools *service.DoneBotWebToolsService, templates *service.DoneBotTemplateService) *DoneBotHandler {
+	catalog *service.DoneBotCatalogService, account *service.DoneBotAccountService, media *service.DoneBotMediaService, webTools *service.DoneBotWebToolsService, templates *service.DoneBotTemplateService, cloud *cloudbilling.Service) *DoneBotHandler {
 	h := NewDoneBotHandler(installs, settings, cfg)
+	h.cloud = cloud
 	h.catalog, h.account = catalog, account
 	h.media = media
 	h.webTools = webTools

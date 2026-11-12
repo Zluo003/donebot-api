@@ -46,6 +46,13 @@ export interface StorageSettings { upload: StoragePolicy; generated: StoragePoli
 export interface WebToolsSettings { enabled: boolean; key_configured: boolean }
 export interface WebToolsSettingsInput { enabled: boolean; api_key?: string; clear_api_key?: boolean }
 const donebot = {
+ async cloudPlan() { return (await apiClient.get<{ enabled: boolean; monthly_price: string; retention_days: number }>('/admin/donebot/cloud/plan')).data },
+ async saveCloudPlan(input: { enabled: boolean; monthly_price: string; retention_days: number }) { return (await apiClient.put<{ enabled: boolean; monthly_price: string; retention_days: number }>('/admin/donebot/cloud/plan', input)).data },
+ async cloudNodes() { return (await apiClient.get<{ nodes: Array<{ id: string; name: string; endpoint: string; capacity: number; assigned: number; enabled: boolean; last_seen?: string }>; public_key: string }>('/admin/donebot/cloud/nodes')).data },
+ async saveCloudNode(input: { name: string; endpoint: string; capacity: number; enabled: boolean }, id?: string) { return (await (id ? apiClient.put<{ node: { id: string }; token: string }>(`/admin/donebot/cloud/nodes/${id}`, input) : apiClient.post<{ node: { id: string }; token: string }>('/admin/donebot/cloud/nodes', input))).data },
+ async cloudInstances() { return (await apiClient.get<Array<{ id: string; user_id: number; node_id: string; desired: string; actual: string; error: string; paid_until?: string; purge_locked: boolean }>>('/admin/donebot/cloud/instances')).data },
+ async changeCloudNodeCredential(id: string, revoke: boolean) { return (await apiClient.post<{ token: string }>(`/admin/donebot/cloud/nodes/${id}/credential`, { revoke })).data },
+ async cloudEvents() { return (await apiClient.get<Array<{ instance_id: string; user_id: number; cycle: number; event: string; amount: string; balance_after: string; created_at: string }>>('/admin/donebot/cloud/events')).data },
  async webTools() { return (await apiClient.get<WebToolsSettings>('/admin/donebot/web-tools')).data },
  async saveWebTools(input: WebToolsSettingsInput) { return (await apiClient.put<WebToolsSettings>('/admin/donebot/web-tools', input)).data },
  async storage() { return (await apiClient.get<StorageSettings>('/admin/donebot/storage')).data },
