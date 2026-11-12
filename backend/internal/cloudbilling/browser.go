@@ -54,7 +54,8 @@ func (s *Service) BrowserConfig() (*BrowserConfig, error) {
 		return nil, infraerrors.ServiceUnavailable("CLOUD_BROWSER_CONFIG", "Cloud browser origins are invalid")
 	}
 	secure := base.Scheme == "https" && master.Scheme == "https"
-	if !secure && !(os.Getenv("DONEBOT_CLOUD_TEST_LOOPBACK_NODES") == "1" && base.Scheme == "http" && master.Scheme == "http" && base.Hostname() == "cloud.localhost" && (master.Hostname() == "127.0.0.1" || master.Hostname() == "localhost")) {
+	loopback := os.Getenv("DONEBOT_CLOUD_TEST_LOOPBACK_NODES") == "1" && base.Scheme == "http" && master.Scheme == "http" && base.Hostname() == "cloud.localhost" && (master.Hostname() == "127.0.0.1" || master.Hostname() == "localhost")
+	if !secure && !loopback {
 		return nil, infraerrors.ServiceUnavailable("CLOUD_BROWSER_CONFIG", "Cloud browser requires HTTPS")
 	}
 	if net.ParseIP(base.Hostname()) != nil || !strings.Contains(base.Hostname(), ".") || strings.ContainsAny(base.Hostname(), "*\\%") {
@@ -128,7 +129,7 @@ func (s *Service) createLaunch(ctx context.Context, r *http.Request, id string, 
 		return nil, infraerrors.Unauthorized("CLOUD_SESSION_ENDED", "Sign in again")
 	}
 	until := time.Now().Add(time.Hour)
-	if claims.ExpiresAt.Time.Before(until) {
+	if claims.ExpiresAt.Before(until) {
 		until = claims.ExpiresAt.Time
 	}
 	if time.Until(until) < time.Minute {

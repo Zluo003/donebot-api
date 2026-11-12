@@ -98,7 +98,7 @@ func (s *Service) SaveNode(ctx context.Context, id string, in NodeInput) (*Node,
 		return nil, "", err
 	}
 	u, err := url.Parse(in.Endpoint)
-	if err != nil || u == nil || u.User != nil || u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.Fragment != "" || u.Hostname() == "" || u.Scheme != "https" && !(os.Getenv("DONEBOT_CLOUD_TEST_LOOPBACK_NODES") == "1" && u.Scheme == "http" && net.ParseIP(u.Hostname()).IsLoopback()) {
+	if err != nil || u == nil || u.User != nil || u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.Fragment != "" || u.Hostname() == "" || u.Scheme != "https" && (os.Getenv("DONEBOT_CLOUD_TEST_LOOPBACK_NODES") != "1" || u.Scheme != "http" || !net.ParseIP(u.Hostname()).IsLoopback()) {
 		return nil, "", infraerrors.BadRequest("CLOUD_NODE_ENDPOINT", "Use an HTTPS origin on the private network")
 	}
 	if strings.TrimSpace(in.Name) == "" || len(in.Name) > 100 || in.Capacity < 1 || in.Capacity > 10000 {
@@ -116,7 +116,7 @@ func (s *Service) SaveNode(ctx context.Context, id string, in NodeInput) (*Node,
 	if err != nil {
 		return nil, "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if token != "" {
 		_, err = tx.ExecContext(ctx, `INSERT INTO donebot_cloud_nodes(id,name,endpoint,capacity,token_hash,enabled) VALUES($1::uuid,$2,$3,$4,$5,$6)`, id, in.Name, strings.TrimSuffix(in.Endpoint, "/"), in.Capacity, tokenHash(token), in.Enabled)
 	} else {
@@ -145,7 +145,7 @@ func (s *Service) Nodes(ctx context.Context) ([]Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []Node{}
 	for rows.Next() {
 		var n Node
@@ -178,7 +178,7 @@ func (s *Service) Instances(ctx context.Context, owner int64) ([]Instance, error
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []Instance{}
 	for rows.Next() {
 		v, e := scanInstance(rows)
@@ -213,7 +213,7 @@ func (s *Service) Mutate(ctx context.Context, owner int64, id, action, key strin
 	if err != nil {
 		return nil, nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('donebot-cloud-user:' || $1::text,0))`, owner); err != nil {
 		return nil, nil, err
 	}
@@ -288,7 +288,7 @@ func (s *Service) prepare(ctx context.Context, op *Operation) {
 	if err != nil {
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	v, err := scanInstance(tx.QueryRowContext(ctx, `SELECT `+instanceColumns+instanceJoin+` WHERE i.id=$1::uuid FOR UPDATE OF i`, op.InstanceID))
 	if err != nil {
 		return
@@ -331,7 +331,7 @@ func (s *Service) CompleteLocal(ctx context.Context, op *Operation) (bool, error
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var local bool
 	if err = tx.QueryRowContext(ctx, `SELECT node_id IS NULL AND NOT bound AND generation=$2 FROM donebot_cloud_instances WHERE id=$1::uuid FOR UPDATE`, op.InstanceID, op.Generation).Scan(&local); err != nil {
 		return false, err
@@ -368,7 +368,7 @@ func (s *Service) Operations(ctx context.Context, id string, owner int64) ([]Ope
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []Operation{}
 	for rows.Next() {
 		var o Operation
@@ -439,7 +439,7 @@ func (s *Service) Claim(ctx context.Context, node, token string, running []Runni
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	op := &Operation{}
 	err = tx.QueryRowContext(ctx, `SELECT o.id::text,o.instance_id::text,o.action,o.generation,o.state,o.error FROM donebot_cloud_operations o JOIN donebot_cloud_instances i ON i.id=o.instance_id WHERE i.node_id=$1::uuid AND o.generation=i.generation AND i.deleted_at IS NULL AND (o.state='pending' OR o.state='leased' AND o.lease_until<clock_timestamp() OR o.state='failed' AND (o.action<>'start' OR o.attempts>0)) AND o.retry_at<=clock_timestamp() ORDER BY o.created_at FOR UPDATE OF o SKIP LOCKED LIMIT 1`, node).Scan(&op.ID, &op.InstanceID, &op.Action, &op.Generation, &op.State, &op.Error)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -489,7 +489,7 @@ func (s *Service) ConfirmPurge(ctx context.Context, node, token, id, lease strin
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	o, v, err := s.lockedCommand(ctx, tx, node, id, lease)
 	if err != nil {
 		return err
@@ -529,7 +529,7 @@ func (s *Service) Report(ctx context.Context, node, token, id, lease, code strin
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	o, v, err := s.lockedCommand(ctx, tx, node, id, lease)
 	if err != nil {
 		return err
@@ -597,7 +597,7 @@ func (s *Service) systemOperation(ctx context.Context, id, action, key string) e
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var gen int64
 	var desired string
 	if err = tx.QueryRowContext(ctx, `SELECT generation,desired FROM donebot_cloud_instances WHERE id=$1::uuid AND deleted_at IS NULL FOR UPDATE`, id).Scan(&gen, &desired); err != nil {
@@ -642,7 +642,7 @@ func (s *Service) Sweep(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	var locked bool
 	if err = conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(hashtextextended('donebot-cloud-sweep',0))`).Scan(&locked); err != nil {
 		return err
@@ -650,7 +650,9 @@ func (s *Service) Sweep(ctx context.Context) error {
 	if !locked {
 		return nil
 	}
-	defer conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(hashtextextended('donebot-cloud-sweep',0))`)
+	defer func() {
+		_, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(hashtextextended('donebot-cloud-sweep',0))`)
+	}()
 	rows, err := s.db.QueryContext(ctx, `SELECT o.id::text,o.instance_id::text,o.action,o.generation,o.state,o.error FROM donebot_cloud_operations o JOIN donebot_cloud_instances i ON i.id=o.instance_id WHERE o.generation=i.generation AND (o.state='billing' OR o.state='pending' AND i.node_id IS NULL AND o.action<>'start') ORDER BY o.created_at LIMIT 100`)
 	if err != nil {
 		return err

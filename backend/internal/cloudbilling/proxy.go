@@ -28,7 +28,11 @@ func (s *Service) PublicKey() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)), nil
+	public, ok := key.Public().(ed25519.PublicKey)
+	if !ok {
+		return "", infraerrors.ServiceUnavailable("CLOUD_SIGNING_UNAVAILABLE", "Cloud node public key is unavailable")
+	}
+	return base64.StdEncoding.EncodeToString(public), nil
 }
 func (s *Service) liveIdentity(ctx context.Context, token string, owner int64) error {
 	if s.liveCheck != nil {
@@ -125,7 +129,11 @@ func (s *Service) proxy(w http.ResponseWriter, r *http.Request, id string, owner
 	if browserMaster != "" {
 		origin = browserMaster
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return infraerrors.ServiceUnavailable("CLOUD_PROXY_UNAVAILABLE", "Cloud proxy transport is unavailable")
+	}
+	transport := base.Clone()
 	defer transport.CloseIdleConnections()
 	transport.ResponseHeaderTimeout = 15 * time.Second
 	if strings.HasPrefix(path, "/v1/instances/"+id+"/proxy/api/cloud/backups") {
