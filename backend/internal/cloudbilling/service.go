@@ -292,7 +292,7 @@ func (s *Service) Events(ctx context.Context) ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]map[string]any, 0)
 	for rows.Next() {
 		var id, event, amount, balance string

@@ -422,13 +422,13 @@ func (s *Service) Claim(ctx context.Context, node, token string, running []Runni
 	for rows.Next() {
 		var l RunLease
 		if err = rows.Scan(&l.InstanceID, &l.Generation, &l.AuthorizedUntil); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		result.Leases = append(result.Leases, l)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -661,12 +661,12 @@ func (s *Service) Sweep(ctx context.Context) error {
 	for rows.Next() {
 		var o Operation
 		if err = rows.Scan(&o.ID, &o.InstanceID, &o.Action, &o.Generation, &o.State, &o.Error); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		ops = append(ops, o)
 	}
-	rows.Close()
+	_ = rows.Close()
 	for i := range ops {
 		if ops[i].State == "billing" {
 			s.prepare(ctx, &ops[i])
@@ -686,12 +686,12 @@ func (s *Service) Sweep(ctx context.Context) error {
 	for rows.Next() {
 		v, e := scanInstance(rows)
 		if e != nil {
-			rows.Close()
+			_ = rows.Close()
 			return e
 		}
 		instances = append(instances, *v)
 	}
-	rows.Close()
+	_ = rows.Close()
 	for _, v := range instances {
 		if _, err = s.db.ExecContext(ctx, `UPDATE donebot_cloud_instances SET reconciled_at=clock_timestamp() WHERE id=$1::uuid`, v.ID); err != nil {
 			return err

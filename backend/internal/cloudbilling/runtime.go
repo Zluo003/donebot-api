@@ -39,7 +39,7 @@ func (s *Service) RuntimeCredential(ctx context.Context, node, token, id string)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(263,hashtext($1))`, id); err != nil {
 		return nil, err
 	}
