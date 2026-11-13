@@ -8,23 +8,32 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"sync"
 	"testing"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type fixtureRuntimeInstalls struct {
-	mu          sync.Mutex
-	values      map[string]*service.DoneBotClaimResult
-	claims      int
-	revocations int
+	mu              sync.Mutex
+	values          map[string]*service.DoneBotClaimResult
+	claims          int
+	revocations     int
+	validationError error
 }
 
 func (f *fixtureRuntimeInstalls) ValidateRuntimeCredential(_ context.Context, owner int64, id, credential string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.validationError != nil {
+		return f.validationError
+	}
 	v := f.values[id]
 	if v == nil || v.Install.UserID != owner || v.Install.Status != service.StatusActive || v.Credential != credential {
 		return service.ErrDoneBotInstallInactive
@@ -108,6 +117,23 @@ func TestPostgresRuntimeCredentialsStayBoundToAssignedNode(t *testing.T) {
 	var encrypted []byte
 	require.NoError(t, s.db.QueryRow(`SELECT credential_ciphertext FROM donebot_cloud_runtime_credentials WHERE instance_id=$1::uuid`, v.ID).Scan(&encrypted))
 	require.False(t, bytes.Contains(encrypted, []byte(secret)))
+	core, logs := observer.New(zap.WarnLevel)
+	logctx := logger.IntoContext(ctx, zap.New(core).With(zap.String("request_id", "runtime-fixture-request")))
+	f.validationError = service.ErrAPIKeyNotFound
+	_, err = s.RuntimeCredential(logctx, node.ID, key, v.ID)
+	require.ErrorIs(t, err, service.ErrAPIKeyNotFound)
+	require.Equal(t, "validate_installation", infraerrors.FromError(err).Metadata["step"])
+	entry := logs.All()[0].ContextMap()
+	require.Equal(t, "API_KEY_NOT_FOUND", entry["reason"])
+	require.Equal(t, "validate_installation", entry["step"])
+	require.Equal(t, "runtime-fixture-request", entry["request_id"])
+	require.Equal(t, node.ID, entry["node_id"])
+	require.Equal(t, v.ID, entry["instance_id"])
+	encoded, err := json.Marshal(entry)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), secret)
+	require.NotContains(t, string(encoded), key)
+	f.validationError = nil
 	other, otherKey, err := s.SaveNode(ctx, "", NodeInput{Name: "other-fixture", Endpoint: "https://10.42.0.2", Capacity: 1, Enabled: true})
 	require.NoError(t, err)
 	_, err = s.RuntimeCredential(ctx, other.ID, otherKey, v.ID)
