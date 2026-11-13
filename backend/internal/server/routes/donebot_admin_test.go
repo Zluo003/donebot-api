@@ -24,6 +24,8 @@ func TestDoneBotAdminWritesRequireStepUp(t *testing.T) {
 		{http.MethodPost, "/llm/models/sync"}, {http.MethodPut, "/images/models"},
 		{http.MethodPut, "/images/pricing"}, {http.MethodPost, "/images/models/sync"},
 		{http.MethodDelete, "/installs/7"},
+		{http.MethodPost, "/cloud/nodes"}, {http.MethodPut, "/cloud/nodes/fixture"},
+		{http.MethodDelete, "/cloud/nodes/fixture"}, {http.MethodPost, "/cloud/nodes/fixture/credential"},
 		{http.MethodPut, "/web-tools"},
 		{http.MethodPut, "/audio/models"}, {http.MethodPut, "/audio/pricing"},
 		{http.MethodPost, "/audio/models/sync"},

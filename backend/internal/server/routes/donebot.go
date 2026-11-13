@@ -39,6 +39,7 @@ func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, ste
 		donebot.GET("/cloud/nodes", h.Admin.DoneBot.CloudNodes)
 		donebot.POST("/cloud/nodes", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SaveCloudNode)
 		donebot.PUT("/cloud/nodes/:node", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SaveCloudNode)
+		donebot.DELETE("/cloud/nodes/:node", gin.HandlerFunc(stepUp), h.Admin.DoneBot.DeleteCloudNode)
 		donebot.POST("/cloud/nodes/:node/credential", gin.HandlerFunc(stepUp), h.Admin.DoneBot.ChangeCloudNodeCredential)
 		donebot.GET("/cloud/instances", h.Admin.DoneBot.CloudInstances)
 		donebot.GET("/templates", h.Admin.DoneBot.Templates)

@@ -50,10 +50,9 @@ func (h *DoneBotHandler) CloudNodes(c *gin.Context) {
 	if response.ErrorFrom(c, err) {
 		return
 	}
-	key, err := h.cloud.PublicKey()
-	if !response.ErrorFrom(c, err) {
-		response.Success(c, gin.H{"nodes": nodes, "public_key": key})
-	}
+	key, keyErr := h.cloud.PublicKey()
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, gin.H{"nodes": nodes, "public_key": key, "signing_configured": keyErr == nil})
 }
 func (h *DoneBotHandler) SaveCloudNode(c *gin.Context) {
 	if h.cloud == nil {
@@ -65,9 +64,23 @@ func (h *DoneBotHandler) SaveCloudNode(c *gin.Context) {
 		response.BadRequest(c, "Invalid node")
 		return
 	}
+	key, keyErr := h.cloud.PublicKey()
+	if c.Param("node") == "" && response.ErrorFrom(c, keyErr) {
+		return
+	}
 	node, token, err := h.cloud.SaveNode(c.Request.Context(), c.Param("node"), in)
 	if !response.ErrorFrom(c, err) {
-		response.Success(c, gin.H{"node": node, "token": token})
+		c.Header("Cache-Control", "no-store")
+		response.Success(c, gin.H{"node": node, "token": token, "public_key": key})
+	}
+}
+func (h *DoneBotHandler) DeleteCloudNode(c *gin.Context) {
+	if h.cloud == nil {
+		response.Error(c, 503, "Cloud unavailable")
+		return
+	}
+	if !response.ErrorFrom(c, h.cloud.DeleteNode(c.Request.Context(), c.Param("node"))) {
+		response.Success(c, gin.H{"deleted": true})
 	}
 }
 func (h *DoneBotHandler) CloudInstances(c *gin.Context) {
@@ -93,9 +106,13 @@ func (h *DoneBotHandler) ChangeCloudNodeCredential(c *gin.Context) {
 		response.BadRequest(c, "Invalid credential action")
 		return
 	}
+	key, keyErr := h.cloud.PublicKey()
+	if !input.Revoke && response.ErrorFrom(c, keyErr) {
+		return
+	}
 	token, err := h.cloud.ChangeNodeCredential(c.Request.Context(), c.Param("node"), input.Revoke)
 	if !response.ErrorFrom(c, err) {
 		c.Header("Cache-Control", "no-store")
-		response.Success(c, gin.H{"token": token})
+		response.Success(c, gin.H{"token": token, "public_key": key})
 	}
 }

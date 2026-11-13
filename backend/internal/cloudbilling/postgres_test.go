@@ -92,6 +92,10 @@ func postgresFixture(t *testing.T) *Service {
 	require.NoError(t, err)
 	_, err = db.Exec(string(migration))
 	require.NoError(t, err)
+	migration, err = os.ReadFile("../../migrations/264_donebot_cloud_node_deletion.sql")
+	require.NoError(t, err)
+	_, err = db.Exec(string(migration))
+	require.NoError(t, err)
 	_, err = rand.Read(token[:])
 	require.NoError(t, err)
 	s := &Service{db: db, settings: &fixtureSettings{}, cfg: &config.Config{DoneBot: config.DoneBotConfig{Enabled: true}}, serviceToken: hex.EncodeToString(token[:])}

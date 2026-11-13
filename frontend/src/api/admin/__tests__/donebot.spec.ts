@@ -35,4 +35,9 @@ describe('DoneBot admin API', () => {
   expect(apiClient.post).toHaveBeenCalledWith('/admin/donebot/images/models/sync')
   expect(apiClient.delete).toHaveBeenCalledWith('/admin/donebot/installs/7')
  })
+ it('removes a cloud node through its dedicated admin endpoint', async () => {
+  vi.mocked(apiClient.delete).mockResolvedValue({ data: { deleted: true } })
+  await donebot.deleteCloudNode('fixture-node')
+  expect(apiClient.delete).toHaveBeenLastCalledWith('/admin/donebot/cloud/nodes/fixture-node')
+ })
 })

@@ -15,7 +15,7 @@ func (s *Service) ChangeNodeCredential(ctx context.Context, id string, revoke bo
 		return "", infraerrors.BadRequest("CLOUD_NODE_INVALID", "Invalid node ID")
 	}
 	token := newToken()
-	result, err := s.db.ExecContext(ctx, `UPDATE donebot_cloud_nodes SET token_hash=$2,last_seen=NULL,enabled=CASE WHEN $3 THEN FALSE ELSE enabled END WHERE id=$1::uuid`, id, tokenHash(token), revoke)
+	result, err := s.db.ExecContext(ctx, `UPDATE donebot_cloud_nodes SET token_hash=$2,last_seen=NULL,enabled=CASE WHEN $3 THEN FALSE ELSE enabled END WHERE id=$1::uuid AND deleted_at IS NULL`, id, tokenHash(token), revoke)
 	if err != nil {
 		return "", err
 	}

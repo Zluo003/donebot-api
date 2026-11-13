@@ -121,7 +121,9 @@ func (s *Service) SaveNode(ctx context.Context, id string, in NodeInput) (*Node,
 		_, err = tx.ExecContext(ctx, `INSERT INTO donebot_cloud_nodes(id,name,endpoint,capacity,token_hash,enabled) VALUES($1::uuid,$2,$3,$4,$5,$6)`, id, in.Name, strings.TrimSuffix(in.Endpoint, "/"), in.Capacity, tokenHash(token), in.Enabled)
 	} else {
 		var count int
-		if err = tx.QueryRowContext(ctx, `SELECT capacity FROM donebot_cloud_nodes WHERE id=$1::uuid FOR UPDATE`, id).Scan(&count); err != nil {
+		if err = tx.QueryRowContext(ctx, `SELECT capacity FROM donebot_cloud_nodes WHERE id=$1::uuid AND deleted_at IS NULL FOR UPDATE`, id).Scan(&count); errors.Is(err, sql.ErrNoRows) {
+			return nil, "", infraerrors.NotFound("CLOUD_NODE_NOT_FOUND", "Cloud node not found")
+		} else if err != nil {
 			return nil, "", err
 		}
 		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM donebot_cloud_instances WHERE node_id=$1::uuid AND deleted_at IS NULL`, id).Scan(&count); err != nil {
@@ -141,7 +143,7 @@ func (s *Service) SaveNode(ctx context.Context, id string, in NodeInput) (*Node,
 	return &Node{ID: id, Name: in.Name, Endpoint: in.Endpoint, Capacity: in.Capacity, Enabled: in.Enabled}, token, nil
 }
 func (s *Service) Nodes(ctx context.Context) ([]Node, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT n.id::text,n.name,n.endpoint,n.capacity,n.enabled,n.last_seen,(SELECT COUNT(*) FROM donebot_cloud_instances i WHERE i.node_id=n.id AND i.deleted_at IS NULL) FROM donebot_cloud_nodes n ORDER BY n.created_at`)
+	rows, err := s.db.QueryContext(ctx, `SELECT n.id::text,n.name,n.endpoint,n.capacity,n.enabled,n.last_seen,(SELECT COUNT(*) FROM donebot_cloud_instances i WHERE i.node_id=n.id AND i.deleted_at IS NULL) FROM donebot_cloud_nodes n WHERE n.deleted_at IS NULL ORDER BY n.created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +301,7 @@ func (s *Service) prepare(ctx context.Context, op *Operation) {
 		return
 	}
 	if v.NodeID == "" {
-		err = tx.QueryRowContext(ctx, `SELECT n.id::text FROM donebot_cloud_nodes n WHERE n.enabled AND n.last_seen>clock_timestamp()-INTERVAL '30 seconds' AND (SELECT COUNT(*) FROM donebot_cloud_instances i WHERE i.node_id=n.id AND i.deleted_at IS NULL)<n.capacity ORDER BY (SELECT COUNT(*) FROM donebot_cloud_instances i WHERE i.node_id=n.id AND i.deleted_at IS NULL)::float/n.capacity,n.id FOR UPDATE OF n SKIP LOCKED LIMIT 1`).Scan(&v.NodeID)
+		err = tx.QueryRowContext(ctx, `SELECT n.id::text FROM donebot_cloud_nodes n WHERE n.deleted_at IS NULL AND n.enabled AND n.last_seen>clock_timestamp()-INTERVAL '30 seconds' AND (SELECT COUNT(*) FROM donebot_cloud_instances i WHERE i.node_id=n.id AND i.deleted_at IS NULL)<n.capacity ORDER BY (SELECT COUNT(*) FROM donebot_cloud_instances i WHERE i.node_id=n.id AND i.deleted_at IS NULL)::float/n.capacity,n.id FOR UPDATE OF n SKIP LOCKED LIMIT 1`).Scan(&v.NodeID)
 		if err == nil {
 			_, err = tx.ExecContext(ctx, `UPDATE donebot_cloud_instances SET node_id=$2::uuid WHERE id=$1::uuid`, v.ID, v.NodeID)
 		}
@@ -384,7 +386,7 @@ func (s *Service) nodeAuth(ctx context.Context, id, token string) error {
 		return infraerrors.Unauthorized("CLOUD_NODE_REQUIRED", "Node authentication required")
 	}
 	var ok bool
-	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM donebot_cloud_nodes WHERE id=$1::uuid AND token_hash=$2)`, id, tokenHash(token)).Scan(&ok)
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM donebot_cloud_nodes WHERE id=$1::uuid AND token_hash=$2 AND deleted_at IS NULL)`, id, tokenHash(token)).Scan(&ok)
 	if err != nil {
 		return err
 	}
@@ -398,7 +400,7 @@ func (s *Service) Claim(ctx context.Context, node, token string, running []Runni
 	if err := s.nodeAuth(ctx, node, token); err != nil {
 		return nil, err
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE donebot_cloud_nodes SET last_seen=clock_timestamp() WHERE id=$1::uuid`, node)
+	_, err := s.db.ExecContext(ctx, `UPDATE donebot_cloud_nodes SET last_seen=clock_timestamp() WHERE id=$1::uuid AND deleted_at IS NULL`, node)
 	if err != nil {
 		return nil, err
 	}
