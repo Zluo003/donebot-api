@@ -117,7 +117,7 @@ func DoneBotMediaErrorDiagnostic(status int, requestID string, body []byte) *Don
 		message = root.Get("message").String()
 	}
 	return &DoneBotMediaDiagnostic{HTTPStatus: status,
-		Code:      doneBotMediaDiagnosticID(firstNonEmpty(detail.Get("code").String(), root.Get("code").String())),
+		Code:      doneBotMediaDiagnosticID(firstNonEmpty(detail.Get("reason").String(), root.Get("reason").String(), detail.Get("code").String(), root.Get("code").String())),
 		Type:      doneBotMediaDiagnosticID(detail.Get("type").String()),
 		RequestID: doneBotMediaDiagnosticID(firstNonEmpty(detail.Get("request_id").String(), root.Get("request_id").String(), requestID)),
 		Message:   doneBotMediaDiagnosticMessage(message)}

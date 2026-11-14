@@ -72,7 +72,25 @@ func (r *doneBotMediaOperationRepository) Begin(ctx context.Context, op *service
 	result, err := clientFromContext(ctx, r.client).ExecContext(ctx, `INSERT INTO donebot_media_operations
  (receipt_id,user_id,api_key_id,group_id,installation_id,idempotency_hash,request_fingerprint,media_kind,operation,model,method,native_path,status,usage_request_id,estimated_cents,task_id,provider_task_key,provider)
  VALUES($1::uuid,$2,$3,$4,$5::uuid,$6,$7,$8,$9,$10,$11,$12,'dispatching',$13,$14::numeric,$15,$16,$17)
- ON CONFLICT(user_id,api_key_id,group_id,installation_id,idempotency_hash) DO NOTHING`,
+ ON CONFLICT(user_id,api_key_id,group_id,installation_id,idempotency_hash) DO UPDATE SET
+ status='dispatching',replay_status=NULL,replay_content_type='',replay_retry_after='',replay_body=NULL,updated_at=NOW()
+ WHERE donebot_media_operations.status='failed' AND donebot_media_operations.replay_status=429
+ AND donebot_media_operations.replay_content_type='application/json'
+ AND (convert_from(donebot_media_operations.replay_body,'UTF8')::jsonb->>'reason'='DONEBOT_MEDIA_CONCURRENCY'
+   OR convert_from(donebot_media_operations.replay_body,'UTF8')::jsonb->'diagnostic'->>'code'='DONEBOT_MEDIA_CONCURRENCY'
+   OR (donebot_media_operations.media_kind IN ('image','video','music')
+     AND convert_from(donebot_media_operations.replay_body,'UTF8')::jsonb->>'code'='429'
+     AND convert_from(donebot_media_operations.replay_body,'UTF8')::jsonb->>'message'='media concurrency limit reached; wait for an existing task to finish'))
+ AND donebot_media_operations.request_fingerprint=EXCLUDED.request_fingerprint
+ AND donebot_media_operations.media_kind=EXCLUDED.media_kind AND donebot_media_operations.operation=EXCLUDED.operation
+ AND donebot_media_operations.model=EXCLUDED.model AND donebot_media_operations.method=EXCLUDED.method
+ AND donebot_media_operations.native_path=EXCLUDED.native_path
+ AND (donebot_media_operations.task_id='' OR (donebot_media_operations.media_kind='image'
+   AND donebot_media_operations.provider='donebot'
+   AND donebot_media_operations.task_id='imgtask_'||replace(donebot_media_operations.receipt_id::text,'-','')
+   AND donebot_media_operations.provider_task_key=donebot_media_operations.task_id))
+ AND NOT EXISTS(SELECT 1 FROM donebot_media_precharges p WHERE p.receipt_id=donebot_media_operations.receipt_id)
+ AND NOT EXISTS(SELECT 1 FROM donebot_media_dispatches d WHERE d.receipt_id=donebot_media_operations.receipt_id)`,
 		op.ReceiptID, op.Owner.UserID, op.Owner.APIKeyID, op.Owner.GroupID, op.Owner.InstallationID, op.IdempotencyHash, op.Fingerprint, op.Kind, op.Operation, op.Model, op.Method, op.Path, op.UsageRequestID, estimated, op.TaskID, op.TaskKey, op.Provider)
 	if err != nil {
 		return nil, false, err

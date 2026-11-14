@@ -198,6 +198,156 @@ func TestDoneBotDispatchAllAccountsFailRefundOnlyAtEnd(t *testing.T) {
 	require.Equal(t, []int64{1, 2, 3}, upstream.posts)
 }
 
+type doneBotUnavailableAccountRepo struct {
+	AccountRepository
+	err error
+}
+
+func (r doneBotUnavailableAccountRepo) GetByID(context.Context, int64) (*Account, error) {
+	return nil, r.err
+}
+
+func TestDoneBotDispatchSettlesPersistedSeedreamMeasurementsAfterAccountDeletion(t *testing.T) {
+	for _, model := range []string{"seedream-5-0-flash", seedream55Model} {
+		for _, accountErr := range []error{nil, ErrAccountNotFound} {
+			t.Run(fmt.Sprint(model, "/", accountErr), func(t *testing.T) {
+				w, repo, upstream, task := doneBotDispatchFixture(t, DoneBotDispatchAPIMartImages)
+				task.Model, task.BillingModel, task.UpstreamModel = model, model, model
+				task.AccountID, task.State = 2, "settling"
+				task.Info.Tier, task.Info.InputImages = "2K", 1
+				task.Result = APIMartCompletionResult(doneBotDispatchAPIMartPending(&task), []byte(`{"data":{"status":"completed","result":{"images":[{"url":"https://assets.example.test/output.png","sizes":["2848x1600"]}]}}}`), task.TaskID)
+				require.NotNil(t, task.Result)
+				ApplyOpenAIImageBillingResolution(task.Result)
+				require.Equal(t, map[string]int{"4K": 1}, task.Result.ImageSizeBreakdown)
+				repo.p.Model = model
+				repo.p.Snapshot.InputImages = 1
+				repo.p.Snapshot.Rates = map[string]DoneBotMediaUnitPrice{"1K": {Actual: 0.125, Total: 0.1}, "2K": {Actual: 0.45, Total: 0.3}, "input": {Actual: 0.05, Total: 0.02}}
+				if accountErr != nil {
+					w.service.accountRepo = doneBotUnavailableAccountRepo{err: accountErr}
+				}
+				require.NoError(t, w.processDoneBot(context.Background(), &task))
+				require.Equal(t, "completed", task.State)
+				require.Equal(t, "settled", repo.p.State)
+				require.InDelta(t, 0.5, repo.settled.ActualAmount, 1e-8)
+				require.InDelta(t, 0.32, repo.settled.TotalAmount, 1e-8)
+				require.Equal(t, int64(1), repo.settled.Effects.AccountID)
+				require.Zero(t, repo.settled.Effects.BalanceCost)
+				require.Empty(t, upstream.posts)
+				require.Empty(t, upstream.gets)
+			})
+		}
+	}
+}
+
+func TestDoneBotDispatchSettlementPreservesReconciliationGuardAndTransientFailures(t *testing.T) {
+	for _, scenario := range []string{"excess_count", "unregistered_tier", "database_unavailable"} {
+		t.Run(scenario, func(t *testing.T) {
+			w, repo, upstream, task := doneBotDispatchFixture(t, DoneBotDispatchAPIMartImages)
+			task.AccountID, task.State = 1, "settling"
+			task.Result = &OpenAIForwardResult{ImageCount: 1, ImageOutputSizes: []string{"1024x1024"}}
+			if scenario == "excess_count" {
+				repo.p.Snapshot.MaxUnits = 1
+				task.Result.ImageCount = 2
+				task.Result.ImageOutputSizes = []string{"1024x1024", "1024x1024"}
+			} else if scenario == "unregistered_tier" {
+				task.Result.ImageOutputSizes = []string{"2848x1600"}
+			} else {
+				w.service.accountRepo = doneBotUnavailableAccountRepo{err: errors.New("fixture database unavailable")}
+			}
+			err := w.processDoneBot(context.Background(), &task)
+			if scenario == "database_unavailable" {
+				require.ErrorContains(t, err, "fixture database unavailable")
+			} else {
+				require.ErrorIs(t, err, ErrDoneBotMediaReconciliation)
+			}
+			require.Equal(t, "settling", task.State)
+			require.Nil(t, repo.stage)
+			require.Nil(t, repo.settled)
+			require.Empty(t, upstream.posts)
+		})
+	}
+}
+
+func TestDoneBotDispatchRefundDoesNotRequireProviderOrActiveKey(t *testing.T) {
+	w, repo, upstream, task := doneBotDispatchFixture(t, DoneBotDispatchAPIMartImages)
+	w.keys = nil
+	w.service.accountRepo = doneBotUnavailableAccountRepo{err: ErrAccountNotFound}
+	task.State = "refunding"
+	require.NoError(t, w.processDoneBot(context.Background(), &task))
+	require.Equal(t, "failed", task.State)
+	require.Equal(t, "refunded", repo.p.State)
+	require.True(t, repo.settled.Failure)
+	require.Empty(t, upstream.posts)
+}
+
+func TestDoneBotDispatchReportsGenerationEndBeforeDeliveryAndBilling(t *testing.T) {
+	for _, protocol := range []string{DoneBotDispatchImages, DoneBotDispatchAPIMartImages, DoneBotDispatchAPIMartMusic, DoneBotDispatchSeedance} {
+		for _, state := range []string{"queued", "polling", "uncertain", "retrieving", "settling", "refunding"} {
+			t.Run(protocol+"/"+state, func(t *testing.T) {
+				task := &DoneBotDispatch{TaskID: "fixture-task", Protocol: protocol, State: state}
+				var value map[string]any
+				require.NoError(t, json.Unmarshal(task.PublicBody(), &value))
+				if protocol == DoneBotDispatchAPIMartImages || protocol == DoneBotDispatchAPIMartMusic {
+					value = value["data"].(map[string]any)
+				}
+				require.NotContains(t, value, "result")
+				switch state {
+				case "retrieving", "settling":
+					require.Equal(t, "completed", value["generation_status"])
+				case "refunding":
+					require.Equal(t, "failed", value["generation_status"])
+				default:
+					require.NotContains(t, value, "generation_status")
+				}
+			})
+		}
+	}
+}
+
+type doneBotDeletedDispatchKeyRepo struct {
+	APIKeyRepository
+	key          *APIKey
+	billingReads int
+}
+
+func (r *doneBotDeletedDispatchKeyRepo) GetByID(context.Context, int64) (*APIKey, error) {
+	return nil, ErrAPIKeyNotFound
+}
+
+func (r *doneBotDeletedDispatchKeyRepo) GetDoneBotMediaBillingKey(context.Context, int64) (*APIKey, error) {
+	r.billingReads++
+	return r.key, nil
+}
+
+func TestDoneBotDispatchDeletedKeyCanSettleButCannotStartGeneration(t *testing.T) {
+	for _, state := range []string{"settling", "queued", "wrong_owner"} {
+		t.Run(state, func(t *testing.T) {
+			w, repo, upstream, task := doneBotDispatchFixture(t, DoneBotDispatchAPIMartImages)
+			keys := &doneBotDeletedDispatchKeyRepo{key: w.keys.apiKeyRepo.(doneBotDispatchKeyRepo).key}
+			w.keys.apiKeyRepo = keys
+			task.State, task.AccountID = state, 1
+			task.Result = &OpenAIForwardResult{ImageCount: 1, ImageOutputSizes: []string{"1024x1024"}}
+			if state == "wrong_owner" {
+				task.State = "settling"
+				keys.key.UserID++
+			}
+			err := w.processDoneBot(context.Background(), &task)
+			if state == "settling" {
+				require.NoError(t, err)
+				require.Equal(t, "settled", repo.p.State)
+				require.Equal(t, 1, keys.billingReads)
+			} else {
+				require.Error(t, err)
+				require.Nil(t, repo.settled)
+				if state == "queued" {
+					require.Zero(t, keys.billingReads)
+				}
+			}
+			require.Empty(t, upstream.posts)
+		})
+	}
+}
+
 func TestDoneBotDispatchTransientlyUnavailableAccountDoesNotRefund(t *testing.T) {
 	w, repo, upstream, task := doneBotDispatchFixture(t, DoneBotDispatchAPIMartImages)
 	until := time.Now().Add(time.Hour)
@@ -284,6 +434,86 @@ func TestDoneBotDispatchUnknownAcceptanceAndRestartNeverResubmit(t *testing.T) {
 	require.NoError(t, w.processDoneBot(context.Background(), &task))
 	require.Equal(t, "uncertain", task.State)
 	require.Equal(t, []int64{1}, upstream.posts)
+}
+
+func TestDoneBotDispatchInterruptedProviderTaskResumesQueryWithoutPost(t *testing.T) {
+	for _, protocol := range []string{DoneBotDispatchAPIMartImages, DoneBotDispatchAPIMartMusic, DoneBotDispatchSeedance} {
+		for _, state := range []string{"dispatching", "uncertain"} {
+			t.Run(protocol+"/"+state, func(t *testing.T) {
+				w, repo, upstream, task := doneBotDispatchFixture(t, protocol)
+				task.State, task.AccountID, task.ProviderTaskID = state, 1, "provider-1"
+				task.Result = &OpenAIForwardResult{ResponseID: "provider-1"}
+				require.NoError(t, w.processDoneBot(context.Background(), &task))
+				require.Equal(t, "completed", task.State)
+				require.Equal(t, "settled", repo.p.State)
+				require.Empty(t, upstream.posts)
+				require.Equal(t, []int64{1}, upstream.gets)
+				require.Equal(t, "provider-1", task.ProviderTaskID)
+			})
+		}
+	}
+}
+
+func TestDoneBotDispatchInterruptedResultResumesWithoutProvider(t *testing.T) {
+	for _, state := range []string{"dispatching", "uncertain"} {
+		for _, artifacts := range []bool{false, true} {
+			t.Run(fmt.Sprint(state, "/artifacts=", artifacts), func(t *testing.T) {
+				w, repo, upstream, task := doneBotDispatchFixture(t, DoneBotDispatchAPIMartImages)
+				task.State, task.AccountID = state, 1
+				task.Response = []byte(`{"data":{"status":"completed","result":{"images":[{"url":"https://assets.example.test/picture.png","size":"1024x1024"}]}}}`)
+				task.Result = APIMartCompletionResult(doneBotDispatchAPIMartPending(&task), task.Response, task.TaskID)
+				require.NotNil(t, task.Result)
+				if artifacts {
+					task.DoneBotIntent = true
+					task.Artifacts = []DoneBotMediaArtifact{{ID: "artifact-fixture", AssetID: "asset-fixture", Kind: "image"}}
+					task.Response = nil
+				}
+				w.service.accountRepo = doneBotUnavailableAccountRepo{err: ErrAccountNotFound}
+				require.NoError(t, w.processDoneBot(context.Background(), &task))
+				require.Equal(t, "completed", task.State)
+				require.Equal(t, "settled", repo.p.State)
+				require.Empty(t, upstream.posts)
+				require.Empty(t, upstream.gets)
+			})
+		}
+	}
+}
+
+func TestDoneBotDispatchInterruptedSynchronousImageRetainsOutputForRetrieval(t *testing.T) {
+	w, repo, upstream, task := doneBotDispatchFixture(t, DoneBotDispatchImages)
+	task.State, task.AccountID = "uncertain", 1
+	task.Response = []byte(`{"data":[{"url":"https://assets.example.test/picture.png"}]}`)
+	task.Result = &OpenAIForwardResult{ImageCount: 1, ImageSize: "1K"}
+	require.ErrorContains(t, w.processDoneBot(context.Background(), &task), "image storage unavailable")
+	require.Equal(t, "retrieving", repo.job.State)
+	require.Equal(t, task.Response, repo.job.Response)
+	require.NotNil(t, repo.job.Result)
+	require.Contains(t, string(repo.job.PublicBody()), `"generation_status":"completed"`)
+	require.Nil(t, repo.settled)
+	require.Empty(t, upstream.posts)
+	require.Empty(t, upstream.gets)
+}
+
+func TestDoneBotDispatchUnknownResultCannotBeRetriedOrRefundedByAge(t *testing.T) {
+	for _, protocol := range []string{DoneBotDispatchImages, DoneBotDispatchAPIMartImages} {
+		w, repo, upstream, task := doneBotDispatchFixture(t, protocol)
+		w.keys = nil
+		task.CreatedAt = time.Now().Add(-30 * 24 * time.Hour)
+		task.State = "dispatching"
+		if protocol == DoneBotDispatchImages {
+			task.ProviderTaskID = "unsupported-provider-query"
+		}
+		require.NoError(t, w.processDoneBot(context.Background(), &task))
+		require.Equal(t, "uncertain", task.State)
+		for i := 0; i < 3; i++ {
+			require.NoError(t, w.processDoneBot(context.Background(), &task))
+		}
+		require.Equal(t, 1, repo.saves)
+		require.Equal(t, "prepaid", repo.p.State)
+		require.Nil(t, repo.settled)
+		require.Empty(t, upstream.posts)
+		require.Empty(t, upstream.gets)
+	}
 }
 
 func TestDoneBotIntentJobHidesAccountErrorsUntilTerminalFailure(t *testing.T) {

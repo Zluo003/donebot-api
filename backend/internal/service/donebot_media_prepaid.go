@@ -515,7 +515,7 @@ func doneBotPrepaidActual(snapshot DoneBotMediaPriceSnapshot, result *OpenAIForw
 	add := func(tier string, count float64) error {
 		price, ok := snapshot.Rates[tier]
 		if !ok || count < 0 || math.IsNaN(count) || math.IsInf(count, 0) {
-			return ErrDoneBotMediaReconciliation
+			return fmt.Errorf("%w: kind=%s tier=%q units=%g price_registered=%t", ErrDoneBotMediaReconciliation, snapshot.Kind, tier, count, ok)
 		}
 		units += count
 		actual = actual.Add(decimal.NewFromFloat(price.Actual).Mul(decimal.NewFromFloat(count)))
@@ -525,7 +525,7 @@ func doneBotPrepaidActual(snapshot DoneBotMediaPriceSnapshot, result *OpenAIForw
 	switch snapshot.Kind {
 	case "image":
 		if result.ImageCount <= 0 {
-			return nil, ErrDoneBotMediaReconciliation
+			return nil, fmt.Errorf("%w: image_count=%d", ErrDoneBotMediaReconciliation, result.ImageCount)
 		}
 		counts := result.ImageSizeBreakdown
 		if len(counts) == 0 {
@@ -537,15 +537,15 @@ func doneBotPrepaidActual(snapshot DoneBotMediaPriceSnapshot, result *OpenAIForw
 			}
 		}
 		if units != float64(result.ImageCount) {
-			return nil, ErrDoneBotMediaReconciliation
+			return nil, fmt.Errorf("%w: measured_images=%g image_count=%d", ErrDoneBotMediaReconciliation, units, result.ImageCount)
 		}
 		if result.ImageInputCount != snapshot.InputImages {
-			return nil, ErrDoneBotMediaReconciliation
+			return nil, fmt.Errorf("%w: input_images=%d admitted_input_images=%d", ErrDoneBotMediaReconciliation, result.ImageInputCount, snapshot.InputImages)
 		}
 		if snapshot.InputImages > 0 {
 			price, ok := snapshot.Rates["input"]
 			if !ok {
-				return nil, ErrDoneBotMediaReconciliation
+				return nil, fmt.Errorf("%w: input image price not registered", ErrDoneBotMediaReconciliation)
 			}
 			count := decimal.NewFromInt(int64(snapshot.InputImages))
 			actual = actual.Add(decimal.NewFromFloat(price.Actual).Mul(count))
@@ -553,14 +553,14 @@ func doneBotPrepaidActual(snapshot DoneBotMediaPriceSnapshot, result *OpenAIForw
 		}
 	case "video":
 		if result.VideoActualDurationSeconds <= 0 || result.VideoResolution != snapshot.Tier {
-			return nil, ErrDoneBotMediaReconciliation
+			return nil, fmt.Errorf("%w: video_seconds=%g resolution=%q admitted_resolution=%q", ErrDoneBotMediaReconciliation, result.VideoActualDurationSeconds, result.VideoResolution, snapshot.Tier)
 		}
 		if err := add(snapshot.Tier, result.VideoActualDurationSeconds+snapshot.InputSeconds); err != nil {
 			return nil, err
 		}
 	case "music":
 		if result.AudioUsage == nil || result.AudioUsage.Mode != snapshot.Tier || result.AudioUsage.DurationOrUnits <= 0 {
-			return nil, ErrDoneBotMediaReconciliation
+			return nil, fmt.Errorf("%w: missing music usage or admitted tier %q", ErrDoneBotMediaReconciliation, snapshot.Tier)
 		}
 		if err := add(snapshot.Tier, result.AudioUsage.DurationOrUnits); err != nil {
 			return nil, err
@@ -569,7 +569,7 @@ func doneBotPrepaidActual(snapshot DoneBotMediaPriceSnapshot, result *OpenAIForw
 		return nil, ErrDoneBotMediaInvalid
 	}
 	if units > snapshot.MaxUnits {
-		return nil, ErrDoneBotMediaReconciliation
+		return nil, fmt.Errorf("%w: units=%g admitted_max_units=%g", ErrDoneBotMediaReconciliation, units, snapshot.MaxUnits)
 	}
 	a, _ := actual.Round(UsageBillingMonetaryScale).Float64()
 	t, _ := total.Round(UsageBillingMonetaryScale).Float64()
@@ -613,8 +613,13 @@ func (s *OpenAIGatewayService) recordDoneBotPrepaidUsage(ctx context.Context, in
 		}
 		return true, nil
 	}
-	if p.Kind == "image" && !strings.HasPrefix(input.Result.ResponseID, "apimart:") {
-		ApplyOpenAIImageBillingResolution(input.Result)
+	if p.Kind == "image" {
+		dispatch := DoneBotDispatchFromContext(ctx)
+		if dispatch != nil && dispatch.Protocol == DoneBotDispatchAPIMartImages {
+			if !applyAPIMartImageBillingResolution(doneBotDispatchAPIMartPending(dispatch), input.Result) {
+				return true, fmt.Errorf("%w: invalid persisted APIMart image measurements", ErrDoneBotMediaReconciliation)
+			}
+		}
 	}
 	snapshot, err := doneBotMediaSettlementSnapshot(p.Snapshot, input.Result)
 	if err != nil {
@@ -637,6 +642,9 @@ func (s *OpenAIGatewayService) recordDoneBotPrepaidUsage(ctx context.Context, in
 	cmd.Normalize()
 	settlement := DoneBotMediaPrepaidSettlement{QuotaPlatform: input.QuotaPlatform, ReceiptID: p.ReceiptID, ProviderRequestID: input.Result.RequestID, ActualAmount: cost.ActualCost, TotalAmount: cost.TotalCost, Effects: cmd}
 	if err := repo.StageDoneBotMediaSettlement(ctx, settlement); err != nil {
+		if errors.Is(err, ErrDoneBotMediaReconciliation) {
+			return true, fmt.Errorf("%w: actual_amount=%g admitted_amount=%g total_amount=%g admitted_total=%g", err, cost.ActualCost, p.Amount, cost.TotalCost, p.TotalAmount)
+		}
 		return true, err
 	}
 	result, err := repo.SettleDoneBotMediaPrecharge(ctx, settlement)

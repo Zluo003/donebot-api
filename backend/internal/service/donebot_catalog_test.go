@@ -46,6 +46,23 @@ func TestDoneBotPublicCatalogFiltersAndSanitizes(t *testing.T) {
 	}
 }
 
+func TestDoneBotPublicCatalogAdvertisesJevOnlyAsNativeDecisionInterface(t *testing.T) {
+	group := &Group{ID: 7, Platform: PlatformComposite, Status: StatusActive, RateMultiplier: 1}
+	row := DoneBotModel{Model: "jev-latest", Kind: "llm", Platform: PlatformTypeSafe, Enabled: true, Available: true, PricingConfigured: true}
+	account := Account{ID: 1, Platform: PlatformTypeSafe, Type: AccountTypeAPIKey, GroupIDs: []int64{7}, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"model_mapping": map[string]any{"jev-latest": "jev-latest"}}}
+	catalog, err := buildDoneBotPublicCatalog(group, 42, "fixture", []DoneBotModel{row}, []Account{account}, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, catalog.Models, 1)
+	require.Equal(t, []string{"typesafe.systemone"}, catalog.Models[0].Interfaces)
+	require.False(t, catalog.Models[0].Capabilities.ToolCalling)
+	require.False(t, catalog.Models[0].Capabilities.Reasoning.Supported)
+	require.Equal(t, "jev-latest", catalog.Defaults["typesafe.systemone"])
+	account.Schedulable = false
+	catalog, err = buildDoneBotPublicCatalog(group, 42, "fixture", []DoneBotModel{row}, []Account{account}, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, catalog.Models)
+}
+
 func TestDoneBotPublicCatalogLLMToolsAlwaysEnabled(t *testing.T) {
 	for _, metadata := range []string{"", `{"gpt-test":{}}`, `{"gpt-test":{"tool_calling":false}}`, `{"gpt-test":{"tool_calling":true}}`} {
 		t.Run(metadata, func(t *testing.T) {

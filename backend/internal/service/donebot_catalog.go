@@ -643,6 +643,9 @@ func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account
 		}
 	}
 	endpoints := map[string]string{"anthropic.messages": CompositeRouteEndpointMessages, "openai.responses": CompositeRouteEndpointResponses, "openai.chat_completions": CompositeRouteEndpointChatCompletions, "gemini.generate_content": CompositeRouteEndpointGemini}
+	if row.Kind == "llm" && row.Platform == PlatformTypeSafe {
+		endpoints = map[string]string{"typesafe.systemone": CompositeRouteEndpointAny}
+	}
 	if row.Kind == "images" {
 		endpoints = map[string]string{"openai.images": CompositeRouteEndpointImages}
 	}
@@ -722,6 +725,8 @@ func doneBotAccountUsesNativeInterface(account *Account, model, kind, iface stri
 		return iface == "openai.videos" && doneBotHasNativeMediaAccount(model, account.Platform, "video", []Account{*account})
 	}
 	switch iface {
+	case "typesafe.systemone":
+		return account.Platform == PlatformTypeSafe
 	case "anthropic.messages":
 		return account.Platform == PlatformAnthropic
 	case "gemini.generate_content":

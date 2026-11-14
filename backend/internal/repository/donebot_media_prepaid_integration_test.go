@@ -187,7 +187,7 @@ func TestDoneBotMediaPrepaidSuccessRefundsDifferenceWithoutSecondDebit(t *testin
 }
 
 func TestDoneBotMediaPrepaidEnforcesSharedMediaConcurrencyAndRecovery(t *testing.T) {
-	repo, ops, owner, accountID := doneBotPrepaidFixture(t, 100, 2)
+	repo, ops, owner, accountID := doneBotPrepaidFixture(t, 100, 1)
 	p := doneBotPrepaidInput(t, ops, owner, accountID, "first", 0.6)
 	second := doneBotPrepaidInput(t, ops, owner, accountID, "second", 0.6)
 	require.NoError(t, repo.PrepayDoneBotMedia(context.Background(), p))
@@ -281,4 +281,37 @@ func TestDoneBotMediaPrepaidAcceptsOnlyUndispatchedLocalAsyncReceipt(t *testing.
 	_, err = ops.Complete(context.Background(), owner, native.ReceiptID, service.DoneBotMediaCompletion{Status: "accepted", TaskID: "native-already-accepted"})
 	require.NoError(t, err)
 	require.ErrorIs(t, repo.PrepayDoneBotMedia(context.Background(), native), service.ErrDoneBotMediaPending)
+}
+
+func TestDoneBotMediaPrepaidDeletedCredentialAndAccountStillSettleOnce(t *testing.T) {
+	ctx := context.Background()
+	repo, ops, owner, accountID := doneBotPrepaidFixture(t, 10, 1)
+	p := doneBotPrepaidInput(t, ops, owner, accountID, "deleted-billing-identities", 0.6)
+	require.NoError(t, repo.PrepayDoneBotMedia(ctx, p))
+	keys := NewAPIKeyRepository(integrationEntClient, integrationDB).(*apiKeyRepository)
+	require.NoError(t, keys.Delete(ctx, owner.APIKeyID))
+	_, err := integrationDB.Exec(`UPDATE accounts SET deleted_at=NOW() WHERE id=$1`, accountID)
+	require.NoError(t, err)
+	_, err = keys.GetByID(ctx, owner.APIKeyID)
+	require.ErrorIs(t, err, service.ErrAPIKeyNotFound)
+	billingKey, err := keys.GetDoneBotMediaBillingKey(ctx, owner.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, owner.UserID, billingKey.UserID)
+	require.Equal(t, owner.UserID, billingKey.User.ID)
+	in := service.DoneBotMediaPrepaidSettlement{ReceiptID: p.ReceiptID, ProviderRequestID: "persisted-result", ActualAmount: 0.25, TotalAmount: 0.125,
+		Effects: &service.UsageBillingCommand{RequestID: "dbm:settle:" + p.ReceiptID, APIKeyID: owner.APIKeyID, UserID: owner.UserID, AccountID: accountID, Model: p.Model, AccountType: service.AccountTypeAPIKey, APIKeyQuotaCost: 0.25, APIKeyRateLimitCost: 0.25, AccountQuotaCost: 0.125}}
+	require.NoError(t, repo.StageDoneBotMediaSettlement(ctx, in))
+	result, err := repo.SettleDoneBotMediaPrecharge(ctx, in)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	result, err = repo.SettleDoneBotMediaPrecharge(ctx, in)
+	require.NoError(t, err)
+	require.False(t, result.Applied)
+	var balance float64
+	var charges, refunds int
+	require.NoError(t, integrationDB.QueryRow(`SELECT balance FROM users WHERE id=$1`, owner.UserID).Scan(&balance))
+	require.Equal(t, 9.75, balance)
+	require.NoError(t, integrationDB.QueryRow(`SELECT COUNT(*) FILTER (WHERE event_type='charge'),COUNT(*) FILTER (WHERE event_type='refund') FROM usage_logs WHERE operation_receipt_id=$1::uuid`, p.ReceiptID).Scan(&charges, &refunds))
+	require.Equal(t, 1, charges)
+	require.Equal(t, 1, refunds)
 }

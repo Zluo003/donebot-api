@@ -76,12 +76,17 @@ func (r *usageBillingRepository) PrepayDoneBotMedia(ctx context.Context, p *serv
 	if opStatus != "dispatching" && (opStatus != "accepted" || opKind != "image" || opProvider != "donebot") {
 		return service.ErrDoneBotMediaPending
 	}
-	limit := concurrency / 2
+	limit := concurrency
 	if limit < 1 {
 		limit = 1
 	}
 	var pending int
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM donebot_media_precharges WHERE user_id=$1 AND state='prepaid'`, p.UserID).Scan(&pending); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM donebot_media_precharges p
+        JOIN donebot_media_operations o USING(receipt_id)
+        LEFT JOIN donebot_media_dispatches d USING(receipt_id)
+        WHERE p.user_id=$1 AND p.state='prepaid' AND p.settlement_input IS NULL
+        AND o.status NOT IN ('completed','failed','cancelled','refunded')
+        AND (d.receipt_id IS NULL OR d.state NOT IN ('retrieving','settling','refunding','completed','failed'))`, p.UserID).Scan(&pending); err != nil {
 		return err
 	}
 	if pending >= limit {
@@ -247,6 +252,20 @@ func (r *usageBillingRepository) SettleDoneBotMediaPrecharge(ctx context.Context
 		cmd := *in.Effects
 		cmd.BalanceCost = 0
 		cmd.SubscriptionCost = 0
+		var keyDeleted, accountDeleted bool
+		if err = tx.QueryRowContext(ctx, `SELECT deleted_at IS NOT NULL FROM api_keys WHERE id=$1 AND user_id=$2`, p.APIKeyID, p.UserID).Scan(&keyDeleted); err != nil {
+			return nil, err
+		}
+		if err = tx.QueryRowContext(ctx, `SELECT deleted_at IS NOT NULL FROM accounts WHERE id=$1`, p.AccountID).Scan(&accountDeleted); err != nil {
+			return nil, err
+		}
+		if keyDeleted {
+			cmd.APIKeyQuotaCost = 0
+			cmd.APIKeyRateLimitCost = 0
+		}
+		if accountDeleted {
+			cmd.AccountQuotaCost = 0
+		}
 		cmd.Normalize()
 		claimed, e := r.claimUsageBillingKey(ctx, tx, &cmd)
 		if e != nil {

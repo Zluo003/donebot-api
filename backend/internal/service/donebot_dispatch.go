@@ -93,7 +93,7 @@ type DoneBotDispatch struct {
 }
 
 // DoneBotDispatchRepository checkpoints a dispatch before any paid upstream POST.
-// An expired dispatching lease is uncertain; only known provider IDs may be polled again.
+// Interrupted dispatches may resume known provider IDs or durable results, never a paid POST.
 type DoneBotDispatchRepository interface {
 	TakeDoneBotDispatches(context.Context, int) ([]DoneBotDispatch, error)
 	SaveDoneBotDispatch(context.Context, *DoneBotDispatch, time.Duration) error
@@ -217,6 +217,13 @@ func (task *DoneBotDispatch) AcceptedBody() []byte {
 
 func (task *DoneBotDispatch) PublicBody() []byte {
 	status := "processing"
+	generationStatus := ""
+	switch task.State {
+	case "retrieving", "settling", "completed":
+		generationStatus = "completed"
+	case "refunding", "failed":
+		generationStatus = "failed"
+	}
 	if task.State == "completed" {
 		status = "completed"
 	}
@@ -228,6 +235,9 @@ func (task *DoneBotDispatch) PublicBody() []byte {
 	}
 	if task.Protocol == DoneBotDispatchImages {
 		value := map[string]any{"id": task.TaskID, "task_id": task.TaskID, "status": status, "receipt_id": task.ReceiptID}
+		if generationStatus != "" {
+			value["generation_status"] = generationStatus
+		}
 		if task.State == "completed" {
 			if task.DoneBotIntent {
 				value["artifacts"] = task.publicArtifacts()
@@ -264,6 +274,9 @@ func (task *DoneBotDispatch) PublicBody() []byte {
 		delete(target, "result")
 	}
 	target["id"], target["task_id"], target["status"] = task.TaskID, task.TaskID, status
+	if generationStatus != "" {
+		target["generation_status"] = generationStatus
+	}
 	if status == "failed" || status == "uncertain" {
 		target["error"] = task.publicError()
 	}

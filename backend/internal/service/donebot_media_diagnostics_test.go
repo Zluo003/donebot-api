@@ -12,6 +12,11 @@ import (
 )
 
 func TestDoneBotMediaDiagnosticKeepsSpecificSafeErrorFields(t *testing.T) {
+	rejection := []byte(`{"code":429,"reason":"DONEBOT_MEDIA_CONCURRENCY","message":"media concurrency limit reached; wait for an existing task to finish"}`)
+	require.Equal(t, "DONEBOT_MEDIA_CONCURRENCY", DoneBotMediaErrorDiagnostic(429, "", rejection).Code)
+	replay, _, ok := doneBotMediaSafeResponse("application/json", rejection)
+	require.True(t, ok)
+	require.Contains(t, string(replay), `"reason":"DONEBOT_MEDIA_CONCURRENCY"`)
 	diagnostic := DoneBotMediaErrorDiagnostic(200, "req-header", []byte(`{"http_status":502,"error":{"code":"model_capacity","type":"upstream_error","request_id":"req-provider","message":"No image workers are available for this model; try again later."},"headers":{"authorization":"private"}}`))
 	require.Equal(t, &DoneBotMediaDiagnostic{HTTPStatus: 502, Code: "model_capacity", Type: "upstream_error", RequestID: "req-provider", Message: "No image workers are available for this model; try again later."}, diagnostic)
 	require.Nil(t, DoneBotMediaErrorDiagnostic(202, "req-success", []byte(`{"task_id":"accepted","status":"processing"}`)))

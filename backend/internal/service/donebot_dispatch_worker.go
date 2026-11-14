@@ -83,18 +83,57 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 		}
 		return repo.SaveDoneBotDispatch(ctx, task, delay)
 	}
-	if task.State == "dispatching" {
-		task.State = "uncertain"
+	refund := func() error {
+		if err := s.RefundDoneBotMediaReceipt(ctx); err != nil {
+			_ = save(10 * time.Second)
+			return err
+		}
+		task.State = "failed"
+		task.Body = nil
 		return save(0)
 	}
+	if task.State == "refunding" {
+		return refund()
+	}
+	if task.State == "dispatching" || task.State == "uncertain" {
+		switch {
+		case task.Result != nil && len(task.Response) > 0:
+			task.State = "retrieving"
+		case task.DoneBotIntent && task.Result != nil && len(task.Artifacts) > 0:
+			task.State = "settling"
+		case task.ProviderTaskID != "" && (task.Protocol == DoneBotDispatchAPIMartImages || task.Protocol == DoneBotDispatchAPIMartMusic || task.Protocol == DoneBotDispatchSeedance):
+			task.State = "polling"
+		default:
+			if task.State == "uncertain" {
+				return nil
+			}
+			task.State = "uncertain"
+			return save(0)
+		}
+		if err := save(90 * time.Second); err != nil {
+			return err
+		}
+	}
 	key, err := w.keys.apiKeyRepo.GetByID(ctx, task.APIKeyID)
+	generated := task.State == "retrieving" || task.State == "settling"
+	if generated && errors.Is(err, ErrAPIKeyNotFound) {
+		if billingKeys, ok := w.keys.apiKeyRepo.(interface {
+			GetDoneBotMediaBillingKey(context.Context, int64) (*APIKey, error)
+		}); ok {
+			key, err = billingKeys.GetDoneBotMediaBillingKey(ctx, task.APIKeyID)
+		}
+	}
 	if err != nil {
 		return err
 	}
 	if key == nil || key.UserID != task.UserID || key.User == nil {
 		return fmt.Errorf("dispatch owner is unavailable")
 	}
-	if key.Group == nil || key.Group.ID != task.GroupID {
+	if generated {
+		copyKey := *key
+		copyKey.GroupID = &task.GroupID
+		key = &copyKey
+	} else if key.Group == nil || key.Group.ID != task.GroupID {
 		group, groupErr := w.keys.groupRepo.GetByID(ctx, task.GroupID)
 		if groupErr != nil {
 			return groupErr
@@ -287,11 +326,16 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 	}
 	if task.State == "settling" {
 		account, accountErr := s.accountRepo.GetByID(ctx, task.AccountID)
-		if accountErr != nil {
+		if errors.Is(accountErr, ErrAccountNotFound) {
+			account = &Account{ID: task.AccountID, Type: AccountTypeAPIKey}
+		} else if accountErr != nil {
 			return accountErr
 		}
 		if task.DoneBotIntent && task.Result == nil && len(task.Artifacts) > 0 {
 			task.Result = &OpenAIForwardResult{Model: task.Model, BillingModel: task.BillingModel}
+		}
+		if task.Result == nil || account == nil {
+			return fmt.Errorf("completed task is missing settlement input")
 		}
 		task.Result.ResponseID = task.TaskID
 		task.Result.RequestID = "dbdispatch:" + task.ReceiptID
@@ -309,18 +353,20 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 		return save(0)
 	}
 	if task.State == "refunding" {
-		if err = s.RefundDoneBotMediaReceipt(ctx); err != nil {
-			_ = save(10 * time.Second)
-			return err
-		}
-		task.State = "failed"
-		task.Body = nil
-		return save(0)
+		return refund()
 	}
 	if task.State == "polling" {
 		return save(5 * time.Second)
 	}
 	return nil
+}
+
+func doneBotDispatchAPIMartPending(task *DoneBotDispatch) *APIMartPending {
+	endpoint := APIMartImages
+	if task.Protocol == DoneBotDispatchAPIMartMusic {
+		endpoint = APIMartSuno
+	}
+	return &APIMartPending{Endpoint: endpoint, Model: task.Model, BillingModel: task.BillingModel, OriginalModel: task.Model, UpstreamModel: task.UpstreamModel, Tier: task.Info.Tier, Units: task.Info.Units, InputImages: task.Info.InputImages, LayerDecomposition: task.Info.LayerDecomposition, CreatedAt: task.CreatedAt.Format(time.RFC3339Nano)}
 }
 
 func doneBotDispatchRequiredCapabilities(ctx context.Context, service *OpenAIGatewayService, task *DoneBotDispatch) (OpenAIEndpointCapability, OpenAIImagesCapability, error) {
@@ -466,10 +512,8 @@ func (w *apimartSettlementWorker) pollDoneBot(ctx context.Context, task *DoneBot
 		task.Result = MergeSeedanceCompletion(result, pending, task.TaskID)
 	} else {
 		endpoint := APIMartImageTask
-		create := APIMartImages
 		if task.Protocol == DoneBotDispatchAPIMartMusic {
 			endpoint = APIMartMusicTask
-			create = APIMartSuno
 		}
 		result, err := w.service.ForwardAPIMart(ctx, c, account, endpoint, task.ProviderTaskID, nil)
 		if err != nil {
@@ -483,7 +527,7 @@ func (w *apimartSettlementWorker) pollDoneBot(ctx context.Context, task *DoneBot
 			return fmt.Errorf("upstream task query status %d", result.Status)
 		}
 		response = result.Body
-		pending := &APIMartPending{Endpoint: create, Model: task.Model, BillingModel: task.BillingModel, OriginalModel: task.Model, UpstreamModel: task.UpstreamModel, Tier: task.Info.Tier, Units: task.Info.Units, InputImages: task.Info.InputImages, LayerDecomposition: task.Info.LayerDecomposition, CreatedAt: task.CreatedAt.Format(time.RFC3339Nano)}
+		pending := doneBotDispatchAPIMartPending(task)
 		task.Result = APIMartCompletionResult(pending, response, task.TaskID)
 	}
 	if task.Result != nil {

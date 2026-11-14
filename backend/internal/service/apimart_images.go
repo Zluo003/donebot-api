@@ -103,7 +103,6 @@ func completeAPIMartImages(p *APIMartPending, root gjson.Result, r *OpenAIForwar
 	if !slices.Contains([]string{"completed", "success"}, root.Get("status").String()) {
 		return false
 	}
-	breakdown := map[string]int{}
 	sizes := []string{}
 	for _, v := range root.Get("result.images").Array() {
 		urls := v.Get("url").Array()
@@ -118,30 +117,33 @@ func completeAPIMartImages(p *APIMartPending, root gjson.Result, r *OpenAIForwar
 			if size == "" {
 				size = v.Get(fmt.Sprintf("layers.%d.size", i)).String()
 			}
-			tier := p.Tier
-			if w, h, ok := parseImageBillingDimensions(size); ok && w > 0 && h > 0 {
-				tier = apimartModelImageAreaTier(p.UpstreamModel, p.Model, int64(w)*int64(h))
-			} else if p.UpstreamModel == seedream55Model || p.Model == seedream55Model {
-				return false
-			}
-			breakdown[tier]++
 			sizes = append(sizes, size)
 		}
 	}
-	count := 0
-	for _, n := range breakdown {
-		count += n
-	}
-	if count == 0 {
+	r.ImageCount = len(sizes)
+	r.ImageOutputSizes = sizes
+	return applyAPIMartImageBillingResolution(p, r)
+}
+
+func applyAPIMartImageBillingResolution(p *APIMartPending, r *OpenAIForwardResult) bool {
+	if r.ImageCount <= 0 || len(r.ImageOutputSizes) != r.ImageCount {
 		return false
 	}
-	r.ImageCount = count
+	breakdown := map[string]int{}
+	for _, size := range r.ImageOutputSizes {
+		tier := p.Tier
+		if w, h, ok := parseImageBillingDimensions(size); ok && w > 0 && h > 0 {
+			tier = apimartModelImageAreaTier(p.UpstreamModel, p.Model, int64(w)*int64(h))
+		} else if p.UpstreamModel == seedream55Model || p.Model == seedream55Model {
+			return false
+		}
+		breakdown[tier]++
+	}
 	r.ImageInputCount = p.InputImages
 	r.ImageSize = p.Tier
 	r.ImageInputSize = p.Tier
 	r.ImageSizeSource = ImageSizeSourceOutput
 	r.ImageSizeBreakdown = breakdown
-	r.ImageOutputSizes = sizes
 	r.ImageEndpoint = true
 	return true
 }

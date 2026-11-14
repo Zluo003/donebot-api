@@ -13,7 +13,16 @@ import (
 
 func (r *usageBillingRepository) TakeDoneBotDispatches(ctx context.Context, limit int) ([]service.DoneBotDispatch, error) {
 	rows, err := r.db.QueryContext(ctx, `WITH due AS (
- SELECT receipt_id FROM donebot_media_dispatches WHERE due_at<=NOW() AND state NOT IN ('completed','failed','uncertain')
+ SELECT receipt_id FROM donebot_media_dispatches WHERE due_at<=NOW() AND state NOT IN ('completed','failed')
+ AND (state<>'uncertain' OR (
+   (NULLIF(payload->>'provider_task_id','') IS NOT NULL
+     AND payload->>'protocol' IN ('apimart_images','apimart_music','seedance'))
+   OR (jsonb_typeof(payload->'result')='object' AND (
+     NULLIF(payload->>'response','') IS NOT NULL
+     OR (payload->>'donebot_intent'='true' AND jsonb_array_length(
+       CASE WHEN jsonb_typeof(payload->'artifacts')='array' THEN payload->'artifacts' ELSE '[]'::jsonb END)>0)
+   ))
+ ))
  ORDER BY due_at FOR UPDATE SKIP LOCKED LIMIT $1
  ) UPDATE donebot_media_dispatches d SET lease_token=$2::uuid,due_at=NOW()+INTERVAL '90 seconds'
  FROM due WHERE d.receipt_id=due.receipt_id RETURNING d.payload,d.lease_token::text`, limit, uuid.NewString())
@@ -128,7 +137,7 @@ func (r *usageBillingRepository) ReassignDoneBotMediaAccount(ctx context.Context
 }
 
 func (r *usageBillingRepository) RenewDoneBotDispatchLease(ctx context.Context, receipt, lease string) error {
-	result, err := r.db.ExecContext(ctx, `UPDATE donebot_media_dispatches SET due_at=NOW()+INTERVAL '90 seconds' WHERE receipt_id=$1::uuid AND lease_token=$2::uuid AND state NOT IN ('completed','failed','uncertain')`, receipt, lease)
+	result, err := r.db.ExecContext(ctx, `UPDATE donebot_media_dispatches SET due_at=NOW()+INTERVAL '90 seconds' WHERE receipt_id=$1::uuid AND lease_token=$2::uuid AND state NOT IN ('completed','failed')`, receipt, lease)
 	if err != nil {
 		return err
 	}

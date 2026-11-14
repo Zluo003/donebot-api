@@ -581,14 +581,14 @@ func doneBotMediaSafeJSON(value any, depth int) any {
 		clean := make(map[string]any)
 		for key, item := range value {
 			switch key {
-			case "id", "task_id", "request_id", "receipt_id", "object", "status", "model", "code", "type", "created", "created_at", "updated_at", "completed_at", "expires_at", "progress", "duration", "seconds", "size", "resolution", "output_format", "seed":
+			case "id", "task_id", "request_id", "receipt_id", "object", "status", "model", "code", "reason", "type", "created", "created_at", "updated_at", "completed_at", "expires_at", "progress", "duration", "seconds", "size", "resolution", "output_format", "seed":
 				switch scalar := item.(type) {
 				case json.Number, bool, nil:
 					clean[key] = scalar
 				case string:
-					if (key == "code" || key == "type" || key == "request_id") && doneBotMediaDiagnosticID(scalar) != "" {
+					if (key == "code" || key == "reason" || key == "type" || key == "request_id") && doneBotMediaDiagnosticID(scalar) != "" {
 						clean[key] = scalar
-					} else if key != "code" && key != "type" && key != "request_id" && doneBotMediaReplayIdentifier(scalar) {
+					} else if key != "code" && key != "reason" && key != "type" && key != "request_id" && doneBotMediaReplayIdentifier(scalar) {
 						clean[key] = scalar
 					}
 				}
