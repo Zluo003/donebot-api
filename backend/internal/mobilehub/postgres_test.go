@@ -213,10 +213,14 @@ func TestPostgresDesktopMobileWorkflow(t *testing.T) {
 	if root == "" {
 		t.Skip("set DONEBOT_MOBILE_DESKTOP_ROOT to run the original desktop and relay fixture")
 	}
+	relayRoot := os.Getenv("DONEBOT_MOBILE_RELAY_ROOT")
+	if relayRoot == "" {
+		t.Skip("set DONEBOT_MOBILE_RELAY_ROOT to run the independent relay fixture")
+	}
 	s := mobilePostgres(t)
 	rec := s.Push.(*pushRecorder)
-	s.Config.Nodes = []string{"donebot.cn/mobile-relay"}
-	nodeToken, err := s.SaveNode(context.Background(), NodeInput{ID: "relay1", Name: "Fixture relay", Endpoint: "donebot.cn/mobile-relay", Enabled: true, MaxSessions: 10})
+	s.Config.Nodes = []string{"relay1.donebot.cn"}
+	nodeToken, err := s.SaveNode(context.Background(), NodeInput{ID: "relay1", Name: "Fixture relay", Endpoint: "relay1.donebot.cn", Enabled: true, MaxSessions: 10})
 	require.NoError(t, err)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
@@ -314,9 +318,11 @@ func TestPostgresDesktopMobileWorkflow(t *testing.T) {
 		}
 	}))
 	defer server.Close()
+	relayRoot, err = filepath.Abs(relayRoot)
+	require.NoError(t, err)
 	cmd := exec.Command("node", "--experimental-strip-types", "scripts/verify-mobile-hub.ts")
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "DONEBOT_MOBILE_FIXTURE_HUB="+server.URL, "DONEBOT_MOBILE_FIXTURE_NODE_TOKEN="+nodeToken, "DONEBOT_MOBILE_FIXTURE_RELAY_PUBLIC="+base64.RawURLEncoding.EncodeToString(s.Config.Key.Public().(ed25519.PublicKey)))
+	cmd.Env = append(os.Environ(), "DONEBOT_MOBILE_RELAY_ROOT="+relayRoot, "DONEBOT_MOBILE_FIXTURE_HUB="+server.URL, "DONEBOT_MOBILE_FIXTURE_NODE_TOKEN="+nodeToken, "DONEBOT_MOBILE_FIXTURE_RELAY_PUBLIC="+base64.RawURLEncoding.EncodeToString(s.Config.Key.Public().(ed25519.PublicKey)))
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 	t.Log(string(out))

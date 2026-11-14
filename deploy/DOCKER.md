@@ -22,6 +22,8 @@ DoneBot asynchronous media requires Redis AOF and a persistent Redis data direct
 
 ## Images and Upgrades
 
+This image contains the gateway only. Mobile relay forwarding runs in the separate `DoneBot-Relay` project and its own container; gateway upgrades do not start a listener on 18080. Deploy and upgrade those nodes independently using [the mobile relay deployment guide](MOBILE_RELAY.md).
+
 ```bash
 docker pull ghcr.io/zluo003/donebot-api:latest
 # Pin a published version for repeatable deployments:

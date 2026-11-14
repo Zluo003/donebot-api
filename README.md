@@ -92,6 +92,7 @@ pnpm test:run
 ## Documentation and support
 
 - [Deployment guide](deploy/README.md)
+- [Independent mobile relay nodes](deploy/MOBILE_RELAY.md)
 - [Storage management](docs/donebot/存储管理说明.md)
 - [DoneBot gateway documentation](docs/donebot/README.md)
 - [Model pricing](docs/donebot/模型定价说明.md)

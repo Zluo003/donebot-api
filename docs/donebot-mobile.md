@@ -1,13 +1,13 @@
 # DoneBot 自有手机中枢
 
-代码已实现，尚未部署。手机仅提供登录、Bot 列表、聊天和消息提醒。购买/开通 Cloud 的接口不在手机协议内。
+手机仅提供登录、Bot 列表、聊天和消息提醒。购买/开通 Cloud 的接口不在手机协议内。
 
 ## 服务组成
 
 - 网关现有账号 JWT 负责手机身份；现有 `sk-donebot-` 安装凭据和 `RuntimeInstallation` 中间件验证电脑/Cloud 所属账号与安装。
 - 迁移 `265_donebot_mobile.sql` 保存主机公钥、工作空间投影、手机登录绑定、授权摘要和通知 outbox；`266_donebot_mobile_management.sql` 增加设备状态和节点管理。数据库不保存聊天正文或手机 bearer 明文。
 - 桌面运行服务使用 `server/donebot/mobile-host.ts`；Cloud 使用相同运行服务和已经分配的安装凭据，无需迁移会话。必须发布包含该连接器的桌面构建/Cloud runtime 镜像。
-- 自建 `DoneBot/relay/` 只转发 Noise 加密字节。网关 access token、模型密钥不会进入中继。
+- 独立项目 `DoneBot-Relay` 只转发 Noise 加密字节，源码不纳入网关或桌面客户端。网关 access token、模型密钥不会进入中继；部署和升级见 [独立中继节点部署](../deploy/MOBILE_RELAY.md)。
 
 ## 部署配置
 
@@ -17,23 +17,23 @@
 | --- | --- |
 | `DONEBOT_MOBILE_RELAY_SEED` | 独立生成的 32 字节 Ed25519 seed，无填充 base64url；只放网关 |
 | `DONEBOT_MOBILE_RELAY_KID` | 如 `k1`，允许 k0 到 k999 |
-| `DONEBOT_MOBILE_RELAY_NODES` | 无后台节点记录时的兼容配置，默认 `donebot.cn/mobile-relay`；后台登记节点后以数据库为准 |
+| `DONEBOT_MOBILE_RELAY_NODES` | 旧环境的兼容配置；独立节点以后台登记记录为准 |
 | `DONEBOT_APNS_KEY_FILE` | 仓库外 Apple APNs `.p8` 的只读绝对路径 |
 | `DONEBOT_APNS_KEY_ID` | Apple Key ID |
 | `DONEBOT_APNS_TEAM_ID` | Apple Team ID |
 
 Apple topic 固定为 `cn.donebot.mobile`，通知订阅区分 sandbox 和 production。APNs 配置缺失时订阅返回不可用，客户端不会显示已开启提醒。中继未配置时手机连接接口返回不可用。
 
-默认复用 `donebot.cn` 的现有 HTTPS 入口，无需新建 DNS。已有网关仍在 8080；中继是独立 Node 服务，监听 `127.0.0.1:18080`。反向代理将 `/mobile-relay/` 去掉前缀后交给 18080，其余请求保持现有路由。
+中继与网关分别部署、启动和升级。节点服务器无需安装网关、PostgreSQL 或 Redis，使用 `relay1.donebot.cn` 等独立域名；网关后台登记节点及在线升级都不会创建或重启节点进程。
 
-1. 发布网关并应用迁移 265、266；在网关配置独立的 `DONEBOT_MOBILE_RELAY_SEED` 和 `DONEBOT_MOBILE_RELAY_KID`。Compose 模板已透传上述环境变量，修改后需重建应用容器。
-2. 打开管理后台「DoneBot → 手机中继」，创建 `relay1`，地址填 `donebot.cn/mobile-relay`，设置「最大手机会话数」。`relay1` 是内部节点编号，不要求存在同名域名。
-3. 将创建时一次性显示的 `RELAY_NODE`、`RELAY_NODE_TOKEN`、`RELAY_TOKEN_KEYS` 保存到服务器上的 `relay.env`（权限 0600）。若签名配置稍后才完成，可重新进入后台展开「中继验签公钥」复制；不必重置节点凭据。中继只持有验签公钥和自己的节点凭据，不持有网关签名 seed 或模型密钥。
-4. 从 `DoneBot/relay/` 构建 `donebot-relay:local` 镜像，将 `relay/deploy/donebot/compose.yaml` 与 `relay.env` 放在同一服务器目录，运行 `docker compose up -d`。模板使用 Linux host 网络，只绑定回环地址，不占用网关 8080 或公网 443。
-5. 将 `relay/deploy/donebot/nginx.location.conf` 合入现有 `donebot.cn` 的 Nginx HTTPS server；若使用 Caddy，则合入同目录 `Caddyfile.snippet`，保持现有网关路由。先检查代理配置，再重载。公网手机入口为 `wss://donebot.cn/mobile-relay/v1/phone`，不向公网开放 18080。
-6. 发布桌面、Cloud runtime 和手机 App。使用同一个 DoneBot 账号登录，桌面「手机连接」就绪后手机自动发现，不需要原版扫码配对。
+1. 发布网关并应用迁移 265、266；配置独立且持久保存的 `DONEBOT_MOBILE_RELAY_SEED` 和 `DONEBOT_MOBILE_RELAY_KID`。Compose 修改环境后需重建应用容器。
+2. 打开管理后台「DoneBot → 手机中继」，创建 `relay1`，地址填 `relay1.donebot.cn`，设置最大手机会话数。保存一次性显示的节点凭据和验签公钥。
+3. 从独立 `DoneBot-Relay` 项目构建节点镜像，在节点服务器配置 `relay.env`，按 [节点部署指南](../deploy/MOBILE_RELAY.md) 启动中继及其 HTTPS 代理。中继回环监听 18080，公网入口为 `wss://relay1.donebot.cn/v1/phone`；网关继续使用原有 8080。
+4. 发布桌面、Cloud runtime 和手机 App。同账号登录后，手机通过网关下发的节点信息连接，不需要原版扫码配对。
 
 APNs `.p8` 文件须单独只读挂载到网关容器，`DONEBOT_APNS_KEY_FILE` 填容器内路径。没有 Apple 凭据仍可验证登录和聊天，无法验收后台推送。Cloud 节点需要向网关和中继开放 HTTPS/WSS 出站；未启用出站的实例不能通过手机连接。
+
+中继在网关暂不可用时仍可启动并监听 18080；未获取或已过期的策略会使 `/healthz` 返回 503、拒绝新接入，进程不会因此退出。网关恢复后中继自动恢复策略。独立部署不意味着移除账号授权、接入策略或会话租约校验。
 
 发布网关并按现有流程应用迁移，再发布桌面/Cloud runtime 和手机 App。本次未执行上述线上操作，也未生成或保存真实签名密钥。不要把示例测试 seed 用于部署。
 
@@ -66,8 +66,10 @@ outbox 持久化，由网关常驻发送循环每 5 秒领取发送，事件到�
 ## 隔离验证
 
 ```sh
-DONEBOT_MOBILE_PG_FIXTURE=1 DONEBOT_MOBILE_DESKTOP_ROOT=/Users/zluo/Dev/DoneBot go -C backend test -tags integration ./internal/mobilehub -count=1 -v -timeout 150s
+DONEBOT_MOBILE_PG_FIXTURE=1 DONEBOT_MOBILE_DESKTOP_ROOT=/Users/zluo/Dev/DoneBot DONEBOT_MOBILE_RELAY_ROOT=/Users/zluo/Dev/DoneBot-Relay go -C backend test -tags integration ./internal/mobilehub -count=1 -v -timeout 150s
 go -C backend test ./internal/service ./internal/handler ./internal/server/routes -run 'TestDoneBot' -count=1
 ```
 
-使用新建临时 PostgreSQL、合成账号/安装/推送通道和原版桌面隔离 fixture，验证真实中枢 SQL、节点策略、`/mobile-relay/` 代理、Capacitor Origin、设备分组、原版加密传输、消息往返、通知队列及退出撤销。真实 Apple 通知、真实 Cloud 节点和公网蜂窝网络尚未验收。
+完整联调还需同级桌面、手机及独立中继项目的源码和依赖，并显式传入 `DONEBOT_MOBILE_RELAY_ROOT`。中继自身的安装、测试和镜像构建只需要 `DoneBot-Relay`，在该项目根目录运行 `pnpm check`、`pnpm test`，或 `docker build .`。
+
+使用新建临时 PostgreSQL、合成账号/安装/推送通道和原版桌面隔离 fixture，验证真实中枢 SQL、节点策略、独立节点域名和路径保留、Capacitor Origin、设备分组、原版加密传输、消息往返、通知队列及退出撤销。独立节点域名在夹具内映射到回环代理；真实 Apple 通知、真实 Cloud 节点和公网蜂窝网络尚未验收。

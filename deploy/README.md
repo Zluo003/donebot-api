@@ -42,6 +42,12 @@ Administrators can click the version badge at the top of the sidebar, check for 
 
 The supplied systemd service grants its user write access to `/opt/sub2api` and uses `Restart=always`, so this flow requires no sudo access from the application. The supplied container builds also allow replacing the binary and their supervisors restart it. In-place container updates live in the current container's writable layer; when recreating containers, pull or pin the desired `ghcr.io/zluo003/donebot-api` image version. Source builds show manual build instructions instead of an online replacement button.
 
+## Independent Mobile Relay Nodes
+
+Mobile relay processes belong to the separate `DoneBot-Relay` project. This gateway repository contains account authorization, node registration, policy and status management; it does not include or launch the relay forwarding service. Gateway online updates and the admin node enable switch do not install, start or upgrade a relay node.
+
+Deploy each node independently with its own image, node credentials and HTTPS domain, such as `relay1.donebot.cn`. The node listens on `127.0.0.1:18080`; its local HTTPS proxy exposes port 443. The node host needs no gateway binary, PostgreSQL or Redis. It uses outbound HTTPS to obtain authorization policy from the gateway. See [the independent node deployment guide](MOBILE_RELAY.md) for signing configuration, DNS, startup, upgrades and troubleshooting a missing 18080 listener.
+
 ## Files
 
 | File | Description |
@@ -53,6 +59,7 @@ The supplied systemd service grants its user write access to `/opt/sub2api` and 
 | `APPLE_CONTAINER.md` | Apple `container` deployment and operations guide |
 | `.env.example` | Container environment variables template |
 | `DOCKER.md` | GHCR image and Docker deployment documentation |
+| `MOBILE_RELAY.md` | Independent mobile relay node deployment and upgrades |
 | `install.sh` | One-click binary installation script |
 | `install-datamanagementd.sh` | datamanagementd 一键安装脚本 |
 | `sub2api.service` | Systemd service unit file |
