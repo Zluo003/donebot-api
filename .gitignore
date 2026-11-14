@@ -140,6 +140,7 @@ deploy/docker-compose.override.yml
 vite.config.js
 docs/*
 !docs/donebot-templates.md
+!docs/donebot-mobile.md
 !docs/donebot/
 !docs/donebot/*.md
 !docs/admin-api-keys.md

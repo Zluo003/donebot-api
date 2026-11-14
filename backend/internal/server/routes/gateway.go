@@ -140,6 +140,8 @@ func RegisterGatewayRoutes(
 	doneBotGateway := gateway.Group("")
 	if h.DoneBot != nil {
 		runtime := gateway.Group("/donebot/runtime", h.DoneBot.RuntimeInstallation())
+		runtime.POST("/mobile/heartbeat", h.DoneBot.MobileHeartbeat)
+		runtime.POST("/mobile/events", h.DoneBot.MobileEvents)
 		runtime.GET("/models", h.DoneBot.Models)
 		runtime.GET("/account", h.DoneBot.Account)
 		runtime.GET("/receipts/:id", h.DoneBot.Receipt)

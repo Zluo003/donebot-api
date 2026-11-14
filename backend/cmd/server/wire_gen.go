@@ -170,7 +170,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	authService := service.ProvideAuthService(client, userRepository, redeemCodeRepository, refreshTokenCache, configConfig, settingService, emailService, turnstileService, tencentCaptchaService, aliyunCaptchaService, emailQueueService, promoService, subscriptionService, affiliateService, serviceUserPlatformQuotaRepository, mcpoAuthService)
 	userService := service.NewUserService(userRepository, settingRepository, apiKeyAuthCacheInvalidator, billingCache)
 	cloudbillingService := cloudbilling.NewService(db, settingRepository, billingCacheService, configConfig, authService, userService, doneBotService)
-	doneBotHandler := handler.ProvideDoneBotUserHandler(doneBotService, settingRepository, configConfig, doneBotCatalogService, doneBotAccountService, doneBotMediaService, doneBotWebToolsService, doneBotTemplateService, cloudbillingService)
+	doneBotHandler := handler.ProvideDoneBotUserHandler(doneBotService, settingRepository, configConfig, doneBotCatalogService, doneBotAccountService, doneBotMediaService, doneBotWebToolsService, doneBotTemplateService, cloudbillingService, db, authService)
 	redeemCache := repository.NewRedeemCache(redisClient)
 	redeemService := service.NewRedeemService(redeemCodeRepository, userRepository, subscriptionService, redeemCache, billingCacheService, client, apiKeyAuthCacheInvalidator, affiliateService)
 	totpCache := repository.NewTotpCache(redisClient)

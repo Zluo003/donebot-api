@@ -11,6 +11,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/mobilehub"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -43,6 +44,8 @@ func doneBotUserInstallation(install *service.DoneBotInstall) doneBotUserInstall
 }
 
 type DoneBotHandler struct {
+	mobile       *mobilehub.Service
+	mobileAuth   *service.AuthService
 	cloud        *cloudbilling.Service
 	templates    *service.DoneBotTemplateService
 	installs     doneBotClaimer

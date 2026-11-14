@@ -8,6 +8,11 @@ import (
 
 func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handlers) {
 	if h.DoneBot != nil {
+		authenticated.GET("/donebot/mobile/workspaces", h.DoneBot.MobileWorkspaces)
+		authenticated.POST("/donebot/mobile/workspaces/:id/connection", h.DoneBot.MobileConnection)
+		authenticated.PUT("/donebot/mobile/push/subscription", h.DoneBot.MobileSubscribe)
+		authenticated.DELETE("/donebot/mobile/push/subscription", h.DoneBot.MobileUnsubscribe)
+		authenticated.DELETE("/donebot/mobile/session", h.DoneBot.MobileDisconnect)
 		authenticated.GET("/donebot/cloud/plan", h.DoneBot.CloudPlanInfo)
 		authenticated.DELETE("/donebot/cloud/browser-sessions", h.DoneBot.CloudBrowserRevoke)
 		authenticated.POST("/donebot/cloud/instances/:id/browser-launch", h.DoneBot.CloudBrowserLaunch)

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"maps"
 	"net/http"
@@ -26,9 +27,13 @@ type doneBotAccountReader interface {
 }
 
 func ProvideDoneBotUserHandler(installs *service.DoneBotService, settings service.SettingRepository, cfg *config.Config,
-	catalog *service.DoneBotCatalogService, account *service.DoneBotAccountService, media *service.DoneBotMediaService, webTools *service.DoneBotWebToolsService, templates *service.DoneBotTemplateService, cloud *cloudbilling.Service) *DoneBotHandler {
+	catalog *service.DoneBotCatalogService, account *service.DoneBotAccountService, media *service.DoneBotMediaService, webTools *service.DoneBotWebToolsService, templates *service.DoneBotTemplateService, cloud *cloudbilling.Service, db *sql.DB, auth *service.AuthService) *DoneBotHandler {
 	h := NewDoneBotHandler(installs, settings, cfg)
 	h.cloud = cloud
+	if cfg != nil && cfg.DoneBot.Enabled {
+		h.mobile = doneBotMobileService(db, auth)
+		h.mobileAuth = auth
+	}
 	h.catalog, h.account = catalog, account
 	h.media = media
 	h.webTools = webTools

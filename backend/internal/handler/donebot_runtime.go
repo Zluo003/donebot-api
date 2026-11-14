@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RuntimeInstallation permits only the explicitly registered installation read routes.
+// RuntimeInstallation permits only the explicitly registered installation routes.
 func (h *DoneBotHandler) RuntimeInstallation() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key, ok := middleware.GetAPIKeyFromContext(c)
