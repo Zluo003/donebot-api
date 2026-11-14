@@ -30,6 +30,9 @@ func RegisterGatewayRoutes(
 	compositeResolver *service.CompositeRouteResolver,
 	cfg *config.Config,
 ) {
+	if h.DoneBot != nil {
+		r.POST("/v1/donebot/relay/nodes/:node/heartbeat", h.DoneBot.RelayNodeHeartbeat)
+	}
 	registerAssetRoutes(r, h, apiKeyAuth)
 	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize)
 	textBodyLimit := middleware.RequestBodyLimit(cfg.Gateway.TextMaxBodySize)

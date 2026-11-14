@@ -2,6 +2,8 @@ package admin
 
 import (
 	"context"
+	"database/sql"
+	"github.com/Wei-Shaw/sub2api/internal/mobilehub"
 	"strconv"
 
 	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
@@ -17,6 +19,7 @@ type doneBotInstallAdmin interface {
 }
 
 type DoneBotHandler struct {
+	mobile    *mobilehub.Service
 	cloud     *cloudbilling.Service
 	templates *service.DoneBotTemplateService
 	installs  doneBotInstallAdmin
@@ -132,8 +135,9 @@ func (h *DoneBotHandler) UpdateVideoModels(c *gin.Context) { h.updateModels(c, "
 func (h *DoneBotHandler) VideoPricing(c *gin.Context)      { h.pricing(c, "video") }
 func (h *DoneBotHandler) SyncVideoModels(c *gin.Context)   { h.sync(c, "video") }
 
-func ProvideDoneBotHandler(installs *service.DoneBotService, catalog *service.DoneBotAdminService, storage *service.DoneBotStorageService, webTools *service.DoneBotWebToolsService, templates *service.DoneBotTemplateService, cloud *cloudbilling.Service) *DoneBotHandler {
+func ProvideDoneBotHandler(installs *service.DoneBotService, catalog *service.DoneBotAdminService, storage *service.DoneBotStorageService, webTools *service.DoneBotWebToolsService, templates *service.DoneBotTemplateService, cloud *cloudbilling.Service, db *sql.DB) *DoneBotHandler {
 	h := NewDoneBotHandler(installs, catalog)
+	h.mobile = &mobilehub.Service{DB: db, Config: mobilehub.EnvironmentConfig()}
 	h.cloud = cloud
 	h.storage = storage
 	h.webTools = webTools

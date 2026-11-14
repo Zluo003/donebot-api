@@ -88,6 +88,49 @@ func (h *DoneBotHandler) MobileWorkspaces(c *gin.Context) {
 		response.Success(c, gin.H{"workspaces": items})
 	}
 }
+func (h *DoneBotHandler) Devices(c *gin.Context) {
+	owner, ok := h.mobileOwner(c)
+	if !ok {
+		return
+	}
+	out, err := h.mobile.Devices(c.Request.Context(), owner)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+func (h *DoneBotHandler) MobilePresence(c *gin.Context) {
+	who, ok := h.mobileIdentity(c)
+	if !ok {
+		return
+	}
+	var in mobilehub.PhonePresence
+	if !mobileBody(c, &in) {
+		return
+	}
+	if !response.ErrorFrom(c, h.mobile.PhonePresence(c.Request.Context(), who, in)) {
+		c.Status(204)
+	}
+}
+func (h *DoneBotHandler) RelayNodeHeartbeat(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if h.mobile == nil {
+		response.Error(c, 503, "Relay management unavailable")
+		return
+	}
+	parts := strings.Fields(c.GetHeader("Authorization"))
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		response.Unauthorized(c, "Relay credential required")
+		return
+	}
+	var in mobilehub.NodeHeartbeat
+	if !mobileBody(c, &in) {
+		return
+	}
+	out, err := h.mobile.NodeHeartbeat(c.Request.Context(), c.Param("node"), parts[1], in)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
 func (h *DoneBotHandler) MobileConnection(c *gin.Context) {
 	who, ok := h.mobileIdentity(c)
 	if !ok {

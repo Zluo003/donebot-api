@@ -29,6 +29,8 @@ func TestDoneBotRoutesInheritAuthAndAdminRevokeStepUp(t *testing.T) {
 		status       int
 	}{
 		{http.MethodPost, "/api/v1/donebot/installations/claim", http.StatusUnauthorized},
+		{http.MethodGet, "/api/v1/donebot/devices", http.StatusUnauthorized},
+		{http.MethodPut, "/api/v1/donebot/mobile/session", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/donebot/mobile/workspaces", http.StatusUnauthorized},
 		{http.MethodPost, "/api/v1/donebot/mobile/workspaces/host/connection", http.StatusUnauthorized},
 		{http.MethodPut, "/api/v1/donebot/mobile/push/subscription", http.StatusUnauthorized},
@@ -38,6 +40,8 @@ func TestDoneBotRoutesInheritAuthAndAdminRevokeStepUp(t *testing.T) {
 		{http.MethodGet, "/api/v1/donebot/templates", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/donebot/templates/example/1.0.0", http.StatusUnauthorized},
 		{http.MethodPost, "/api/v1/admin/donebot/templates", http.StatusForbidden},
+		{http.MethodPut, "/api/v1/admin/donebot/relay/nodes/relay1", http.StatusForbidden},
+		{http.MethodPost, "/api/v1/admin/donebot/relay/nodes/relay1/credential", http.StatusForbidden},
 		{http.MethodPatch, "/api/v1/admin/donebot/templates/example/1.0.0", http.StatusForbidden},
 		{http.MethodGet, "/api/v1/donebot/account", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/donebot/receipts/receipt", http.StatusUnauthorized},
@@ -49,7 +53,7 @@ func TestDoneBotRoutesInheritAuthAndAdminRevokeStepUp(t *testing.T) {
 		r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
 		require.Equal(t, tc.status, w.Code)
 	}
-	require.Equal(t, 3, auditCalls)
+	require.Equal(t, 5, auditCalls)
 	var listPresent bool
 	for _, route := range r.Routes() {
 		if route.Method == http.MethodGet && route.Path == "/api/v1/admin/donebot/installs" {

@@ -8,6 +8,8 @@ import (
 
 func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handlers) {
 	if h.DoneBot != nil {
+		authenticated.GET("/donebot/devices", h.DoneBot.Devices)
+		authenticated.PUT("/donebot/mobile/session", h.DoneBot.MobilePresence)
 		authenticated.GET("/donebot/mobile/workspaces", h.DoneBot.MobileWorkspaces)
 		authenticated.POST("/donebot/mobile/workspaces/:id/connection", h.DoneBot.MobileConnection)
 		authenticated.PUT("/donebot/mobile/push/subscription", h.DoneBot.MobileSubscribe)
@@ -38,6 +40,9 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUp middleware.StepUpAuthMiddleware) {
 	if h.Admin.DoneBot != nil {
 		donebot := admin.Group("/donebot")
+		donebot.GET("/relay/nodes", h.Admin.DoneBot.RelayNodes)
+		donebot.PUT("/relay/nodes/:node", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SaveRelayNode)
+		donebot.POST("/relay/nodes/:node/credential", gin.HandlerFunc(stepUp), h.Admin.DoneBot.RotateRelayNodeToken)
 		donebot.GET("/cloud/runtime-policy", h.Admin.DoneBot.CloudRuntimePolicy)
 		donebot.PUT("/cloud/runtime-policy", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateCloudRuntimePolicy)
 		donebot.GET("/cloud/plan", h.Admin.DoneBot.CloudPlan)

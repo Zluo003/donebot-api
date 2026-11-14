@@ -71,12 +71,16 @@ func mobilePostgres(t *testing.T) *Service {
 	t.Cleanup(func() { db.Close() })
 	_, err = db.Exec(`CREATE TABLE users(id BIGINT PRIMARY KEY,status TEXT DEFAULT 'active',deleted_at TIMESTAMPTZ);INSERT INTO users(id) VALUES(101),(202);
  CREATE TABLE api_keys(id BIGINT PRIMARY KEY,status TEXT DEFAULT 'active',deleted_at TIMESTAMPTZ,expires_at TIMESTAMPTZ);INSERT INTO api_keys(id) VALUES(1),(2),(3);
- CREATE TABLE donebot_installs(installation_id UUID UNIQUE NOT NULL,user_id BIGINT,api_key_id BIGINT,status TEXT DEFAULT 'active',fingerprint TEXT);
+ CREATE TABLE donebot_installs(installation_id UUID UNIQUE NOT NULL,user_id BIGINT,api_key_id BIGINT,status TEXT DEFAULT 'active',fingerprint TEXT,name TEXT DEFAULT 'Fixture desktop',last_seen_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT now());
  INSERT INTO donebot_installs(installation_id,user_id,api_key_id) VALUES('11111111-1111-4111-8111-111111111111',101,1),('33333333-3333-4333-8333-333333333333',202,2);
  CREATE TABLE donebot_cloud_instances(id UUID PRIMARY KEY,user_id BIGINT,deleted_at TIMESTAMPTZ);
  CREATE TABLE donebot_cloud_subscriptions(instance_id UUID PRIMARY KEY,state TEXT,paid_until TIMESTAMPTZ,purge_locked BOOLEAN DEFAULT FALSE);`)
 	require.NoError(t, err)
 	migration, err := os.ReadFile("../../migrations/265_donebot_mobile.sql")
+	require.NoError(t, err)
+	_, err = db.Exec(string(migration))
+	require.NoError(t, err)
+	migration, err = os.ReadFile("../../migrations/266_donebot_mobile_management.sql")
 	require.NoError(t, err)
 	_, err = db.Exec(string(migration))
 	require.NoError(t, err)
@@ -97,7 +101,7 @@ func registerFixture(t *testing.T, s *Service) Heartbeat {
 	host := make([]byte, 16)
 	_, err = rand.Read(host)
 	require.NoError(t, err)
-	in := Heartbeat{base64.RawURLEncoding.EncodeToString(host), base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes()), "Fixture computer", map[string]string{}}
+	in := Heartbeat{Host: base64.RawURLEncoding.EncodeToString(host), Key: base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes()), Name: "Fixture computer", Ack: map[string]string{}, RelayState: "connected", RelayNode: "relay1.donebot.cn"}
 	_, err = s.Register(context.Background(), 101, fixtureHost, in)
 	require.NoError(t, err)
 	return in
@@ -211,11 +215,22 @@ func TestPostgresDesktopMobileWorkflow(t *testing.T) {
 	}
 	s := mobilePostgres(t)
 	rec := s.Push.(*pushRecorder)
+	s.Config.Nodes = []string{"donebot.cn/mobile-relay"}
+	nodeToken, err := s.SaveNode(context.Background(), NodeInput{ID: "relay1", Name: "Fixture relay", Endpoint: "donebot.cn/mobile-relay", Enabled: true, MaxSessions: 10})
+	require.NoError(t, err)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		var result any
 		var err error
-		if strings.HasPrefix(r.URL.Path, "/v1/") {
+		if r.URL.Path == "/v1/donebot/relay/nodes/relay1/heartbeat" {
+			var in NodeHeartbeat
+			err = json.NewDecoder(r.Body).Decode(&in)
+			if err == nil {
+				var policy *NodePolicy
+				policy, err = s.NodeHeartbeat(r.Context(), "relay1", strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), in)
+				result = map[string]any{"code": 0, "data": policy}
+			}
+		} else if strings.HasPrefix(r.URL.Path, "/v1/") {
 			if r.Header.Get("Authorization") != "Bearer sk-donebot-"+strings.Repeat("a", 64) || r.Header.Get("X-DoneBot-Installation") != fixtureHost {
 				http.Error(w, "{}", 403)
 				return
@@ -242,6 +257,8 @@ func TestPostgresDesktopMobileWorkflow(t *testing.T) {
 				return
 			}
 			switch {
+			case r.URL.Path == "/api/v1/donebot/devices":
+				result, err = s.Devices(r.Context(), 101)
 			case r.URL.Path == "/fixture/pushes":
 				rec.mu.Lock()
 				result = append([]json.RawMessage{}, rec.payloads...)
@@ -259,6 +276,14 @@ func TestPostgresDesktopMobileWorkflow(t *testing.T) {
 					result, err = s.Connection(r.Context(), fixtureIdentity, fixtureHost, in.ID)
 				}
 			case r.URL.Path == "/api/v1/donebot/mobile/session":
+				if r.Method == http.MethodPut {
+					var in PhonePresence
+					err = json.NewDecoder(r.Body).Decode(&in)
+					if err == nil {
+						err = s.PhonePresence(r.Context(), fixtureIdentity, in)
+					}
+					break
+				}
 				var in struct {
 					ID string `json:"installationId"`
 				}
@@ -291,7 +316,7 @@ func TestPostgresDesktopMobileWorkflow(t *testing.T) {
 	defer server.Close()
 	cmd := exec.Command("node", "--experimental-strip-types", "scripts/verify-mobile-hub.ts")
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "DONEBOT_MOBILE_FIXTURE_HUB="+server.URL, "DONEBOT_MOBILE_FIXTURE_RELAY_PUBLIC="+base64.RawURLEncoding.EncodeToString(s.Config.Key.Public().(ed25519.PublicKey)))
+	cmd.Env = append(os.Environ(), "DONEBOT_MOBILE_FIXTURE_HUB="+server.URL, "DONEBOT_MOBILE_FIXTURE_NODE_TOKEN="+nodeToken, "DONEBOT_MOBILE_FIXTURE_RELAY_PUBLIC="+base64.RawURLEncoding.EncodeToString(s.Config.Key.Public().(ed25519.PublicKey)))
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 	t.Log(string(out))

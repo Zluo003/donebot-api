@@ -40,10 +40,12 @@ type Grant struct {
 	Hash          string `json:"tokenHash"`
 }
 type Heartbeat struct {
-	Host string            `json:"hostId"`
-	Key  string            `json:"publicKey"`
-	Name string            `json:"name"`
-	Ack  map[string]string `json:"acknowledged"`
+	Host       string            `json:"hostId"`
+	Key        string            `json:"publicKey"`
+	Name       string            `json:"name"`
+	Ack        map[string]string `json:"acknowledged"`
+	RelayState string            `json:"relayState"`
+	RelayNode  string            `json:"relayNode"`
 }
 type HostReply struct {
 	Host         string   `json:"hostId"`
@@ -95,7 +97,7 @@ func (s *Service) Workspaces(ctx context.Context, owner int64) ([]Workspace, err
 	if err := s.enabled(); err != nil {
 		return nil, err
 	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT h.installation_id::text,h.name,CASE WHEN c.id IS NULL THEN 'computer' ELSE 'cloud' END,h.last_seen>now()-interval '45 seconds'`+hostFrom+`WHERE i.user_id=$1 AND h.user_id=i.user_id AND `+eligible+` UNION ALL SELECT c.id::text,'DoneBot Cloud','cloud',false FROM donebot_cloud_instances c JOIN donebot_cloud_subscriptions cs ON cs.instance_id=c.id JOIN users u ON u.id=c.user_id WHERE c.user_id=$1 AND c.deleted_at IS NULL AND u.status='active' AND u.deleted_at IS NULL AND cs.state IN ('pending','active','cancelled') AND cs.paid_until>now() AND NOT cs.purge_locked AND NOT EXISTS(SELECT 1 FROM donebot_mobile_hosts h WHERE h.installation_id=c.id) ORDER BY 2,1`, owner)
+	rows, err := s.DB.QueryContext(ctx, `SELECT h.installation_id::text,h.name,CASE WHEN c.id IS NULL THEN 'computer' ELSE 'cloud' END,h.last_seen>now()-interval '45 seconds' AND h.relay_state='connected'`+hostFrom+`WHERE i.user_id=$1 AND h.user_id=i.user_id AND `+eligible+` UNION ALL SELECT c.id::text,'DoneBot Cloud','cloud',false FROM donebot_cloud_instances c JOIN donebot_cloud_subscriptions cs ON cs.instance_id=c.id JOIN users u ON u.id=c.user_id WHERE c.user_id=$1 AND c.deleted_at IS NULL AND u.status='active' AND u.deleted_at IS NULL AND cs.state IN ('pending','active','cancelled') AND cs.paid_until>now() AND NOT cs.purge_locked AND NOT EXISTS(SELECT 1 FROM donebot_mobile_hosts h WHERE h.installation_id=c.id) ORDER BY 2,1`, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +117,19 @@ func (s *Service) Register(ctx context.Context, owner int64, install string, in 
 	if err := s.enabled(); err != nil {
 		return nil, err
 	}
+	nodes, nodeErr := s.relayNodes(ctx, in.RelayNode)
+	if nodeErr != nil {
+		return nil, nodeErr
+	}
+	if in.RelayState == "" {
+		in.RelayState = "connecting"
+	}
+	if in.RelayState != "connected" && in.RelayState != "connecting" && in.RelayState != "off" {
+		return nil, invalid()
+	}
+	if in.RelayNode != "" && !relayHost.MatchString(in.RelayNode) {
+		return nil, invalid()
+	}
 	host, e := base64.RawURLEncoding.DecodeString(in.Host)
 	key, e2 := base64.RawURLEncoding.DecodeString(in.Key)
 	if !validUUID(install) || e != nil || len(host) != 16 || base64.RawURLEncoding.EncodeToString(host) != in.Host || e2 != nil || len(key) != 65 || len(in.Name) > 120 || len(in.Ack) > 20 {
@@ -128,7 +143,7 @@ func (s *Service) Register(ctx context.Context, owner int64, install string, in 
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	result, err := tx.ExecContext(ctx, `INSERT INTO donebot_mobile_hosts(installation_id,user_id,host_id,public_key,name) SELECT i.installation_id,i.user_id,$3,$4,$5 FROM donebot_installs i JOIN api_keys k ON k.id=i.api_key_id JOIN users u ON u.id=i.user_id LEFT JOIN donebot_cloud_instances c ON c.id=i.installation_id LEFT JOIN donebot_cloud_subscriptions cs ON cs.instance_id=c.id WHERE i.installation_id=$1::uuid AND i.user_id=$2 AND `+eligible+` ON CONFLICT(installation_id) DO UPDATE SET name=EXCLUDED.name,last_seen=now() WHERE donebot_mobile_hosts.user_id=EXCLUDED.user_id AND donebot_mobile_hosts.host_id=EXCLUDED.host_id AND donebot_mobile_hosts.public_key=EXCLUDED.public_key`, install, owner, in.Host, in.Key, in.Name)
+	result, err := tx.ExecContext(ctx, `INSERT INTO donebot_mobile_hosts(installation_id,user_id,host_id,public_key,name,relay_state,relay_node) SELECT i.installation_id,i.user_id,$3,$4,$5,$6,$7 FROM donebot_installs i JOIN api_keys k ON k.id=i.api_key_id JOIN users u ON u.id=i.user_id LEFT JOIN donebot_cloud_instances c ON c.id=i.installation_id LEFT JOIN donebot_cloud_subscriptions cs ON cs.instance_id=c.id WHERE i.installation_id=$1::uuid AND i.user_id=$2 AND `+eligible+` ON CONFLICT(installation_id) DO UPDATE SET name=EXCLUDED.name,last_seen=now(),relay_state=$6,relay_node=$7 WHERE donebot_mobile_hosts.user_id=EXCLUDED.user_id AND donebot_mobile_hosts.host_id=EXCLUDED.host_id AND donebot_mobile_hosts.public_key=EXCLUDED.public_key`, install, owner, in.Host, in.Key, in.Name, in.RelayState, in.RelayNode)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +184,7 @@ func (s *Service) Register(ctx context.Context, owner int64, install string, in 
 	if err != nil {
 		return nil, err
 	}
-	out := &HostReply{in.Host, s.Config.Nodes, s.Config.relayToken(in.Host, install, time.Now()), []Grant{}, 70}
+	out := &HostReply{in.Host, nodes, s.Config.relayToken(in.Host, install, time.Now()), []Grant{}, 70}
 	for _, r := range records {
 		if err = s.Check(ctx, Identity{owner, r.session, r.version}); err != nil {
 			continue
@@ -247,7 +262,15 @@ func (s *Service) Connection(ctx context.Context, who Identity, install, device 
 			if _, _, err = s.host(ctx, who.Owner, install); err != nil {
 				return nil, err
 			}
-			return &Descriptor{1, key, host, s.Config.Nodes, token}, nil
+			var preferred string
+			if err = s.DB.QueryRowContext(ctx, `SELECT relay_node FROM donebot_mobile_hosts WHERE installation_id=$1::uuid`, install).Scan(&preferred); err != nil {
+				return nil, err
+			}
+			nodes, nodeErr := s.relayNodes(ctx, preferred)
+			if nodeErr != nil {
+				return nil, nodeErr
+			}
+			return &Descriptor{1, key, host, nodes, token}, nil
 		}
 		select {
 		case <-ctx.Done():
@@ -259,7 +282,10 @@ func (s *Service) Connection(ctx context.Context, who Identity, install, device 
 	}
 }
 func (s *Service) Disconnect(ctx context.Context, who Identity, device string) error {
-	if err := s.enabled(); err != nil {
+	if s == nil || s.DB == nil {
+		return unavailable()
+	}
+	if err := s.Check(ctx, who); err != nil {
 		return err
 	}
 	if !validUUID(device) {

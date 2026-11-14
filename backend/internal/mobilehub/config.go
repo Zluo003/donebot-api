@@ -19,12 +19,16 @@ type Config struct {
 	Nodes []string
 }
 
-var relayHost = regexp.MustCompile(`^relay[1-9][0-9]?\.donebot\.cn$`)
+var relayHost = regexp.MustCompile(`^(donebot\.cn/mobile-relay|relay[1-9][0-9]?\.donebot\.cn)$`)
 var wireID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,128}$`)
 
 func EnvironmentConfig() *Config {
 	seed, err := base64.RawURLEncoding.DecodeString(os.Getenv("DONEBOT_MOBILE_RELAY_SEED"))
-	nodes := strings.Split(os.Getenv("DONEBOT_MOBILE_RELAY_NODES"), ",")
+	configuredNodes := os.Getenv("DONEBOT_MOBILE_RELAY_NODES")
+	if configuredNodes == "" {
+		configuredNodes = "donebot.cn/mobile-relay"
+	}
+	nodes := strings.Split(configuredNodes, ",")
 	kid := os.Getenv("DONEBOT_MOBILE_RELAY_KID")
 	if err != nil || len(seed) != 32 || len(nodes) < 1 || len(nodes) > 4 || !regexp.MustCompile(`^k[0-9]{1,3}$`).MatchString(kid) {
 		return nil

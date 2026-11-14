@@ -32,6 +32,7 @@
         </div>
       </div>
 
+      <ProfileDevicesCard v-if="showDevices" />
       <ProfilePasswordForm />
 
       <ProfileBalanceNotifyCard
@@ -56,6 +57,7 @@ import { Icon } from '@/components/icons'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ProfileBalanceNotifyCard from '@/components/user/profile/ProfileBalanceNotifyCard.vue'
 import ProfileInfoCard from '@/components/user/profile/ProfileInfoCard.vue'
+import ProfileDevicesCard from '@/components/user/profile/ProfileDevicesCard.vue'
 import ProfilePasswordForm from '@/components/user/profile/ProfilePasswordForm.vue'
 import ProfileTotpCard from '@/components/user/profile/ProfileTotpCard.vue'
 import ProfilePasskeyCard from '@/components/user/profile/ProfilePasskeyCard.vue'
@@ -68,6 +70,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const user = computed(() => authStore.user)
 
+const showDevices = ref(false)
 const contactInfo = ref('')
 const balanceLowNotifyEnabled = ref(false)
 const systemDefaultThreshold = ref(0)
@@ -90,6 +93,7 @@ onMounted(async () => {
       if (!settings) {
         return
       }
+      showDevices.value = settings.donebot_enabled === true
       contactInfo.value = settings.contact_info || ''
       balanceLowNotifyEnabled.value = settings.balance_low_notify_enabled ?? false
       systemDefaultThreshold.value = settings.balance_low_notify_threshold ?? 0
