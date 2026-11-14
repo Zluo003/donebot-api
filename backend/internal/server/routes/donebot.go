@@ -33,6 +33,8 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUp middleware.StepUpAuthMiddleware) {
 	if h.Admin.DoneBot != nil {
 		donebot := admin.Group("/donebot")
+		donebot.GET("/cloud/runtime-policy", h.Admin.DoneBot.CloudRuntimePolicy)
+		donebot.PUT("/cloud/runtime-policy", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateCloudRuntimePolicy)
 		donebot.GET("/cloud/plan", h.Admin.DoneBot.CloudPlan)
 		donebot.PUT("/cloud/plan", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateCloudPlan)
 		donebot.GET("/cloud/events", h.Admin.DoneBot.CloudEvents)

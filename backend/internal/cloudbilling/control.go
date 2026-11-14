@@ -400,7 +400,11 @@ func (s *Service) Claim(ctx context.Context, node, token string, running []Runni
 	if err := s.nodeAuth(ctx, node, token); err != nil {
 		return nil, err
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE donebot_cloud_nodes SET last_seen=clock_timestamp() WHERE id=$1::uuid AND deleted_at IS NULL`, node)
+	policy, err := s.RuntimePolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE donebot_cloud_nodes SET last_seen=clock_timestamp() WHERE id=$1::uuid AND deleted_at IS NULL`, node)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +421,7 @@ func (s *Service) Claim(ctx context.Context, node, token string, running []Runni
 	if err = s.db.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&result.ServerTime); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT i.id::text,i.generation,LEAST(s.paid_until,clock_timestamp()+INTERVAL '20 seconds') FROM donebot_cloud_instances i JOIN donebot_cloud_subscriptions s ON s.instance_id=i.id JOIN users u ON u.id=i.user_id WHERE i.node_id=$1::uuid AND i.deleted_at IS NULL AND i.desired='running' AND s.state IN ('pending','active') AND s.paid_until>clock_timestamp() AND NOT s.purge_locked AND u.status='active' AND u.deleted_at IS NULL`, node)
+	rows, err := s.db.QueryContext(ctx, `SELECT i.id::text,i.generation,LEAST(s.paid_until,$2::timestamptz + $3 * INTERVAL '1 minute') FROM donebot_cloud_instances i JOIN donebot_cloud_subscriptions s ON s.instance_id=i.id JOIN users u ON u.id=i.user_id WHERE i.node_id=$1::uuid AND i.deleted_at IS NULL AND i.desired='running' AND s.state IN ('pending','active') AND s.paid_until>clock_timestamp() AND NOT s.purge_locked AND u.status='active' AND u.deleted_at IS NULL`, node, result.ServerTime, policy.OutageGraceMinutes)
 	if err != nil {
 		return nil, err
 	}

@@ -13,6 +13,7 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { cloudAdminRoutes, redirectLegacyCloud } from './cloudAdminRoutes'
 
 /**
  * Route definitions with lazy loading
@@ -485,9 +486,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/admin/DoneBotTemplatesView.vue'),
     meta: { requiresAuth: true, requiresAdmin: true, title: 'DoneBot 模板库' }
   },
+  ...cloudAdminRoutes,
   {
     path: '/admin/donebot',
     name: 'AdminDoneBot',
+    beforeEnter: redirectLegacyCloud,
     component: () => import('@/views/admin/DoneBotView.vue'),
     meta: { requiresAuth: true, requiresAdmin: true, title: 'DoneBot' }
   },

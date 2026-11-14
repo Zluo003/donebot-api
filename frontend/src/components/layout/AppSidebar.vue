@@ -188,6 +188,7 @@
 </template>
 
 <script setup lang="ts">
+import { cloudPages } from '@/views/admin/cloudPages'
 import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -850,7 +851,10 @@ const adminNavItems = computed((): NavItem[] => {
   ]
 
   if (appStore.cachedPublicSettings?.donebot_enabled) {
-    baseItems.splice(1, 0, { path: '/admin/donebot', label: 'DoneBot', icon: FolderIcon }, { path: '/admin/donebot/templates', label: 'DoneBot 模板库', icon: FolderIcon })
+    baseItems.splice(1, 0, { path: '/admin/donebot', label: 'DoneBot', icon: FolderIcon }, { path: '/admin/donebot/templates', label: 'DoneBot 模板库', icon: FolderIcon }, {
+      path: '/admin/cloud', label: 'Cloud 管理', icon: ServerIcon, expandOnly: true,
+      children: cloudPages.map(page => ({ path: `/admin/cloud/${page.section}`, label: page.label, icon: ServerIcon }))
+    })
   }
   const visible = applyFeatureFlags(baseItems)
 

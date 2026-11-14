@@ -2,7 +2,8 @@ import { defineComponent } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import CloudPanel from '../CloudPanel.vue'
+import CloudPanel from '../../cloud/CloudNodesPanel.vue'
+import CloudPlanPanel from '../../cloud/CloudPlanPanel.vue'
 import donebot from '@/api/admin/donebot'
 
 vi.mock('@/components/auth/TotpStepUpDialog.vue', () => ({ default: defineComponent({ props: ['controller'], template: '<div />' }) }))
@@ -20,7 +21,7 @@ beforeEach(() => {
 describe('Cloud control settings', () => {
   it('saves monthly price as an exact decimal string together with retention days', async () => {
     vi.mocked(donebot.saveCloudPlan).mockImplementation(async input => input)
-    const wrapper = mount(CloudPanel); await flushPromises()
+    const wrapper = mount(CloudPlanPanel); await flushPromises()
     expect(wrapper.get<HTMLInputElement>('[aria-label="Cloud 到期保留天数"]').element.value).toBe('7')
     await wrapper.get('[aria-label="Cloud 月费"]').setValue('19.123456')
     await wrapper.get('[aria-label="Cloud 到期保留天数"]').setValue(30)
@@ -31,7 +32,7 @@ describe('Cloud control settings', () => {
   })
   it('does not allow saving unknown values when loading fails', async () => {
     vi.mocked(donebot.cloudPlan).mockRejectedValue(new Error('failed'))
-    const wrapper = mount(CloudPanel); await flushPromises()
+    const wrapper = mount(CloudPlanPanel); await flushPromises()
     await wrapper.findAll('form')[0].trigger('submit'); await flushPromises()
     expect(donebot.saveCloudPlan).not.toHaveBeenCalled()
     expect(wrapper.get('[aria-label="Cloud 月费"]').attributes('disabled')).toBeDefined()
@@ -58,7 +59,7 @@ describe('Cloud control settings', () => {
     vi.mocked(donebot.saveCloudNode).mockResolvedValue({ node: { id: fixtureNode.id }, token: 'synthetic-node-token', public_key: publicKey })
     const wrapper = mount(CloudPanel); await flushPromises()
     vi.mocked(donebot.cloudNodes).mockRejectedValue(new Error('offline'))
-    const form = wrapper.findAll('form')[1]
+    const form = wrapper.findAll('form')[0]
     const inputs = form.findAll('input')
     await inputs[0].setValue('Fixture node'); await inputs[1].setValue(fixtureNode.endpoint)
     await form.trigger('submit'); await flushPromises()
@@ -77,7 +78,7 @@ describe('Cloud control settings', () => {
     expect(wrapper.findAll('button').find(b => b.text() === '添加服务器')!.attributes('disabled')).toBeDefined()
     expect(wrapper.findAll('button').find(b => b.text() === '轮换令牌')!.attributes('disabled')).toBeDefined()
     expect(wrapper.findAll('button').find(b => b.text() === '删除服务器')!.attributes('disabled')).toBeUndefined()
-    await wrapper.findAll('form')[1].trigger('submit'); await flushPromises()
+    await wrapper.findAll('form')[0].trigger('submit'); await flushPromises()
     expect(donebot.saveCloudNode).not.toHaveBeenCalled()
   })
   it('allows cancellation and requires confirmation before removing an empty node', async () => {

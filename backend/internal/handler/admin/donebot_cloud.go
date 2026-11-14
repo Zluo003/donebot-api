@@ -6,6 +6,33 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func (h *DoneBotHandler) CloudRuntimePolicy(c *gin.Context) {
+	if h.cloud == nil {
+		response.Error(c, 503, "Cloud settings unavailable")
+		return
+	}
+	out, err := h.cloud.RuntimePolicy(c.Request.Context())
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+
+func (h *DoneBotHandler) UpdateCloudRuntimePolicy(c *gin.Context) {
+	if h.cloud == nil {
+		response.Error(c, 503, "Cloud settings unavailable")
+		return
+	}
+	var input cloudbilling.RuntimePolicy
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "Invalid Cloud runtime policy")
+		return
+	}
+	out, err := h.cloud.SaveRuntimePolicy(c.Request.Context(), input)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+
 func (h *DoneBotHandler) CloudPlan(c *gin.Context) {
 	if h.cloud == nil {
 		response.Error(c, 503, "Cloud settings unavailable")

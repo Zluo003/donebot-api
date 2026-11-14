@@ -23,22 +23,25 @@ import (
 
 type fixtureSettings struct {
 	service.SettingRepository
-	mu    sync.Mutex
-	value string
+	mu     sync.Mutex
+	values map[string]string
 }
 
-func (f *fixtureSettings) GetValue(context.Context, string) (string, error) {
+func (f *fixtureSettings) GetValue(_ context.Context, key string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.value == "" {
+	if f.values[key] == "" {
 		return "", service.ErrSettingNotFound
 	}
-	return f.value, nil
+	return f.values[key], nil
 }
-func (f *fixtureSettings) Set(_ context.Context, _ string, value string) error {
+func (f *fixtureSettings) Set(_ context.Context, key string, value string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.value = value
+	if f.values == nil {
+		f.values = make(map[string]string)
+	}
+	f.values[key] = value
 	return nil
 }
 

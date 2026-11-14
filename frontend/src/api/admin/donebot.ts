@@ -45,7 +45,10 @@ export interface StorageSettingsInput { upload: StoragePolicyInput; generated: S
 export interface StorageSettings { upload: StoragePolicy; generated: StoragePolicy }
 export interface WebToolsSettings { enabled: boolean; key_configured: boolean }
 export interface WebToolsSettingsInput { enabled: boolean; api_key?: string; clear_api_key?: boolean }
+export interface CloudRuntimePolicy { outage_grace_minutes: number }
 const donebot = {
+ async cloudRuntimePolicy() { return (await apiClient.get<CloudRuntimePolicy>('/admin/donebot/cloud/runtime-policy')).data },
+ async saveCloudRuntimePolicy(input: CloudRuntimePolicy) { return (await apiClient.put<CloudRuntimePolicy>('/admin/donebot/cloud/runtime-policy', input)).data },
  async cloudPlan() { return (await apiClient.get<{ enabled: boolean; monthly_price: string; retention_days: number }>('/admin/donebot/cloud/plan')).data },
  async saveCloudPlan(input: { enabled: boolean; monthly_price: string; retention_days: number }) { return (await apiClient.put<{ enabled: boolean; monthly_price: string; retention_days: number }>('/admin/donebot/cloud/plan', input)).data },
  async cloudNodes() { return (await apiClient.get<{ nodes: Array<{ id: string; name: string; endpoint: string; capacity: number; assigned: number; enabled: boolean; last_seen?: string }>; public_key: string }>('/admin/donebot/cloud/nodes')).data },

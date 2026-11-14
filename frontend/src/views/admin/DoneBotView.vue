@@ -29,7 +29,6 @@
         <VideoModelsPanel v-else-if="active === 'video'" />
         <StoragePanel v-else-if="active === 'storage'" />
         <WebToolsPanel v-else-if="active === 'web-tools'" />
-        <CloudPanel v-else-if="active === 'cloud'" />
       </div>
       <div class="card p-4 sm:p-6"><InstallList /></div>
     </div>
@@ -46,16 +45,15 @@ import AudioModelsPanel from '@/components/admin/donebot/AudioModelsPanel.vue'
 import VideoModelsPanel from '@/components/admin/donebot/VideoModelsPanel.vue'
 import StoragePanel from '@/components/admin/donebot/StoragePanel.vue'
 import WebToolsPanel from '@/components/admin/donebot/WebToolsPanel.vue'
-import CloudPanel from '@/components/admin/donebot/CloudPanel.vue'
 import InstallList from '@/components/admin/donebot/InstallList.vue'
 import donebot, { type Overview, type Modality } from '@/api/admin/donebot'
 import { useAppStore } from '@/stores/app'
 
 const app = useAppStore()
 const route = useRoute()
-const active = ref<Modality | 'storage' | 'web-tools' | 'cloud'>(route.query.tab === 'cloud' ? 'cloud' : route.query.tab === 'web-tools' ? 'web-tools' : route.query.tab === 'storage' ? 'storage' : 'llm')
+const active = ref<Modality | 'storage' | 'web-tools'>(route.query.tab === 'web-tools' ? 'web-tools' : route.query.tab === 'storage' ? 'storage' : 'llm')
 const overview = ref<Overview | null>(null)
-const tabs = [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }, { id: 'audio' as const, label: '音频' }, { id: 'video' as const, label: '视频' }, { id: 'storage' as const, label: '存储' }, { id: 'web-tools' as const, label: '联网工具' }, { id: 'cloud' as const, label: 'Cloud 管理' }]
+const tabs = [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }, { id: 'audio' as const, label: '音频' }, { id: 'video' as const, label: '视频' }, { id: 'storage' as const, label: '存储' }, { id: 'web-tools' as const, label: '联网工具' }]
 const metrics = computed(() => [
   { label: '已绑定用户', value: overview.value?.user_count },
   { label: '启用模型', value: overview.value?.model_count },
