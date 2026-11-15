@@ -68,7 +68,7 @@ func (s *OpenAIGatewayService) IsMuseVideoRequest(ctx context.Context, key *APIK
 func ParseMuseRequest(body []byte) (GrokMediaRequestInfo, error) {
 	info := GrokMediaRequestInfo{N: 1, DurationSeconds: 6}
 	if err := validateDoneBotNativeJSON(body, true); err != nil {
-		return info, fmt.Errorf("Muse requires a JSON object")
+		return info, fmt.Errorf("muse requires a JSON object")
 	}
 	root := gjson.ParseBytes(body)
 	model, prompt := root.Get("model"), root.Get("prompt")
@@ -92,7 +92,7 @@ func ParseMuseRequest(body []byte) (GrokMediaRequestInfo, error) {
 		break
 	}
 	if info.DurationSeconds < 4 || info.DurationSeconds > 30 {
-		return info, fmt.Errorf("Muse duration must be between 4 and 30 seconds")
+		return info, fmt.Errorf("muse duration must be between 4 and 30 seconds")
 	}
 	if v := root.Get("timeout"); v.Exists() {
 		if v.Type != gjson.Number {
@@ -109,18 +109,18 @@ func ParseMuseRequest(body []byte) (GrokMediaRequestInfo, error) {
 	}
 	info.Resolution = strings.ToLower(strings.TrimSpace(root.Get("resolution").String()))
 	if info.Resolution != "720p" {
-		return info, fmt.Errorf("Muse requires resolution 720p")
+		return info, fmt.Errorf("muse requires resolution 720p")
 	}
 	if extra := root.Get("extra").String(); extra != "" {
 		info.Prompt += "\n" + extra
 	}
 	if v := root.Get("stream"); v.Exists() && (v.Type != gjson.False) {
-		return info, fmt.Errorf("Muse does not support streaming")
+		return info, fmt.Errorf("muse does not support streaming")
 	}
 	for _, field := range []string{"reference_videos", "videos", "video_urls", "video_url", "video", "reference_audios", "audios", "audio_urls", "audio_url", "audio"} {
 		v := root.Get(field)
 		if v.Exists() && v.Type != gjson.Null && v.Raw != `""` && v.Raw != "[]" {
-			return info, fmt.Errorf("Muse does not support reference videos or audios")
+			return info, fmt.Errorf("muse does not support reference videos or audios")
 		}
 	}
 	seen := map[string]bool{}
@@ -218,7 +218,7 @@ func buildMuseURL(base string, endpoint GrokMediaEndpoint, id string) (string, e
 // are published only after durable binding/settlement, as with Seedance.
 func (s *OpenAIGatewayService) ForwardMuse(ctx context.Context, c *gin.Context, account *Account, endpoint GrokMediaEndpoint, taskID string, body []byte) (*OpenAIForwardResult, error) {
 	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey || (endpoint == MuseEndpointCreate && !account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityMuse)) {
-		return nil, fmt.Errorf("Muse requires an explicitly enabled OpenAI API key account")
+		return nil, fmt.Errorf("muse requires an explicitly enabled OpenAI API key account")
 	}
 	base, err := s.validateUpstreamBaseURL(account.GetCredential("base_url"))
 	if err != nil {
@@ -236,7 +236,7 @@ func (s *OpenAIGatewayService) ForwardMuse(ctx context.Context, c *gin.Context, 
 			return nil, err
 		}
 		if !account.SupportsMuseModel(info.Model) {
-			return nil, fmt.Errorf("Muse model must be explicitly enabled on the account")
+			return nil, fmt.Errorf("muse model must be explicitly enabled on the account")
 		}
 		model, upstream, method = info.Model, account.GetMappedModel(info.Model), http.MethodPost
 		body, err = sjson.SetBytes(body, "model", upstream)
@@ -246,7 +246,7 @@ func (s *OpenAIGatewayService) ForwardMuse(ctx context.Context, c *gin.Context, 
 	}
 	token := strings.TrimSpace(account.GetCredential("api_key"))
 	if token == "" {
-		return nil, fmt.Errorf("Muse account missing api_key")
+		return nil, fmt.Errorf("muse account missing api_key")
 	}
 	started := time.Now()
 	requestCtx, release := mediaUpstreamContext(ctx)
@@ -268,14 +268,14 @@ func (s *OpenAIGatewayService) ForwardMuse(ctx context.Context, c *gin.Context, 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	response, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode >= 300 {
 		writeGrokMediaResponse(c, resp, response, s.responseHeaderFilter)
-		return nil, fmt.Errorf("Muse upstream status %d", resp.StatusCode)
+		return nil, fmt.Errorf("muse upstream status %d", resp.StatusCode)
 	}
 	if !gjson.ValidBytes(response) || !gjson.ParseBytes(response).IsObject() {
 		return nil, fmt.Errorf("invalid Muse response")
@@ -288,7 +288,7 @@ func (s *OpenAIGatewayService) ForwardMuse(ctx context.Context, c *gin.Context, 
 	if endpoint == MuseEndpointCreate {
 		id := firstNonEmpty(gjson.GetBytes(response, "task_id").String(), gjson.GetBytes(response, "id").String())
 		if err := validateUpstreamPathSegment("Muse task ID", id); err != nil || strings.TrimSpace(id) == "" {
-			return nil, fmt.Errorf("Muse create response missing valid task ID")
+			return nil, fmt.Errorf("muse create response missing valid task ID")
 		}
 		result.ResponseID, result.VideoDurationSeconds, result.VideoResolution = MuseTaskKey(id), info.DurationSeconds, info.Resolution
 	} else {
@@ -309,7 +309,7 @@ func (s *OpenAIGatewayService) MeasureMuseCompletion(ctx context.Context, result
 	}
 	seconds, err := s.museOutputSeconds(ctx, MuseVideoURL(result.SeedanceResponseBody))
 	if err != nil {
-		return fmt.Errorf("Muse output duration could not be measured: %w", err)
+		return fmt.Errorf("muse output duration could not be measured: %w", err)
 	}
 	result.VideoActualDurationSeconds = seconds
 	return nil

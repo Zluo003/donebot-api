@@ -278,9 +278,10 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 				}
 			}
 			provider := "apimart"
-			if task.Protocol == DoneBotDispatchSeedance {
+			switch task.Protocol {
+			case DoneBotDispatchSeedance:
 				provider = "seedance"
-			} else if task.Protocol == DoneBotDispatchMuse {
+			case DoneBotDispatchMuse:
 				provider = "muse"
 			}
 			if task.DoneBotIntent {

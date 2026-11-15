@@ -230,7 +230,7 @@ func (r *usageBillingRepository) SettleDoneBotMediaPrecharge(ctx context.Context
 	if in.Failure {
 		actual = decimal.Zero
 		total = decimal.Zero
-	} else if actual.IsNegative() || total.IsNegative() || ((actual.GreaterThan(amount) || total.GreaterThan(totalAmount)) && !(p.Kind == "video" && p.Snapshot.VideoBilling == "muse_actual")) {
+	} else if actual.IsNegative() || total.IsNegative() || ((actual.GreaterThan(amount) || total.GreaterThan(totalAmount)) && (p.Kind != "video" || p.Snapshot.VideoBilling != "muse_actual")) {
 		return nil, service.ErrDoneBotMediaReconciliation
 	}
 	delta, totalDelta := amount.Sub(actual), totalAmount.Sub(total)
