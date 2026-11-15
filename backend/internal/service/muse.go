@@ -22,6 +22,8 @@ const (
 	MuseEndpointCreate           GrokMediaEndpoint        = "muse_create"
 	MuseEndpointStatus           GrokMediaEndpoint        = "muse_status"
 	MuseEndpointContent          GrokMediaEndpoint        = "muse_content"
+	museMinDurationSeconds                                = 4
+	museMaxDurationSeconds                                = 10
 )
 
 func (e GrokMediaEndpoint) IsMuse() bool {
@@ -66,6 +68,10 @@ func (s *OpenAIGatewayService) IsMuseVideoRequest(ctx context.Context, key *APIK
 // ParseMuseRequest reads native fields for validation, routing and metering only.
 // The original JSON (including aliases and future fields) is forwarded unchanged.
 func ParseMuseRequest(body []byte) (GrokMediaRequestInfo, error) {
+	return parseMuseRequest(body, museMaxDurationSeconds)
+}
+
+func parseMuseRequest(body []byte, maxDurationSeconds int) (GrokMediaRequestInfo, error) {
 	info := GrokMediaRequestInfo{N: 1, DurationSeconds: 6}
 	if err := validateDoneBotNativeJSON(body, true); err != nil {
 		return info, fmt.Errorf("muse requires a JSON object")
@@ -91,8 +97,8 @@ func ParseMuseRequest(body []byte) (GrokMediaRequestInfo, error) {
 		info.DurationSeconds = seconds
 		break
 	}
-	if info.DurationSeconds < 4 || info.DurationSeconds > 30 {
-		return info, fmt.Errorf("muse duration must be between 4 and 30 seconds")
+	if info.DurationSeconds < museMinDurationSeconds || info.DurationSeconds > maxDurationSeconds {
+		return info, fmt.Errorf("muse duration must be between %d and %d seconds", museMinDurationSeconds, maxDurationSeconds)
 	}
 	if v := root.Get("timeout"); v.Exists() {
 		if v.Type != gjson.Number {
@@ -231,7 +237,12 @@ func (s *OpenAIGatewayService) ForwardMuse(ctx context.Context, c *gin.Context, 
 	method, model, upstream := http.MethodGet, "", ""
 	var info GrokMediaRequestInfo
 	if endpoint == MuseEndpointCreate {
-		info, err = ParseMuseRequest(body)
+		maxDurationSeconds := museMaxDurationSeconds
+		// Durable tasks accepted under the 30-second limit must remain dispatchable.
+		if task := DoneBotDispatchFromContext(ctx); task != nil && task.Lease != "" && task.Protocol == DoneBotDispatchMuse && task.VideoInfo.DurationSeconds <= 30 {
+			maxDurationSeconds = max(maxDurationSeconds, task.VideoInfo.DurationSeconds)
+		}
+		info, err = parseMuseRequest(body, maxDurationSeconds)
 		if err != nil {
 			return nil, err
 		}

@@ -38,7 +38,7 @@ export default {
         provider: '视频服务',
         providerLocked: '更换视频服务请新建账号，已有任务继续使用原账号。',
         description: 'Seedance 视频专用账号，支持文生视频、首帧、首尾帧与参考生视频；Seedance 2.5 还支持视频编辑和延长。',
-        museDescription: 'Muse 支持文生视频和参考图生视频，提交时长为 4–30 秒，仅支持 720p。按实际成片时长结算，预扣多退少补。',
+        museDescription: 'Muse 支持文生视频和参考图生视频，提交时长为 4–10 秒，仅支持 720p。按实际成片时长结算，预扣多退少补。',
         museMappingHint: '下游名称供客户端调用，可自定义；上游模型填写 muse-video。',
         museModelRequired: 'Muse 的上游模型名称必须为 muse-video',
         baseUrl: '上游地址',

@@ -57,7 +57,7 @@ func (s *OpenAIGatewayService) calculateMuseVideoCost(ctx context.Context, model
 }
 
 func (s *OpenAIGatewayService) MuseInflightCost(ctx context.Context, key *APIKey, model string, info GrokMediaRequestInfo) (float64, bool) {
-	if key == nil || key.Group == nil || info.DurationSeconds < 4 || info.DurationSeconds > 30 {
+	if key == nil || key.Group == nil || info.DurationSeconds < museMinDurationSeconds || info.DurationSeconds > museMaxDurationSeconds {
 		return 0, false
 	}
 	model = s.SeedanceBillingModel(ctx, key, model)
@@ -73,7 +73,7 @@ func (s *OpenAIGatewayService) PrepayDoneBotMuse(ctx context.Context, key *APIKe
 	if DoneBotMediaReceiptID(ctx) == "" {
 		return nil
 	}
-	if info.DurationSeconds < 4 || info.DurationSeconds > 30 {
+	if info.DurationSeconds < museMinDurationSeconds || info.DurationSeconds > museMaxDurationSeconds {
 		return ErrDoneBotMediaInvalid
 	}
 	model = s.SeedanceBillingModel(ctx, key, model)

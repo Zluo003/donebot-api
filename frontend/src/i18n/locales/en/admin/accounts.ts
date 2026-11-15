@@ -38,7 +38,7 @@ export default {
         provider: 'Video service',
         providerLocked: 'Create another account to change the video service. Existing tasks continue using their original account.',
         description: 'A dedicated Seedance account for text, first-frame, first/last-frame and reference video generation. Seedance 2.5 also supports video editing and extension.',
-        museDescription: 'Muse supports text and reference-image video generation, with requested durations of 4–30 seconds at 720p only. Billing uses the actual output duration, with refunds or additional charges after prepayment.',
+        museDescription: 'Muse supports text and reference-image video generation, with requested durations of 4–10 seconds at 720p only. Billing uses the actual output duration, with refunds or additional charges after prepayment.',
         museMappingHint: 'Clients use the customizable downstream name. Set the upstream model to muse-video.',
         museModelRequired: 'The Muse upstream model must be muse-video',
         baseUrl: 'Upstream URL',

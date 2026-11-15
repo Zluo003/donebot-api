@@ -49,14 +49,14 @@ func TestMuseNativeRequestValidation(t *testing.T) {
 
 func TestMuseRequestedDurationBoundsAndOnly720p(t *testing.T) {
 	for _, field := range []string{"duration", "seconds", "video_length"} {
-		for _, seconds := range []int{3, 4, 30, 31} {
+		for _, seconds := range []int{3, 4, 10, 11, 30, 31} {
 			body := fmt.Sprintf(`{"model":"muse-video","prompt":"waves","resolution":"720p",%q:%d}`, field, seconds)
 			info, err := ParseMuseRequest([]byte(body))
-			if seconds == 4 || seconds == 30 {
+			if seconds == 4 || seconds == 10 {
 				require.NoError(t, err)
 				require.Equal(t, seconds, info.DurationSeconds)
 			} else {
-				require.ErrorContains(t, err, "between 4 and 30")
+				require.ErrorContains(t, err, "between 4 and 10")
 			}
 		}
 	}
@@ -92,7 +92,7 @@ func TestMuseForwardPreservesNativeFieldsAndBuffersAcceptance(t *testing.T) {
 }
 
 func TestMuseChargesMeasuredVideoTrackAndAllowsBothAdjustments(t *testing.T) {
-	for _, milliseconds := range []uint64{4250, 6000, 8500} {
+	for _, milliseconds := range []uint64{4250, 6000, 8500, 12500} {
 		t.Run(fmt.Sprint(milliseconds), func(t *testing.T) {
 			upstream := &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(`{"status":"completed","duration":"999s","video_url":"https://media.example/result.mp4"}`)}
 			svc := &OpenAIGatewayService{httpUpstream: upstream, generatedMedia: &generatedMediaUploader{client: &http.Client{Transport: seedanceReferenceRoundTripper(func(req *http.Request) (*http.Response, error) {
@@ -145,6 +145,49 @@ func TestMusePrepaymentFreezesExactSubmittedPriceAndTier(t *testing.T) {
 	}
 	_, ok := svc.MuseInflightCost(ctx, key, "muse-video", GrokMediaRequestInfo{DurationSeconds: 6, Resolution: "1080p"})
 	require.False(t, ok, "do not silently use another tier")
+	for _, seconds := range []int{3, 4, 10, 11, 30} {
+		info := GrokMediaRequestInfo{DurationSeconds: seconds, Resolution: "720p"}
+		_, ok := svc.MuseInflightCost(ctx, key, "muse-video", info)
+		err := svc.PrepayDoneBotMuse(ctx, key, museTestAccount(), "muse-video", info)
+		if seconds == 4 || seconds == 10 {
+			require.True(t, ok)
+			require.NoError(t, err)
+		} else {
+			require.False(t, ok)
+			require.ErrorIs(t, err, ErrDoneBotMediaInvalid)
+		}
+	}
+}
+
+func TestMuseDispatchPreservesPreviouslyAcceptedDuration(t *testing.T) {
+	for _, state := range []string{"queued", "polling"} {
+		t.Run(state, func(t *testing.T) {
+			w, repo, upstream, task := doneBotDispatchFixture(t, DoneBotDispatchMuse)
+			accounts := w.service.accountRepo.(schedulerTestOpenAIAccountRepo)
+			for i := range accounts.accounts {
+				accounts.accounts[i].Credentials["model_mapping"] = map[string]any{"muse-video": "muse-video"}
+			}
+			w.service.accountRepo = accounts
+			task.Body = []byte(`{"model":"muse-video","prompt":"fixture","duration":30,"resolution":"720p"}`)
+			task.VideoInfo.DurationSeconds = 30
+			task.State, task.AccountID = state, 1
+			repo.p.Snapshot.MaxUnits = 30
+			if state == "polling" {
+				task.ProviderTaskID = "accepted-provider-task"
+			}
+			_, err := ParseMuseRequest(task.Body)
+			require.ErrorContains(t, err, "between 4 and 10")
+			require.NoError(t, w.processDoneBot(context.Background(), &task))
+			require.Equal(t, "completed", task.State)
+			require.InDelta(t, .85, repo.settled.ActualAmount, 1e-8)
+			require.Equal(t, float64(30), repo.p.Snapshot.MaxUnits)
+			if state == "queued" {
+				require.Len(t, upstream.posts, 1)
+			} else {
+				require.Empty(t, upstream.posts)
+			}
+		})
+	}
 }
 
 func TestMuseDispatchRestartsWithSameProviderTask(t *testing.T) {

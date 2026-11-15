@@ -50,7 +50,7 @@ Seedance 继续使用 `seedance.videos.v1`，生成、编辑、续写分别为 `
 解析器继续检查具体模型、内容、时长、比例及参考素材。Suno 保持 `apimart.music.v1`。
 固定适配器不允许客户端执行目录里任意 URL 或 JSON 路径。
 
-Muse 使用 `muse.videos.v1`，仅 `POST /v1/videos` 创建与对应 GET 查询、content 下载；提交时长为 4–30 秒，分辨率仅 720p。原生参数由客户端维护；详见 [Muse 下游对接](../muse-api.md)。
+Muse 使用 `muse.videos.v1`，仅 `POST /v1/videos` 创建与对应 GET 查询、content 下载；新提交时长为 4–10 秒，分辨率仅 720p。原生参数由客户端维护；详见 [Muse 下游对接](../muse-api.md)。
 
 ## 流式语音
 

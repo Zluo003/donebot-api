@@ -4,6 +4,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -84,8 +85,8 @@ func TestMuseGatewayRoutesAndKeepsTaskOwnershipAtZeroBalance(t *testing.T) {
 	slots.assertReleased(t)
 }
 
-func TestMuseRejectsNonJSONAndStreamingBeforePaidPost(t *testing.T) {
-	for _, scenario := range []string{"multipart", "stream", "edit"} {
+func TestMuseRejectsInvalidRequestsBeforePaidPost(t *testing.T) {
+	for _, scenario := range []string{"multipart", "stream", "edit", "3", "11", "30"} {
 		h, slots, _, upstream := newGrokMediaSlotHandler(t, false, false, service.PlatformOpenAI, "muse")
 		c, w := museHandlerContext(http.MethodPost, "")
 		switch scenario {
@@ -95,6 +96,8 @@ func TestMuseRejectsNonJSONAndStreamingBeforePaidPost(t *testing.T) {
 			c.Request.Body = io.NopCloser(strings.NewReader(`{"model":"public-muse","prompt":"waves","stream":true}`))
 		case "edit":
 			c.Request.URL.Path = "/v1/videos/edits"
+		default:
+			c.Request.Body = io.NopCloser(strings.NewReader(fmt.Sprintf(`{"model":"public-muse","prompt":"waves","duration":%s,"resolution":"720p"}`, scenario)))
 		}
 		h.DoneBotVideoGeneration(c)
 		if scenario == "multipart" {
