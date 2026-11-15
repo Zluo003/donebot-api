@@ -209,6 +209,15 @@ func TestPostgresOwnershipGrantsAndPush(t *testing.T) {
 	require.Empty(t, list)
 }
 func TestPostgresDesktopMobileWorkflow(t *testing.T) {
+	testPostgresMobileWorkflow(t, false)
+}
+
+func TestPostgresCloudMobileWorkflow(t *testing.T) {
+	testPostgresMobileWorkflow(t, true)
+}
+
+func testPostgresMobileWorkflow(t *testing.T, cloud bool) {
+	t.Helper()
 	root := os.Getenv("DONEBOT_MOBILE_DESKTOP_ROOT")
 	if root == "" {
 		t.Skip("set DONEBOT_MOBILE_DESKTOP_ROOT to run the original desktop and relay fixture")
@@ -218,6 +227,14 @@ func TestPostgresDesktopMobileWorkflow(t *testing.T) {
 		t.Skip("set DONEBOT_MOBILE_RELAY_ROOT to run the independent relay fixture")
 	}
 	s := mobilePostgres(t)
+	if cloud {
+		_, err := s.DB.Exec(`INSERT INTO donebot_cloud_instances(id,user_id) VALUES($1::uuid,101);`, fixtureHost)
+		require.NoError(t, err)
+		_, err = s.DB.Exec(`INSERT INTO donebot_cloud_subscriptions(instance_id,state,paid_until) VALUES($1::uuid,'active',now()+interval '1 day')`, fixtureHost)
+		require.NoError(t, err)
+		_, err = s.DB.Exec(`UPDATE donebot_installs SET fingerprint='donebot-cloud' WHERE installation_id=$1::uuid`, fixtureHost)
+		require.NoError(t, err)
+	}
 	rec := s.Push.(*pushRecorder)
 	s.Config.Nodes = []string{"relay1.donebot.cn"}
 	nodeToken, err := s.SaveNode(context.Background(), NodeInput{ID: "relay1", Name: "Fixture relay", Endpoint: "relay1.donebot.cn", Enabled: true, MaxSessions: 10})
@@ -323,6 +340,9 @@ func TestPostgresDesktopMobileWorkflow(t *testing.T) {
 	cmd := exec.Command("node", "--experimental-strip-types", "scripts/verify-mobile-hub.ts")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "DONEBOT_MOBILE_RELAY_ROOT="+relayRoot, "DONEBOT_MOBILE_FIXTURE_HUB="+server.URL, "DONEBOT_MOBILE_FIXTURE_NODE_TOKEN="+nodeToken, "DONEBOT_MOBILE_FIXTURE_RELAY_PUBLIC="+base64.RawURLEncoding.EncodeToString(s.Config.Key.Public().(ed25519.PublicKey)))
+	if cloud {
+		cmd.Env = append(cmd.Env, "DONEBOT_MOBILE_FIXTURE_KIND=cloud")
+	}
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 	t.Log(string(out))
