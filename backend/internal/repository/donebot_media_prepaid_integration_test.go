@@ -186,6 +186,73 @@ func TestDoneBotMediaPrepaidSuccessRefundsDifferenceWithoutSecondDebit(t *testin
 	}
 }
 
+func TestMuseSettlementAdjustmentsAreAtomicAndExactlyOnce(t *testing.T) {
+	for _, actual := range []float64{0.4, 0.6, 0.9} {
+		t.Run(fmt.Sprint(actual), func(t *testing.T) {
+			repo, ops, owner, accountID := doneBotPrepaidFixture(t, 10, 20)
+			p := doneBotPrepaidInput(t, ops, owner, accountID, "muse-adjustment", 0.6)
+			p.Snapshot.VideoBilling = "muse_actual"
+			require.NoError(t, repo.PrepayDoneBotMedia(context.Background(), p))
+			in := service.DoneBotMediaPrepaidSettlement{ReceiptID: p.ReceiptID, ProviderRequestID: "muse-result", ActualAmount: actual, TotalAmount: actual / 2, Effects: &service.UsageBillingCommand{RequestID: "dbm:settle:" + p.ReceiptID, APIKeyID: owner.APIKeyID, UserID: owner.UserID, AccountID: accountID, Model: p.Model, AccountType: service.AccountTypeAPIKey, APIKeyQuotaCost: actual}}
+			require.NoError(t, repo.StageDoneBotMediaSettlement(context.Background(), in))
+			var wg sync.WaitGroup
+			errs := make(chan error, 12)
+			for i := 0; i < 12; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					_, err := repo.SettleDoneBotMediaPrecharge(context.Background(), in)
+					errs <- err
+				}()
+			}
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				require.NoError(t, err)
+			}
+			var balance, net, original float64
+			var charges, refunds, surcharges int
+			require.NoError(t, integrationDB.QueryRow(`SELECT balance FROM users WHERE id=$1`, owner.UserID).Scan(&balance))
+			require.InDelta(t, 10-actual, balance, 1e-8)
+			require.NoError(t, integrationDB.QueryRow(`SELECT SUM(actual_cost),MAX(actual_cost) FILTER (WHERE event_type='charge'),COUNT(*) FILTER (WHERE event_type='charge'),COUNT(*) FILTER (WHERE event_type='refund'),COUNT(*) FILTER (WHERE event_type='surcharge') FROM usage_logs WHERE operation_receipt_id=$1::uuid`, p.ReceiptID).Scan(&net, &original, &charges, &refunds, &surcharges))
+			require.InDelta(t, actual, net, 1e-8)
+			require.Equal(t, .6, original)
+			require.Equal(t, 1, charges)
+			if actual > .6 {
+				require.Equal(t, 1, surcharges)
+				require.Zero(t, refunds)
+			} else if actual < .6 {
+				require.Equal(t, 1, refunds)
+				require.Zero(t, surcharges)
+			} else {
+				require.Zero(t, refunds+surcharges)
+			}
+		})
+	}
+}
+
+func TestMuseInsufficientAdjustmentBalanceRemainsRecoverable(t *testing.T) {
+	repo, ops, owner, accountID := doneBotPrepaidFixture(t, .7, 20)
+	p := doneBotPrepaidInput(t, ops, owner, accountID, "muse-pending-surcharge", .6)
+	p.Snapshot.VideoBilling = "muse_actual"
+	require.NoError(t, repo.PrepayDoneBotMedia(context.Background(), p))
+	in := service.DoneBotMediaPrepaidSettlement{ReceiptID: p.ReceiptID, ActualAmount: .9, TotalAmount: .45, Effects: &service.UsageBillingCommand{RequestID: "dbm:settle:" + p.ReceiptID, APIKeyID: owner.APIKeyID, UserID: owner.UserID, AccountID: accountID, Model: p.Model, AccountType: service.AccountTypeAPIKey}}
+	require.NoError(t, repo.StageDoneBotMediaSettlement(context.Background(), in))
+	_, err := repo.SettleDoneBotMediaPrecharge(context.Background(), in)
+	require.ErrorIs(t, err, service.ErrInsufficientBalance)
+	var events int
+	require.NoError(t, integrationDB.QueryRow(`SELECT COUNT(*) FROM usage_logs WHERE operation_receipt_id=$1::uuid`, p.ReceiptID).Scan(&events))
+	require.Equal(t, 1, events, "failed supplemental debit rolls back its money event")
+	saved, err := repo.LookupDoneBotMediaPrecharge(context.Background(), p.ReceiptID, owner.APIKeyID, "")
+	require.NoError(t, err)
+	require.Equal(t, "prepaid", saved.State)
+	_, err = integrationDB.Exec(`UPDATE users SET balance=balance+1 WHERE id=$1`, owner.UserID)
+	require.NoError(t, err)
+	result, err := repo.SettleDoneBotMediaPrecharge(context.Background(), in)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+}
+
 func TestDoneBotMediaPrepaidEnforcesSharedMediaConcurrencyAndRecovery(t *testing.T) {
 	repo, ops, owner, accountID := doneBotPrepaidFixture(t, 100, 1)
 	p := doneBotPrepaidInput(t, ops, owner, accountID, "first", 0.6)

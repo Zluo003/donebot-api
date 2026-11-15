@@ -27,7 +27,7 @@ type seedanceWorkerMoneyRepo struct {
 func (r *seedanceWorkerMoneyRepo) HasUsageCharge(context.Context, string, int64) (bool, error) {
 	return r.found, nil
 }
-func TestSeedanceWorkerNativeCompletionChargesActualSecondsOnceAfterRestart(t *testing.T) {
+func TestSeedanceWorkerNativeCompletionChargesSubmittedSecondsOnceAfterRestart(t *testing.T) {
 	usage := &openAIRecordUsageLogRepoStub{inserted: true}
 	money := &seedanceWorkerMoneyRepo{openAIRecordUsageBillingRepoStub: &openAIRecordUsageBillingRepoStub{}}
 	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usage, money, &openAIRecordUsageUserRepoStub{}, nil, nil)
@@ -40,7 +40,7 @@ func TestSeedanceWorkerNativeCompletionChargesActualSecondsOnceAfterRestart(t *t
 	svc.accountRepo = &openAIRecordUsageAccountRepoStub{account: account}
 	response := `{"id":"task","status":"succeeded","duration":30,"resolution":"1080p","content":{"video_url":"https://supplier.example/video.mp4"},"usage":{"total_tokens":999}}`
 	svc.httpUpstream = &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(response)}
-	job := APIMartSettlementJob{Provider: "seedance", TaskID: "task", UserID: 1, APIKeyID: 2, GroupID: gid, AccountID: 4, VideoPending: &GrokVideoPendingBilling{Model: "movie", BillingModel: "movie", UpstreamModel: "native", VideoResolution: "1080p", VideoReference: true, VideoInputDurationSeconds: 2.5 + 3.75, CreatedAt: GrokVideoPendingCreatedAtNow()}}
+	job := APIMartSettlementJob{Provider: "seedance", TaskID: "task", UserID: 1, APIKeyID: 2, GroupID: gid, AccountID: 4, VideoPending: &GrokVideoPendingBilling{VideoDurationSeconds: 8, Model: "movie", BillingModel: "movie", UpstreamModel: "native", VideoResolution: "1080p", VideoReference: true, VideoInputDurationSeconds: 2.5 + 3.75, CreatedAt: GrokVideoPendingCreatedAtNow()}}
 	encoded, err := json.Marshal(job)
 	require.NoError(t, err)
 	var restored APIMartSettlementJob
@@ -52,8 +52,8 @@ func TestSeedanceWorkerNativeCompletionChargesActualSecondsOnceAfterRestart(t *t
 	require.True(t, done)
 	require.Equal(t, 1, money.calls)
 	require.Equal(t, StableGrokVideoBillingRequestID("seedance:task"), money.lastCmd.RequestID)
-	require.InDelta(t, (2.5+3.75+30)*.2, usage.lastLog.ActualCost, 1e-12)
-	require.Equal(t, 30, *usage.lastLog.VideoDurationSeconds)
+	require.InDelta(t, (2.5+3.75+8)*.2, usage.lastLog.ActualCost, 1e-12)
+	require.Equal(t, 8, *usage.lastLog.VideoDurationSeconds)
 	// A fresh worker polls a task after the first billing transaction committed;
 	// repricing must not cause a second command or fingerprint conflict.
 	money.found = true
@@ -80,7 +80,7 @@ func TestSeedanceWorkerLegacyReferenceMissingInputNeedsReviewUnlessAlreadyCharge
 	response := `{"id":"legacy","status":"succeeded","duration":6.25,"resolution":"720p","content":{"video_url":"https://supplier.example/video.mp4"}}`
 	// This is a durable pre-upgrade reference task. It has no trusted input
 	// duration, and must wait for reconciliation rather than undercharging.
-	legacy := `{"provider":"seedance","task_id":"legacy","user_id":1,"api_key_id":2,"group_id":7,"account_id":4,"video_pending":{"model":"movie","billing_model":"movie","video_resolution":"720p","video_reference":true}}`
+	legacy := `{"provider":"seedance","task_id":"legacy","user_id":1,"api_key_id":2,"group_id":7,"account_id":4,"video_pending":{"model":"movie","billing_model":"movie","video_resolution":"720p","video_reference":true,"video_duration_seconds":8}}`
 	var job APIMartSettlementJob
 	require.NoError(t, json.Unmarshal([]byte(legacy), &job))
 	worker := &apimartSettlementWorker{service: svc, keys: &APIKeyService{apiKeyRepo: seedanceWorkerKeyRepo{key: key}}}
@@ -132,7 +132,7 @@ func TestSeedanceWorkerRecoversBillingWithoutQueryPendingOrClaim(t *testing.T) {
 	svc.accountRepo = &openAIRecordUsageAccountRepoStub{account: account}
 	response := `{"id":"task","status":"succeeded","duration":6,"resolution":"720p","content":{"video_url":"https://supplier.example/video.mp4"}}`
 	svc.httpUpstream = &grokMediaContentUpstreamStub{response: grokMediaContentStatusResponse(response)}
-	job := APIMartSettlementJob{Provider: "seedance", TaskID: "task", UserID: 1, APIKeyID: 2, GroupID: gid, AccountID: 4, VideoPending: &GrokVideoPendingBilling{Model: "movie", BillingModel: "movie", VideoResolution: "720p", CreatedAt: GrokVideoPendingCreatedAtNow()}}
+	job := APIMartSettlementJob{Provider: "seedance", TaskID: "task", UserID: 1, APIKeyID: 2, GroupID: gid, AccountID: 4, VideoPending: &GrokVideoPendingBilling{VideoDurationSeconds: 8, Model: "movie", BillingModel: "movie", VideoResolution: "720p", CreatedAt: GrokVideoPendingCreatedAtNow()}}
 	w := &apimartSettlementWorker{service: svc, keys: &APIKeyService{apiKeyRepo: seedanceWorkerKeyRepo{key: key}}}
 	done, err := w.settle(context.Background(), job)
 	require.Error(t, err)

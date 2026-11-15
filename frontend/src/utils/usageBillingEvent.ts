@@ -2,8 +2,9 @@ import type { UsageLog } from '@/types'
 
 type UsageEvent = Pick<UsageLog, 'event_type' | 'operation_receipt_id' | 'actual_cost'>
 
-export function usageBillingEvent(row: UsageEvent): 'charge' | 'refund' | null {
+export function usageBillingEvent(row: UsageEvent): 'charge' | 'refund' | 'surcharge' | null {
   if (row.event_type === 'refund' || row.actual_cost < 0) return 'refund'
+  if (row.event_type === 'surcharge') return 'surcharge'
   return row.operation_receipt_id ? 'charge' : null
 }
 

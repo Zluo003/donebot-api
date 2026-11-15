@@ -10,19 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSeedanceOutputSecondsUseNativeResultNotTokens(t *testing.T) {
-	for _, tc := range []struct {
-		body string
-		want float64
-	}{
-		{`{"status":"succeeded","content":{"video_url":"https://example.com/a.mp4"},"duration":30,"usage":{"total_tokens":999}}`, 30},
-		{`{"status":"succeeded","content":{"video_url":"https://example.com/a.mp4"},"duration":5,"frames":133,"framespersecond":24}`, 133.0 / 24},
-		{`{"status":"running","duration":30}`, 0},
-		{`{"status":"succeeded","content":{"video_url":"https://example.com/a.mp4"},"duration":-1}`, 0},
-		{`{"status":"succeeded","content":{"video_url":"https://example.com/a.mp4"},"duration":"30"}`, 0},
-		{`{"status":"succeeded","usage":{"total_tokens":999}}`, 0},
-	} {
-		require.InDelta(t, tc.want, seedanceActualOutputSeconds([]byte(tc.body)), 1e-12, tc.body)
+func TestSeedanceCompletionUsesSubmittedSeconds(t *testing.T) {
+	pending := &GrokVideoPendingBilling{Model: "video", VideoDurationSeconds: 8, VideoResolution: "720p"}
+	for _, duration := range []float64{0, 2, 15, math.NaN()} {
+		merged := MergeSeedanceCompletion(&OpenAIForwardResult{VideoCount: 1, VideoActualDurationSeconds: duration}, pending, "seedance:task")
+		require.NotNil(t, merged)
+		require.Equal(t, 8.0, merged.VideoActualDurationSeconds)
+		require.Equal(t, 8, merged.VideoDurationSeconds)
 	}
 }
 func TestSeedancePriceStrictModelResolutionAndReferenceVideo(t *testing.T) {
@@ -87,12 +81,12 @@ func TestSeedanceReferenceInflightUsesTotalInputsAndOutput(t *testing.T) {
 }
 
 func TestMergeSeedanceCompletionPreservesTrustedInputSeconds(t *testing.T) {
-	pending := &GrokVideoPendingBilling{Model: "video", VideoReference: true, VideoInputDurationSeconds: 2.5 + 3.75}
-	result := &OpenAIForwardResult{VideoResolution: "720p", VideoActualDurationSeconds: 6.25, VideoInputDurationSeconds: 99}
+	pending := &GrokVideoPendingBilling{Model: "video", VideoDurationSeconds: 8, VideoReference: true, VideoInputDurationSeconds: 2.5 + 3.75}
+	result := &OpenAIForwardResult{VideoCount: 1, VideoResolution: "720p", VideoActualDurationSeconds: 6.25, VideoInputDurationSeconds: 99}
 	merged := MergeSeedanceCompletion(result, pending, "seedance:task")
 	require.NotNil(t, merged)
 	require.InDelta(t, 6.25, merged.VideoInputDurationSeconds, 1e-12, "the persisted trusted input sum must replace status data")
-	require.InDelta(t, 6.25, merged.VideoActualDurationSeconds, 1e-12)
+	require.Equal(t, 8.0, merged.VideoActualDurationSeconds)
 }
 func TestSeedanceReferenceVideoFlagSurvivesNativeParse(t *testing.T) {
 	for _, url := range []string{"asset://clip-id", "https://example.com/clip.mp4"} {

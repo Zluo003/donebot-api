@@ -1572,7 +1572,7 @@ export interface CodexUsageSnapshot {
 
 export type OpenAICompactMode = 'auto' | 'force_on' | 'force_off'
 export type OpenAIResponsesMode = 'auto' | 'force_responses' | 'force_chat_completions'
-export type OpenAIEndpointCapability = 'chat_completions' | 'embeddings' | 'seedance' | 'apimart_images' | 'apimart_suno' | 'apimart_tts'
+export type OpenAIEndpointCapability = 'chat_completions' | 'embeddings' | 'seedance' | 'muse' | 'apimart_images' | 'apimart_suno' | 'apimart_tts'
 
 export interface OpenAICompactState {
   openai_compact_mode?: OpenAICompactMode
@@ -1802,7 +1802,7 @@ export interface CodexSessionImportResult {
 
 export type RedeemCodeType = 'balance' | 'concurrency' | 'subscription' | 'invitation'
 export type UsageRequestType = 'unknown' | 'sync' | 'stream' | 'ws_v2' | 'cyber' | 'live'
-export type UsageEventType = 'charge' | 'refund'
+export type UsageEventType = 'charge' | 'refund' | 'surcharge'
 export type ImageSizeSource = 'output' | 'input' | 'default' | 'legacy'
 export type ImageSizeBreakdown = Record<string, number>
 

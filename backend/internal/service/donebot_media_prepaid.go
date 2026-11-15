@@ -22,6 +22,7 @@ type DoneBotMediaUnitPrice struct {
 }
 
 type DoneBotMediaCandidatePriceSnapshot struct {
+	VideoBilling   string                           `json:"video_billing,omitempty"`
 	InputImages    int                              `json:"input_images,omitempty"`
 	Kind           string                           `json:"kind"`
 	Rates          map[string]DoneBotMediaUnitPrice `json:"rates"`
@@ -32,6 +33,7 @@ type DoneBotMediaCandidatePriceSnapshot struct {
 }
 
 type DoneBotMediaPriceSnapshot struct {
+	VideoBilling          string                                        `json:"video_billing,omitempty"`
 	InputImages           int                                           `json:"input_images,omitempty"`
 	Kind                  string                                        `json:"kind"`
 	Rates                 map[string]DoneBotMediaUnitPrice              `json:"rates"`
@@ -285,7 +287,10 @@ func (s *OpenAIGatewayService) doneBotSeedanceCandidatePriceSnapshot(ctx context
 			return DoneBotMediaCandidatePriceSnapshot{}, ErrDoneBotMediaReconciliation
 		}
 	}
-	return DoneBotMediaCandidatePriceSnapshot{Kind: "video", MaxUnits: 30 + input, InputSeconds: input, Tier: resolution, Rates: map[string]DoneBotMediaUnitPrice{resolution: {Actual: cost.ActualCost, Total: cost.TotalCost}}, RateMultiplier: videoRate}, nil
+	if info.DurationSeconds <= 0 {
+		return DoneBotMediaCandidatePriceSnapshot{}, ErrDoneBotMediaInvalid
+	}
+	return DoneBotMediaCandidatePriceSnapshot{VideoBilling: "submitted", Kind: "video", MaxUnits: float64(info.DurationSeconds) + input, InputSeconds: input, Tier: resolution, Rates: map[string]DoneBotMediaUnitPrice{resolution: {Actual: cost.ActualCost, Total: cost.TotalCost}}, RateMultiplier: videoRate}, nil
 }
 
 func (s *OpenAIGatewayService) doneBotImageCandidatePriceSnapshot(ctx context.Context, key *APIKey, model string, count int) (DoneBotMediaCandidatePriceSnapshot, error) {
@@ -348,6 +353,7 @@ func doneBotMediaSnapshotForModel(snapshot DoneBotMediaPriceSnapshot, model stri
 		return snapshot
 	}
 	return DoneBotMediaPriceSnapshot{
+		VideoBilling:          candidate.VideoBilling,
 		Kind:                  candidate.Kind,
 		Rates:                 candidate.Rates,
 		MaxUnits:              candidate.MaxUnits,
@@ -378,11 +384,10 @@ func (s *OpenAIGatewayService) PrepayDoneBotSeedance(ctx context.Context, key *A
 	if DoneBotMediaReceiptID(ctx) == "" {
 		return nil
 	}
-	native := SeedanceSpecModelForAccount(account, model)
-	maxSeconds := 30.0
-	if strings.Contains(native, "2-0") || strings.Contains(native, "2.0") {
-		maxSeconds = 15
+	if info.DurationSeconds <= 0 {
+		return ErrDoneBotMediaInvalid
 	}
+	maxSeconds := float64(info.DurationSeconds)
 	resolution := firstNonEmpty(info.Resolution, "720p")
 	rate := resolveVideoRateMultiplier(key, s.doneBotMediaBaseRate(ctx, key))
 	billingModel := s.SeedanceBillingModel(ctx, key, model)
@@ -401,7 +406,7 @@ func (s *OpenAIGatewayService) PrepayDoneBotSeedance(ctx context.Context, key *A
 			return ErrDoneBotMediaReconciliation
 		}
 	}
-	snapshot := DoneBotMediaPriceSnapshot{Kind: "video", MaxUnits: maxSeconds + input, InputSeconds: input, Tier: resolution, Rates: map[string]DoneBotMediaUnitPrice{resolution: {Actual: cost.ActualCost, Total: cost.TotalCost}}, RateMultiplier: rate, AccountRateMultiplier: account.BillingRateMultiplier()}
+	snapshot := DoneBotMediaPriceSnapshot{VideoBilling: "submitted", Kind: "video", MaxUnits: maxSeconds + input, InputSeconds: input, Tier: resolution, Rates: map[string]DoneBotMediaUnitPrice{resolution: {Actual: cost.ActualCost, Total: cost.TotalCost}}, RateMultiplier: rate, AccountRateMultiplier: account.BillingRateMultiplier()}
 	return s.prepayDoneBotMedia(ctx, key, account, model, snapshot)
 }
 
@@ -552,10 +557,14 @@ func doneBotPrepaidActual(snapshot DoneBotMediaPriceSnapshot, result *OpenAIForw
 			total = total.Add(decimal.NewFromFloat(price.Total).Mul(count))
 		}
 	case "video":
-		if result.VideoActualDurationSeconds <= 0 || result.VideoResolution != snapshot.Tier {
+		seconds := result.VideoActualDurationSeconds
+		if snapshot.VideoBilling == "submitted" {
+			seconds = snapshot.MaxUnits - snapshot.InputSeconds
+		}
+		if seconds <= 0 || result.VideoResolution != snapshot.Tier {
 			return nil, fmt.Errorf("%w: video_seconds=%g resolution=%q admitted_resolution=%q", ErrDoneBotMediaReconciliation, result.VideoActualDurationSeconds, result.VideoResolution, snapshot.Tier)
 		}
-		if err := add(snapshot.Tier, result.VideoActualDurationSeconds+snapshot.InputSeconds); err != nil {
+		if err := add(snapshot.Tier, seconds+snapshot.InputSeconds); err != nil {
 			return nil, err
 		}
 	case "music":
@@ -568,7 +577,7 @@ func doneBotPrepaidActual(snapshot DoneBotMediaPriceSnapshot, result *OpenAIForw
 	default:
 		return nil, ErrDoneBotMediaInvalid
 	}
-	if units > snapshot.MaxUnits {
+	if units > snapshot.MaxUnits && snapshot.VideoBilling != "muse_actual" {
 		return nil, fmt.Errorf("%w: units=%g admitted_max_units=%g", ErrDoneBotMediaReconciliation, units, snapshot.MaxUnits)
 	}
 	a, _ := actual.Round(UsageBillingMonetaryScale).Float64()

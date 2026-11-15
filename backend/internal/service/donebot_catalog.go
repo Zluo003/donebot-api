@@ -579,6 +579,19 @@ func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, 
 		if row.Kind != "llm" && media == nil {
 			continue
 		}
+		if media != nil && media.Protocol.Adapter == "muse.videos.v1" && row.ChannelPricing != nil {
+			rate := doneBotPricingMultiplier(group, "video")
+			model.Pricing.PerRequest = multiplied(row.ChannelPricing.PerRequestPrice, rate)
+			model.Pricing.Tiers = map[string]float64{}
+			for _, tier := range row.ChannelPricing.Intervals {
+				if tier.TierLabel != "720p" {
+					continue
+				}
+				if price := multiplied(tier.PerRequestPrice, rate); price != nil {
+					model.Pricing.Tiers[tier.TierLabel] = *price
+				}
+			}
+		}
 		model.MediaParameters = media
 		if model.MediaFallbackPriority > 0 && media != nil {
 			fallbackPriorities[row.Model] = model.MediaFallbackPriority

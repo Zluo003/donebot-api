@@ -4,7 +4,7 @@ export default {
         resolution: 'Resolution',
         videoWithoutReference: 'No reference video (USD / output second)',
         videoWithReference: 'With reference video (USD / input video second + output second)',
-        videoDescription: 'Configure Seedance rates by model, official resolution and reference video presence. Without reference video, only actual output duration is billed. With reference video, total input video duration + actual output duration is billed. Durations of multiple input videos are summed; input and output use the same reference-video rate. Image and audio references do not add input video duration.'
+        videoDescription: 'Configure Seedance rates by model, official resolution and reference video presence. Without reference video, submitted output duration is billed. With reference video, total input video duration + submitted output duration is billed. Successful tasks receive no duration adjustment. Durations of multiple input videos are summed; input and output use the same reference-video rate. Image and audio references do not add input video duration. Muse settles actual output seconds against the submitted-duration precharge, with refunds or additional charges.'
       }
     },
     // Dashboard

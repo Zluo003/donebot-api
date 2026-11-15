@@ -41,11 +41,11 @@ func (e GrokMediaEndpoint) RequiresRequestBody() bool {
 }
 
 func (e GrokMediaEndpoint) IsVideoLookupRequest() bool {
-	return e == GrokMediaEndpointVideoStatus || e == GrokMediaEndpointVideoContent || e == SeedanceEndpointStatus || e == SeedanceEndpointDelete || e == SeedanceEndpointContent
+	return e == MuseEndpointStatus || e == MuseEndpointContent || e == GrokMediaEndpointVideoStatus || e == GrokMediaEndpointVideoContent || e == SeedanceEndpointStatus || e == SeedanceEndpointDelete || e == SeedanceEndpointContent
 }
 
 func (e GrokMediaEndpoint) IsGenerationRequest() bool {
-	if e == SeedanceEndpointCreate {
+	if e.IsNativeVideoCreate() {
 		return true
 	}
 	switch e {
@@ -465,10 +465,10 @@ func (s *OpenAIGatewayService) StoreGrokVideoPendingBilling(
 	pending.BillingModel = strings.TrimSpace(pending.BillingModel)
 	pending.UpstreamModel = strings.TrimSpace(pending.UpstreamModel)
 	pending.OriginalModel = strings.TrimSpace(pending.OriginalModel)
-	if !strings.HasPrefix(requestID, "seedance:") && pending.VideoResolution != "" {
+	if !strings.HasPrefix(requestID, "seedance:") && !strings.HasPrefix(requestID, "muse:") && pending.VideoResolution != "" {
 		pending.VideoResolution = NormalizeVideoBillingResolutionOrDefault(pending.VideoResolution)
 	}
-	if !strings.HasPrefix(requestID, "seedance:") && pending.VideoDurationSeconds > 0 {
+	if !strings.HasPrefix(requestID, "seedance:") && !strings.HasPrefix(requestID, "muse:") && pending.VideoDurationSeconds > 0 {
 		pending.VideoDurationSeconds = NormalizeVideoBillingDurationSecondsOrDefault(pending.VideoDurationSeconds)
 	}
 	// Always stamp create-accept time when missing so deferred duration_ms is E2E.
@@ -580,8 +580,8 @@ func isOfficialGrokVideoStatusDone(statusBody []byte) bool {
 }
 
 // ExtractGrokVideoBillingFromStatusBody builds usage units from an official done status.
-// Field priority (official docs):
-//   - duration: video.duration (seconds)
+// Field priority:
+//   - duration: submitted create-time snapshot only
 //   - model: top-level model
 //   - resolution: not in status response → create-time pending snapshot → default 480p
 func ExtractGrokVideoBillingFromStatusBody(statusBody []byte, pending *GrokVideoPendingBilling, requestID string) *OpenAIForwardResult {
@@ -597,14 +597,6 @@ func ExtractGrokVideoBillingFromStatusBody(statusBody []byte, pending *GrokVideo
 	if gjson.ValidBytes(statusBody) {
 		// Official: top-level model.
 		model = strings.TrimSpace(gjson.GetBytes(statusBody, "model").String())
-		// Official: video.duration (number of seconds).
-		if v := gjson.GetBytes(statusBody, "video.duration"); v.Exists() && v.Type == gjson.Number {
-			durationSeconds = int(v.Int())
-			if durationSeconds == 0 && v.Float() > 0 {
-				// Sub-second values are unexpected for this API; still accept truncated int path above.
-				durationSeconds = int(v.Float())
-			}
-		}
 	}
 	if pending != nil {
 		if model == "" {
@@ -618,9 +610,7 @@ func ExtractGrokVideoBillingFromStatusBody(statusBody []byte, pending *GrokVideo
 		}
 		// Official status has no resolution — always take create request when available.
 		resolution = pending.VideoResolution
-		if durationSeconds <= 0 {
-			durationSeconds = pending.VideoDurationSeconds
-		}
+		durationSeconds = pending.VideoDurationSeconds
 	}
 	if model == "" {
 		// Official default video model family when status omits model.
@@ -1232,7 +1222,7 @@ func grokMediaUsageFromResponse(endpoint GrokMediaEndpoint, requestInfo GrokMedi
 		meta.VideoResolution = requestInfo.Resolution
 		meta.VideoDurationSeconds = requestInfo.DurationSeconds
 	case GrokMediaEndpointVideoStatus:
-		// Prefer status-body URL success + upstream duration/resolution when present.
+		// Detect completion from the status URL; billing duration comes from the submission snapshot.
 		if IsGrokVideoStatusBillable(responseBody) {
 			// provisional units; handler merges with pending snapshot before RecordUsage.
 			if billed := ExtractGrokVideoBillingFromStatusBody(responseBody, nil, ""); billed != nil {

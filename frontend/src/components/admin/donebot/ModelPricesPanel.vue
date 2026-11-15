@@ -14,7 +14,7 @@
           <label class="flex items-center gap-2 text-sm"><input v-model="row.enabled" type="checkbox" class="h-4 w-4 rounded" :aria-label="`启用 ${row.model}`" :disabled="busy || (!row.enabled && !canEnable(row, drafts[index]))">启用</label>
         </div>
         <template v-if="drafts[index]">
-          <div v-if="kind === 'video'" class="overflow-x-auto">
+          <div v-if="kind === 'video' && row.video_billing !== 'actual'" class="overflow-x-auto">
             <table class="w-full min-w-[420px] text-left text-sm">
               <thead><tr><th class="py-2">{{ t('admin.donebot.pricing.resolution') }}</th><th class="px-2 py-2">{{ t('admin.donebot.pricing.videoWithoutReference') }}</th><th class="px-2 py-2">{{ t('admin.donebot.pricing.videoWithReference') }}</th></tr></thead>
               <tbody>
@@ -88,6 +88,7 @@ function canEnable(row: DoneBotModel, draft?: ModelPriceDraft) {
 function priceUnit(row: DoneBotModel) {
   if (props.kind === 'llm') return '×'
   if (props.kind === 'images') return 'USD / 张'
+  if (props.kind === 'video') return 'USD / 秒（实际成片时长）'
   return row.audio_price_unit === 'million_characters' || row.model === 'gpt-4o-mini-tts' || drafts.value.find(draft => draft.model === row.model)?.fields.some(field => field.label === 'tts') ? 'USD / 百万字符' : 'USD / 次生成'
 }
 function videoResolutions(draft: ModelPriceDraft) { return [...new Set(draft.fields.map(field => field.resolution!))] }

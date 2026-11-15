@@ -11,6 +11,7 @@ const (
 	BillingTypeSubscription int8 = 1 // 订阅套餐
 	UsageEventCharge             = "charge"
 	UsageEventRefund             = "refund"
+	UsageEventSurcharge          = "surcharge"
 )
 
 type RequestType int16
@@ -227,8 +228,8 @@ func (u *UsageLog) TotalTokens() int {
 }
 
 func (u *UsageLog) EffectiveEventType() string {
-	if u != nil && u.EventType == UsageEventRefund {
-		return UsageEventRefund
+	if u != nil && (u.EventType == UsageEventRefund || u.EventType == UsageEventSurcharge) {
+		return u.EventType
 	}
 	return UsageEventCharge
 }

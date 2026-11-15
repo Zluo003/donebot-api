@@ -358,10 +358,8 @@ func (s *OpenAIGatewayService) forwardSeedance(ctx context.Context, c *gin.Conte
 		result.UpstreamModel = gjson.GetBytes(responseBody, "model").String()
 		if gjson.GetBytes(responseBody, "status").String() == "succeeded" {
 			result.Usage.OutputTokens = seedanceCompletionTokens(responseBody)
-			result.VideoActualDurationSeconds = seedanceActualOutputSeconds(responseBody)
-			if result.VideoActualDurationSeconds > 0 {
+			if strings.TrimSpace(gjson.GetBytes(responseBody, "content.video_url").String()) != "" {
 				result.VideoCount = 1
-				result.VideoDurationSeconds = int(math.Ceil(result.VideoActualDurationSeconds))
 			}
 			result.VideoResolution = gjson.GetBytes(responseBody, "resolution").String()
 		}

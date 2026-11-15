@@ -74,6 +74,10 @@ func doneBotMediaProtocol(adapter string) *DoneBotCatalogMediaProtocol {
 		}
 	case "apimart.speech.v1":
 		protocol.Submit.Path, protocol.Submit.ResponseKind = "/v1/audio/speech", "binary"
+	case "muse.videos.v1":
+		protocol.Submit.Path, protocol.TaskIDPath = "/v1/videos", "task_id"
+		protocol.Poll = &DoneBotCatalogMediaPoll{DoneBotCatalogMediaEndpoint: DoneBotCatalogMediaEndpoint{Method: "GET", Path: "/v1/videos/{task_id}", ResponseKind: "json"}, StatusPaths: []string{"status"}, CompletedStatuses: []string{"completed"}, FailedStatuses: []string{"failed"}, ResultPaths: []string{"video_url", "url", "output.0.url"}}
+		protocol.Content = &DoneBotCatalogMediaEndpoint{Method: "GET", Path: "/v1/videos/{task_id}/content", ResponseKind: "binary"}
 	case "seedance.videos.v1":
 		protocol.Submit.Path, protocol.TaskIDPath = "/v1/videos", "id"
 		protocol.Poll = &DoneBotCatalogMediaPoll{DoneBotCatalogMediaEndpoint: DoneBotCatalogMediaEndpoint{Method: "GET", Path: "/v1/videos/{task_id}", ResponseKind: "json"}, StatusPaths: []string{"status"}, CompletedStatuses: []string{"succeeded"}, FailedStatuses: []string{"failed", "cancelled", "expired"}, ResultPaths: []string{"content.video_url"}}
@@ -159,7 +163,7 @@ func doneBotPublicMediaParameters(groupID int64, row DoneBotModel, accounts []Ac
 		if profile.Protocol.Adapter == "donebot.images.async.v1" && slices.Contains(profile.Formats, "gif") {
 			gifAvailable = true
 		}
-		if row.Kind == "video" {
+		if row.Kind == "video" && profile.Protocol.Adapter != "muse.videos.v1" {
 			if len(profile.Resolutions) == 0 {
 				continue
 			}
@@ -201,7 +205,7 @@ func doneBotPublicMediaParameters(groupID int64, row DoneBotModel, accounts []Ac
 	if err := doneBotRestrictMediaParameters(common, configured); err != nil {
 		return nil, err
 	}
-	if row.Kind == "video" && len(common.Resolutions) == 0 || row.Kind == "audio" && row.AudioPriceUnit == "request" && len(common.MusicVersions) == 0 {
+	if row.Kind == "video" && common.Protocol.Adapter != "muse.videos.v1" && len(common.Resolutions) == 0 || row.Kind == "audio" && row.AudioPriceUnit == "request" && len(common.MusicVersions) == 0 {
 		return nil, nil
 	}
 	return common, nil
@@ -240,6 +244,10 @@ func doneBotAccountMediaParameters(account *Account, model string, row DoneBotMo
 		}
 		return media
 	case "video":
+		if account.SupportsMuseModel(model) {
+			// Native parameters and limits belong to the downstream client.
+			return &DoneBotCatalogMediaParameters{Operations: []string{"generate"}, Protocol: doneBotMediaProtocol("muse.videos.v1")}
+		}
 		if !account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilitySeedance) {
 			return nil
 		}

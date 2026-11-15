@@ -26,6 +26,20 @@ beforeEach(() => {
 })
 afterEach(() => { config.global.plugins = originalPlugins })
 describe('DoneBot individual model sale prices', () => {
+  it('edits only the Muse 720p tariff without reference video fields', async () => {
+    mockResult(fixture([{ ...row('muse-video', 'video', { video_prices: [
+      { resolution: '720p', reference_video: false, price_per_second: .3 }
+    ] }), video_billing: 'actual' }]))
+    const wrapper = mount(VideoModelsPanel); await flushPromises()
+    expect(wrapper.text()).toContain('实际成片时长')
+    expect(wrapper.findAll('input[type=number]')).toHaveLength(1)
+    expect(wrapper.find('table').exists()).toBe(false)
+    await wrapper.get('[data-testid="price-muse-video-video-720p-no-reference"]').setValue('0.25')
+    await wrapper.get('[data-test="save-configuration"]').trigger('click'); await flushPromises()
+    expect(donebot.saveConfiguration).toHaveBeenCalledWith('video', { models: [{ model: 'muse-video', enabled: true, pricing: { video_prices: [
+      { resolution: '720p', reference_video: false, price_per_second: .25 }
+    ] } }] })
+  })
   it('edits only a multiplier for each LLM and never submits token prices', async () => {
     mockResult(fixture([
       row('gpt-test', 'llm', { rate_multiplier: 1.2 }),
@@ -117,7 +131,7 @@ describe('DoneBot individual model sale prices', () => {
       resolution: '分辨率',
       outputUnit: '无参考视频（USD / 输出秒）',
       referenceUnit: '有参考视频（USD / 输入视频秒 + 输出秒）',
-      measurement: '无参考视频仅按实际输出时长计费；有参考视频按全部输入视频总时长 + 实际输出时长计费。',
+      measurement: '无参考视频按提交的成片时长计费；有参考视频按全部输入视频总时长 + 提交的成片时长计费，成功后不按成片时长退款。',
       sharedRate: '多个输入视频的时长相加，输入与输出均使用同一有参考视频秒价。'
     },
     {
@@ -125,7 +139,7 @@ describe('DoneBot individual model sale prices', () => {
       resolution: 'Resolution',
       outputUnit: 'No reference video (USD / output second)',
       referenceUnit: 'With reference video (USD / input video second + output second)',
-      measurement: 'Without reference video, only actual output duration is billed. With reference video, total input video duration + actual output duration is billed.',
+      measurement: 'Without reference video, submitted output duration is billed. With reference video, total input video duration + submitted output duration is billed. Successful tasks receive no duration adjustment.',
       sharedRate: 'Durations of multiple input videos are summed; input and output use the same reference-video rate.'
     }
   ])('explains reference video billing duration in $locale', async ({ locale, resolution, outputUnit, referenceUnit, measurement, sharedRate }) => {

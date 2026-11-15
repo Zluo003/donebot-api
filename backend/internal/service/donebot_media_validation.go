@@ -83,7 +83,7 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 	case "image":
 		mediaType, iface, adapters = "image", "openai.images", []string{"openai.images.v1", "donebot.images.async.v1", "apimart.images.v1"}
 	case "video":
-		mediaType, iface, adapters = "video", "openai.videos", []string{"seedance.videos.v1"}
+		mediaType, iface, adapters = "video", "openai.videos", []string{"seedance.videos.v1", "muse.videos.v1"}
 	case "music":
 		mediaType, iface, adapters = "music", "openai.music", []string{"apimart.music.v1"}
 	case "speech":
@@ -96,6 +96,17 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 	}
 	if selected, exists := parameters["model"]; exists && selected != model.ID {
 		return ErrDoneBotMediaInvalid
+	}
+
+	if protocol.Adapter == "muse.videos.v1" {
+		body, err := json.Marshal(parameters)
+		if err != nil {
+			return ErrDoneBotMediaInvalid
+		}
+		if _, err := ParseMuseRequest(body); err != nil {
+			return ErrDoneBotMediaInvalid
+		}
+		return nil
 	}
 
 	if model.ID == seedream55Model && protocol.Adapter == "apimart.images.v1" {
@@ -255,6 +266,8 @@ func doneBotAdapterAllowsPath(adapter, path string) bool {
 		return path == "/v1/images/generations" || path == "/v1/images/edits"
 	case "donebot.images.async.v1":
 		return path == "/v1/images/generations/async" || path == "/v1/images/edits/async"
+	case "muse.videos.v1":
+		return path == "/v1/videos"
 	case "seedance.videos.v1":
 		return path == "/v1/videos" || path == "/v1/videos/edits" || path == "/v1/videos/extensions"
 	default:

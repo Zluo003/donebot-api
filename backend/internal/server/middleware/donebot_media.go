@@ -194,6 +194,10 @@ func DoneBotMediaRecoveryMiddleware(recovery DoneBotMediaRecovery) gin.HandlerFu
 			!taskRecorded && !usageRecorded && completion.TaskID == "" && completion.UsageRequestID == "" {
 			completion.Status = "failed"
 		}
+		if completion.TaskID != "" && completion.Provider == "muse" {
+			completion.TaskKey = service.MuseTaskKey(completion.TaskID)
+			completion.UsageRequestID = service.StableGrokVideoBillingRequestID(completion.TaskKey)
+		}
 		if completion.TaskID != "" && completion.Provider == "seedance" {
 			completion.TaskKey = service.SeedanceTaskKey(completion.TaskID)
 			completion.UsageRequestID = service.StableGrokVideoBillingRequestID(completion.TaskKey)

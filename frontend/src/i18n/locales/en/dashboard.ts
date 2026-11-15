@@ -335,6 +335,7 @@ export default {
     description: 'View and analyze your API usage history',
     costDetails: 'Cost Breakdown',
     billingEvent: {
+      surcharge: 'Additional charge',
       type: 'Billing event',
       charge: 'Charge',
       refund: 'Refund',

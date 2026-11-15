@@ -62,7 +62,7 @@ func TestSeedanceStatusAndDelete(t *testing.T) {
 			}
 			if status == "succeeded" {
 				require.Equal(t, 1, result.VideoCount)
-				require.Equal(t, 30.0, result.VideoActualDurationSeconds)
+				require.Zero(t, result.VideoActualDurationSeconds, "status never reads output duration for Seedance billing")
 				require.Equal(t, "1080p", result.VideoResolution)
 			} else {
 				require.Zero(t, result.VideoCount)

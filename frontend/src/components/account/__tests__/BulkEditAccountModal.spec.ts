@@ -557,6 +557,18 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('persists Muse in a two-capability bulk update', async () => {
+    const wrapper = mountModal({ selectedPlatforms: ['openai'], selectedTypes: ['apikey'] })
+    await wrapper.get('#bulk-edit-openai-endpoint-capabilities-enabled').setValue(true)
+    await wrapper.get('[data-testid="bulk-edit-openai-endpoint-capability-embeddings"]').setValue(false)
+    await wrapper.get('[data-testid="bulk-edit-openai-endpoint-capability-muse"]').setValue(true)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      credentials: { openai_capabilities: ['chat_completions', 'muse'] }
+    })
+  })
+
   it('persists Seedance in a two-capability bulk update', async () => {
     const wrapper = mountModal({ selectedPlatforms: ['openai'], selectedTypes: ['apikey'] })
     await wrapper.get('#bulk-edit-openai-endpoint-capabilities-enabled').setValue(true)

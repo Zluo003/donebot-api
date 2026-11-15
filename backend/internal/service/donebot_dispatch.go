@@ -17,6 +17,7 @@ const (
 	DoneBotDispatchAPIMartImages  = "apimart_images"
 	DoneBotDispatchAPIMartMusic   = "apimart_music"
 	DoneBotDispatchSeedance       = "seedance"
+	DoneBotDispatchMuse           = "muse"
 	DoneBotDispatchCandidateLimit = 3
 )
 
@@ -194,6 +195,8 @@ func (s *OpenAIGatewayService) SubmitDoneBotDispatch(ctx context.Context, key *A
 				endpoint = APIMartSuno
 			}
 			err = s.PrepayDoneBotAPIMart(ctx, key, account, task.Info, endpoint)
+		case DoneBotDispatchMuse:
+			err = s.PrepayDoneBotMuse(ctx, key, account, task.Model, task.VideoInfo)
 		case DoneBotDispatchSeedance:
 			err = s.PrepayDoneBotSeedance(ctx, key, account, task.Model, task.VideoInfo)
 		default:
@@ -259,14 +262,14 @@ func (task *DoneBotDispatch) PublicBody() []byte {
 		value = map[string]any{}
 	}
 	target := value
-	if task.Protocol != DoneBotDispatchSeedance {
+	if task.Protocol != DoneBotDispatchSeedance && task.Protocol != DoneBotDispatchMuse {
 		if data, ok := value["data"].(map[string]any); ok {
 			target = data
 		} else {
 			target = map[string]any{}
 			value["data"] = target
 		}
-	} else if status == "completed" {
+	} else if status == "completed" && task.Protocol == DoneBotDispatchSeedance {
 		status = "succeeded"
 	}
 	if task.DoneBotIntent && status == "completed" {
@@ -454,7 +457,7 @@ func doneBotDispatchPrepaidKind(protocol string) string {
 		return "image"
 	case DoneBotDispatchAPIMartMusic:
 		return "music"
-	case DoneBotDispatchSeedance:
+	case DoneBotDispatchSeedance, DoneBotDispatchMuse:
 		return "video"
 	default:
 		return ""

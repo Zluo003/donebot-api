@@ -26,6 +26,13 @@ export function createModelPriceDraft(row: DoneBotModel, kind: Modality): ModelP
     const tiers = p.tier_prices ?? row.effective_tier_prices ?? {}
     const defaults = row.audio_price_unit === 'million_characters' || row.model === 'gpt-4o-mini-tts' || 'tts' in tiers ? ['tts'] : ['v6', 'v6-wild', 'v6-mini', 'custom-model']
     fields = [...new Set([...defaults, ...Object.keys(tiers)])].map(tier => ({ key: `tier-${tier}`, label: tier, factor: 1, value: display(tiers[tier] ?? row.effective_per_request_price) }))
+  } else if (row.video_billing === 'actual') {
+    const resolutions = ['720p']
+    fields = resolutions.map(resolution => ({
+      key: `video-${resolution || 'default'}-no-reference`, label: resolution || '默认档', factor: 1,
+      resolution, referenceVideo: false,
+      value: display(p.video_prices?.find(price => price.resolution === resolution && !price.reference_video)?.price_per_second)
+    }))
   } else {
     const official = SEEDANCE_MODELS.find(model => model.id === row.model)?.resolutions.split(' / ').map(value => value.toLowerCase())
     const resolutions = row.video_resolutions ?? official ?? [...new Set((p.video_prices ?? []).map(price => price.resolution))]

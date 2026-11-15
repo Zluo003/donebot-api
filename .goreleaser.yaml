@@ -36,6 +36,7 @@ archives:
       - README*
       - deploy/*
       - docs/donebot/*.md
+      - docs/muse-api.md
 
 checksum:
   name_template: 'checksums.txt'

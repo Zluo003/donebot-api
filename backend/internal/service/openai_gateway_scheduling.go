@@ -450,6 +450,9 @@ func openAICompatibleAccountEligibilityFailureReasonBeforeProfit(ctx context.Con
 		}
 		return "capability_mismatch"
 	}
+	if requiredCapability == OpenAIEndpointCapabilityMuse && !account.SupportsMuseModel(requestedModel) {
+		return "model_not_supported"
+	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
 		return "compact_unsupported"
 	}

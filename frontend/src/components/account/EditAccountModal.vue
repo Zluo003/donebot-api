@@ -4317,6 +4317,7 @@ const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapabili
   { value: 'chat_completions', label: openAITextEndpointCapabilityLabel.value },
   { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') },
   { value: 'seedance', label: 'Seedance (Ark)' },
+  { value: 'muse', label: 'Muse Video' },
   { value: 'apimart_images', label: 'APIMart Seedream' },
   { value: 'apimart_suno', label: 'APIMart Suno' },
   { value: 'apimart_tts', label: 'APIMart TTS' }
@@ -4326,7 +4327,7 @@ const openAITextGenerationCapabilityEnabled = computed(() =>
 )
 
 const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
-  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance', 'apimart_images', 'apimart_suno', 'apimart_tts']
+  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance', 'muse', 'apimart_images', 'apimart_suno', 'apimart_tts']
   const selected = allowed.filter((value) => values.includes(value))
   return selected.length > 0 ? selected : ['chat_completions', 'embeddings'] as OpenAIEndpointCapability[]
 }
@@ -4336,7 +4337,7 @@ const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>): 
   if (Array.isArray(raw)) {
     return normalizeOpenAIEndpointCapabilities(
       raw.filter((value): value is OpenAIEndpointCapability =>
-        value === 'chat_completions' || value === 'embeddings' || value === 'seedance' || value === 'apimart_images' || value === 'apimart_suno' || value === 'apimart_tts'
+        value === 'chat_completions' || value === 'embeddings' || value === 'seedance' || value === 'muse' || value === 'apimart_images' || value === 'apimart_suno' || value === 'apimart_tts'
       )
     )
   }

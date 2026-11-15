@@ -79,7 +79,7 @@ func (u *doneBotDispatchTransport) Do(req *http.Request, _ string, accountID int
 			switch u.protocol {
 			case DoneBotDispatchImages:
 				body = `{"data":[{"url":"https://assets.example.test/picture.png"}],"usage":{}}`
-			case DoneBotDispatchSeedance:
+			case DoneBotDispatchSeedance, DoneBotDispatchMuse:
 				body = fmt.Sprintf(`{"id":"provider-%d"}`, accountID)
 			default:
 				body = fmt.Sprintf(`{"data":[{"task_id":"provider-%d"}]}`, accountID)
@@ -91,6 +91,8 @@ func (u *doneBotDispatchTransport) Do(req *http.Request, _ string, accountID int
 			body = `{"status":"failed","error":{"message":"fixture generation failed"}}`
 		} else {
 			switch u.protocol {
+			case DoneBotDispatchMuse:
+				body = `{"id":"native","status":"completed","video_url":"https://assets.example.test/movie.mp4","duration":"999s"}`
 			case DoneBotDispatchSeedance:
 				body = `{"id":"native","status":"succeeded","content":{"video_url":"https://assets.example.test/movie.mp4"},"duration":5,"resolution":"720p","usage":{"completion_tokens":20}}`
 			case DoneBotDispatchAPIMartMusic:
@@ -112,6 +114,9 @@ func doneBotDispatchFixture(t *testing.T, protocol string) (*apimartSettlementWo
 	}
 	if protocol == DoneBotDispatchSeedance {
 		model, kind, cap = "doubao-seedance-2-0-260128", "video", OpenAIEndpointCapabilitySeedance
+	}
+	if protocol == DoneBotDispatchMuse {
+		model, kind, cap = "muse-video", "video", OpenAIEndpointCapabilityMuse
 	}
 	if protocol == DoneBotDispatchImages {
 		model, kind, cap = "gpt-image-2.6-flare", "image", ""
@@ -140,13 +145,23 @@ func doneBotDispatchFixture(t *testing.T, protocol string) (*apimartSettlementWo
 	cfg := &config.Config{RunMode: config.RunModeSimple}
 	billing := NewBillingService(cfg, nil)
 	s := &OpenAIGatewayService{accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts}, usageBillingRepo: repo, httpUpstream: upstream, cfg: cfg, billingService: billing}
+	if protocol == DoneBotDispatchMuse {
+		repo.p.Snapshot.VideoBilling = "muse_actual"
+		s.generatedMedia = &generatedMediaUploader{assets: &generatedMediaAssetsStub{}, client: &http.Client{Transport: seedanceReferenceRoundTripper(func(*http.Request) (*http.Response, error) {
+			return seedanceReferenceResponse(seedanceReferenceMovieFixture(1000, 8500, 0)), nil
+		})}}
+	}
 	keys := &APIKeyService{apiKeyRepo: doneBotDispatchKeyRepo{key: key}}
-	task := DoneBotDispatch{ReceiptID: receipt, TaskID: "dbtask_" + strings.ReplaceAll(receipt, "-", ""), UserID: 100, APIKeyID: 9, GroupID: 7, Protocol: protocol, Kind: kind, Model: model, RoutingModel: model, ForwardModel: model, Path: "/v1/images/generations", ContentType: "application/json", Body: []byte(fmt.Sprintf(`{"model":%q,"prompt":"fixture","resolution":"1K"}`, model)), Info: APIMartRequestInfo{Model: model, Tier: tier, Units: 1}, VideoInfo: GrokMediaRequestInfo{Model: model, Resolution: "720p"}, CreatedAt: time.Now(), State: "queued", Lease: "fixture"}
+	task := DoneBotDispatch{ReceiptID: receipt, TaskID: "dbtask_" + strings.ReplaceAll(receipt, "-", ""), UserID: 100, APIKeyID: 9, GroupID: 7, Protocol: protocol, Kind: kind, Model: model, RoutingModel: model, ForwardModel: model, Path: "/v1/images/generations", ContentType: "application/json", Body: []byte(fmt.Sprintf(`{"model":%q,"prompt":"fixture","resolution":"1K"}`, model)), Info: APIMartRequestInfo{Model: model, Tier: tier, Units: 1}, VideoInfo: GrokMediaRequestInfo{Model: model, Resolution: "720p", DurationSeconds: 5}, CreatedAt: time.Now(), State: "queued", Lease: "fixture"}
 	if kind == "music" {
 		task.Body = []byte(`{"model":"suno","version":"v6","prompt":"fixture","custom":false}`)
 	}
 	if kind == "video" {
 		task.Body = []byte(fmt.Sprintf(`{"model":%q,"content":[{"type":"text","text":"fixture"}],"duration":5,"resolution":"720p"}`, model))
+	}
+	if protocol == DoneBotDispatchMuse {
+		task.Body = []byte(`{"model":"muse-video","prompt":"fixture","duration":5,"resolution":"720p"}`)
+		task.Path = "/v1/videos"
 	}
 	if protocol == DoneBotDispatchImages {
 		task.Path = "/v1/images/generations/async"
@@ -437,7 +452,7 @@ func TestDoneBotDispatchUnknownAcceptanceAndRestartNeverResubmit(t *testing.T) {
 }
 
 func TestDoneBotDispatchInterruptedProviderTaskResumesQueryWithoutPost(t *testing.T) {
-	for _, protocol := range []string{DoneBotDispatchAPIMartImages, DoneBotDispatchAPIMartMusic, DoneBotDispatchSeedance} {
+	for _, protocol := range []string{DoneBotDispatchAPIMartImages, DoneBotDispatchAPIMartMusic, DoneBotDispatchSeedance, DoneBotDispatchMuse} {
 		for _, state := range []string{"dispatching", "uncertain"} {
 			t.Run(protocol+"/"+state, func(t *testing.T) {
 				w, repo, upstream, task := doneBotDispatchFixture(t, protocol)

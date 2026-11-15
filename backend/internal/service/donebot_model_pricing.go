@@ -111,9 +111,21 @@ func doneBotVideoResolutions(model string, accounts []Account) []string {
 	}
 	return nil
 }
+func doneBotMuseModel(model string, accounts []Account) bool {
+	for i := range accounts {
+		if accounts[i].SupportsMuseModel(model) {
+			return true
+		}
+	}
+	return false
+}
+
 func doneBotNativeMediaKind(model string, accounts []Account) (string, string) {
 	for i := range accounts {
 		account := &accounts[i]
+		if account.SupportsMuseModel(model) {
+			return "video", ""
+		}
 		if account.IsModelSupported(model) && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilitySeedance) && SeedanceSpecModelForAccount(account, model) != "" {
 			return "video", ""
 		}
@@ -145,6 +157,9 @@ func doneBotHasNativeMediaAccount(model, platform, kind string, accounts []Accou
 		native := account.GetMappedModel(model)
 		switch kind {
 		case "video":
+			if account.SupportsMuseModel(model) {
+				return true
+			}
 			if SeedanceSpecModelForAccount(&account, model) != "" && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilitySeedance) {
 				return true
 			}
@@ -188,6 +203,19 @@ func doneBotEditablePrice(row *DoneBotModel, g *Group, price *ChannelModelPricin
 			}
 		}
 	case "video":
+		if row.VideoBilling == "actual" {
+			var value *float64
+			if price != nil {
+				value = multiplied(price.PerRequestPrice, m)
+				for _, tier := range price.Intervals {
+					if tier.TierLabel == "720p" {
+						value = multiplied(tier.PerRequestPrice, m)
+					}
+				}
+			}
+			out.VideoPrices = []DoneBotVideoPrice{{Resolution: "720p", PricePerSecond: value}}
+			break
+		}
 		for _, resolution := range row.VideoResolutions {
 			for _, ref := range []bool{false, true} {
 				var p *float64
@@ -310,6 +338,17 @@ func (s *DoneBotAdminService) prepareModelPricingUpdate(ctx context.Context, g *
 			p.BillingMode = BillingModeVideo
 			tiers := map[string]bool{}
 			for _, v := range value.VideoPrices {
+				if row.VideoBilling == "actual" {
+					tier := strings.ToLower(strings.TrimSpace(v.Resolution))
+					if v.ReferenceVideo || tiers[tier] || tier != "720p" {
+						return nil, invalid()
+					}
+					tiers[tier] = true
+					if v.PricePerSecond != nil {
+						p.Intervals = append(p.Intervals, PricingInterval{TierLabel: tier, PerRequestPrice: base(v.PricePerSecond)})
+					}
+					continue
+				}
 				tier := SeedancePricingTier(v.Resolution, v.ReferenceVideo)
 				if !slices.Contains(row.VideoResolutions, v.Resolution) || tiers[tier] {
 					return nil, invalid()

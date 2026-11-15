@@ -64,7 +64,7 @@ func TestSeedanceResolutionAccountAdmission(t *testing.T) {
 			key.Group.Platform = service.PlatformOpenAI
 			p := 0.1
 			key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"doubao-seedance-2-0-260128"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "1080p|standard", PerRequestPrice: &p}}}}
-			c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"doubao-seedance-2-0-260128","resolution":"1080p","content":[{"type":"text","text":"waves"}]}`))
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"doubao-seedance-2-0-260128","resolution":"1080p","content":[{"type":"text","text":"waves"}],"duration":5}`))
 			c.Request.Header.Set("Content-Type", "application/json")
 			h.SeedanceTasks(c)
 			if tc.allBlocked {

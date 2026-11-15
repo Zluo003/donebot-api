@@ -123,15 +123,58 @@ func TestSeedanceUsesDurableMediaQueueWithoutClientPolling(t *testing.T) {
 	other.Pending = APIMartPending{Endpoint: APIMartImages}
 	require.NotEqual(t, job.ID(), other.ID())
 }
-func TestSeedanceWorkerMergesNativeActualSecondsAndReferenceSnapshot(t *testing.T) {
-	p := &GrokVideoPendingBilling{Model: "video", BillingModel: "sell-video", UpstreamModel: "native", VideoResolution: "1080p", VideoReference: true, CreatedAt: GrokVideoPendingCreatedAtNow()}
-	result := MergeSeedanceCompletion(&OpenAIForwardResult{VideoActualDurationSeconds: 30.5, Usage: OpenAIUsage{OutputTokens: 20}}, p, "seedance:task")
+func TestSeedanceWorkerMergesSubmittedSecondsAndReferenceSnapshot(t *testing.T) {
+	p := &GrokVideoPendingBilling{VideoDurationSeconds: 8, Model: "video", BillingModel: "sell-video", UpstreamModel: "native", VideoResolution: "1080p", VideoReference: true, CreatedAt: GrokVideoPendingCreatedAtNow()}
+	result := MergeSeedanceCompletion(&OpenAIForwardResult{VideoCount: 1, VideoActualDurationSeconds: 30.5, Usage: OpenAIUsage{OutputTokens: 20}}, p, "seedance:task")
 	require.NotNil(t, result)
 	require.Equal(t, "sell-video", result.BillingModel)
 	require.Equal(t, "1080p", result.VideoResolution)
 	require.True(t, result.VideoReference)
 	require.Equal(t, 1, result.VideoCount)
-	require.Equal(t, 30.5, result.VideoActualDurationSeconds)
+	require.Equal(t, 8.0, result.VideoActualDurationSeconds)
 	require.Equal(t, StableGrokVideoBillingRequestID("seedance:task"), result.RequestID)
 	require.Nil(t, MergeSeedanceCompletion(&OpenAIForwardResult{}, p, "seedance:task"))
+}
+
+type nativeVideoRecoveryRepo struct {
+	doneBotPrepaidStub
+	rows []DoneBotMediaPrecharge
+}
+
+func (r *nativeVideoRecoveryRepo) TakeDoneBotMediaRecovery(context.Context, int) ([]DoneBotMediaPrecharge, error) {
+	return r.rows, nil
+}
+
+type nativeVideoRecoveryQueue struct{ apimartSettlementMemory }
+
+func (q *nativeVideoRecoveryQueue) EnsureAPIMartSettlement(ctx context.Context, job APIMartSettlementJob, due time.Time) error {
+	return q.SaveAPIMartSettlement(ctx, job, due)
+}
+
+func TestSeedanceRecoveryNeverTreatsLegacyMaximumAsSubmittedDuration(t *testing.T) {
+	for _, scenario := range []string{"submitted", "legacy_cached", "legacy_missing"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := context.Background()
+			p := DoneBotMediaPrecharge{ReceiptID: "fixture", TaskKey: "seedance:accepted", UserID: 1, APIKeyID: 2, Kind: "video", Model: "movie", CreatedAt: time.Now(), Snapshot: DoneBotMediaPriceSnapshot{MaxUnits: 33.5, InputSeconds: 3.5}}
+			if scenario == "submitted" {
+				p.Snapshot.VideoBilling, p.Snapshot.MaxUnits = "submitted", 11.5
+			}
+			repo := &nativeVideoRecoveryRepo{rows: []DoneBotMediaPrecharge{p}}
+			svc := &OpenAIGatewayService{usageBillingRepo: repo, cache: &generatedMediaCacheStub{rows: map[string][]byte{}}}
+			if scenario == "legacy_cached" {
+				require.NoError(t, svc.StoreGrokVideoPendingBilling(ctx, p.TaskKey, 1, 2, GrokVideoPendingBilling{Model: "movie", VideoDurationSeconds: 8}))
+			}
+			queue := &nativeVideoRecoveryQueue{}
+			w := &apimartSettlementWorker{service: svc, store: queue}
+			w.recoverDoneBotMedia(ctx, time.Now())
+			require.Len(t, queue.jobs, 1)
+			for _, job := range queue.jobs {
+				if scenario == "legacy_missing" {
+					require.Zero(t, job.VideoPending.VideoDurationSeconds, "missing submission requires reconciliation, never the legacy 30-second maximum")
+				} else {
+					require.Equal(t, 8, job.VideoPending.VideoDurationSeconds)
+				}
+			}
+		})
+	}
 }

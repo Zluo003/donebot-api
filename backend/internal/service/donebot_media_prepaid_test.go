@@ -213,7 +213,7 @@ func TestDoneBotMediaPrepaidAdmissionFreezesConservativeNativeBounds(t *testing.
 	for _, tc := range []struct {
 		model string
 		bound float64
-	}{{"doubao-seedance-2-0-260128", 18.75}, {"doubao-seedance-2-5-260628", 33.75}} {
+	}{{"doubao-seedance-2-0-260128", 8.75}, {"doubao-seedance-2-5-260628", 8.75}} {
 		err = svc.PrepayDoneBotSeedance(ctx, key, account, tc.model, GrokMediaRequestInfo{Resolution: "720p", DurationSeconds: 5, HasReferenceVideo: true, ReferenceVideoDurationSeconds: 3.75})
 		require.NoError(t, err)
 		require.Equal(t, tc.bound, stub.p.Snapshot.MaxUnits)

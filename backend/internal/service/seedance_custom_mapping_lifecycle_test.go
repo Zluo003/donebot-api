@@ -101,7 +101,7 @@ func TestSeedanceCustomMappingsKeepPublicTariffAcrossDurableSettlement(t *testin
 			require.Equal(t, upstream, *usage.lastLog.UpstreamModel)
 			require.NotNil(t, usage.lastLog.BillingMode)
 			require.Equal(t, string(BillingModeVideo), *usage.lastLog.BillingMode)
-			require.InDelta(t, (4.75+6.25)*.2*1.5, usage.lastLog.ActualCost, 1e-12)
+			require.InDelta(t, (4.75+8)*.2*1.5, usage.lastLog.ActualCost, 1e-12)
 			require.Equal(t, 999, usage.lastLog.OutputTokens, "native token usage is reported but does not price this video")
 			money.found = true
 			key.Group.ModelPricing = nil

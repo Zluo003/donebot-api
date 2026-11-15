@@ -134,8 +134,11 @@ func insertDoneBotMoneyEvent(ctx context.Context, tx *sql.Tx, p *service.DoneBot
 	request := service.DoneBotMediaChargeRequestID(p.ReceiptID)
 	accountID := p.AccountID
 	accountRateMultiplier := p.Snapshot.AccountRateMultiplier
-	if event == "refund" {
+	if event == "refund" || event == "surcharge" {
 		request = service.DoneBotMediaRefundRequestID(p.ReceiptID)
+		if event == "surcharge" {
+			request = "dbm:surcharge:" + p.ReceiptID
+		}
 		var chargeAccountID int64
 		var chargeAccountRateMultiplier float64
 		if err := tx.QueryRowContext(ctx, `SELECT account_id,account_rate_multiplier FROM usage_logs WHERE operation_receipt_id=$1::uuid AND event_type='charge'`, p.ReceiptID).Scan(&chargeAccountID, &chargeAccountRateMultiplier); err != nil {
@@ -158,7 +161,7 @@ func (r *usageBillingRepository) BindDoneBotMediaTask(ctx context.Context, recei
 		return service.ErrDoneBotMediaInvalid
 	}
 	taskID, provider := taskKey, "donebot"
-	for _, prefix := range []string{"seedance:", "apimart:image:", "apimart:music:"} {
+	for _, prefix := range []string{"seedance:", "muse:", "apimart:image:", "apimart:music:"} {
 		if strings.HasPrefix(taskKey, prefix) {
 			taskID = strings.TrimPrefix(taskKey, prefix)
 			provider = strings.Split(prefix, ":")[0]
@@ -227,16 +230,29 @@ func (r *usageBillingRepository) SettleDoneBotMediaPrecharge(ctx context.Context
 	if in.Failure {
 		actual = decimal.Zero
 		total = decimal.Zero
-	} else if actual.IsNegative() || total.IsNegative() || actual.GreaterThan(amount) || total.GreaterThan(totalAmount) {
+	} else if actual.IsNegative() || total.IsNegative() || ((actual.GreaterThan(amount) || total.GreaterThan(totalAmount)) && !(p.Kind == "video" && p.Snapshot.VideoBilling == "muse_actual")) {
 		return nil, service.ErrDoneBotMediaReconciliation
 	}
-	refund, totalRefund := amount.Sub(actual), totalAmount.Sub(total)
+	delta, totalDelta := amount.Sub(actual), totalAmount.Sub(total)
+	refund, totalRefund := decimal.Max(delta, decimal.Zero), decimal.Max(totalDelta, decimal.Zero)
+	surcharge, totalSurcharge := decimal.Max(delta.Neg(), decimal.Zero), decimal.Max(totalDelta.Neg(), decimal.Zero)
 	result := &service.UsageBillingApplyResult{Applied: true}
 	if refund.IsPositive() || totalRefund.IsPositive() || in.Failure {
 		if err = insertDoneBotMoneyEvent(ctx, tx, p, "refund", refund.Neg().InexactFloat64(), totalRefund.Neg().InexactFloat64(), service.DoneBotMediaChargeRequestID(p.ReceiptID)); err != nil {
 			return nil, err
 		}
-		if err = tx.QueryRowContext(ctx, `UPDATE users SET balance=balance+$1::numeric,updated_at=NOW() WHERE id=$2 RETURNING balance`, refund.String(), p.UserID).Scan(&balance); err != nil {
+	}
+	if surcharge.IsPositive() || totalSurcharge.IsPositive() {
+		if err = insertDoneBotMoneyEvent(ctx, tx, p, "surcharge", surcharge.InexactFloat64(), totalSurcharge.InexactFloat64(), service.DoneBotMediaChargeRequestID(p.ReceiptID)); err != nil {
+			return nil, err
+		}
+	}
+	if !delta.IsZero() {
+		err = tx.QueryRowContext(ctx, `UPDATE users SET balance=balance+$1::numeric,updated_at=NOW() WHERE id=$2 AND ($1::numeric >= 0 OR balance >= -$1::numeric) RETURNING balance`, delta.String(), p.UserID).Scan(&balance)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, service.ErrInsufficientBalance
+		}
+		if err != nil {
 			return nil, err
 		}
 		result.NewBalance = &balance
@@ -339,14 +355,14 @@ func (r *usageBillingRepository) MarkDoneBotMediaRejected(ctx context.Context, r
 }
 
 func (r *usageBillingRepository) StageDoneBotMediaSettlement(ctx context.Context, in service.DoneBotMediaPrepaidSettlement) error {
-	if in.Failure || in.Effects == nil {
+	if in.Failure || in.Effects == nil || in.ActualAmount < 0 || in.TotalAmount < 0 || math.IsNaN(in.ActualAmount) || math.IsInf(in.ActualAmount, 0) || math.IsNaN(in.TotalAmount) || math.IsInf(in.TotalAmount, 0) {
 		return service.ErrDoneBotMediaInvalid
 	}
 	payload, err := json.Marshal(in)
 	if err != nil {
 		return err
 	}
-	result, err := r.db.ExecContext(ctx, `UPDATE donebot_media_precharges SET settlement_input=$2::jsonb,recovery_after=NOW(),updated_at=NOW() WHERE receipt_id=$1::uuid AND state='prepaid' AND (settlement_input IS NULL OR settlement_input=$2::jsonb) AND amount >= $3::numeric AND total_amount >= $4::numeric`, in.ReceiptID, string(payload), in.ActualAmount, in.TotalAmount)
+	result, err := r.db.ExecContext(ctx, `UPDATE donebot_media_precharges SET settlement_input=$2::jsonb,recovery_after=NOW(),updated_at=NOW() WHERE receipt_id=$1::uuid AND state='prepaid' AND (settlement_input IS NULL OR settlement_input=$2::jsonb) AND ((media_kind='video' AND price_snapshot->>'video_billing'='muse_actual') OR (amount >= $3::numeric AND total_amount >= $4::numeric))`, in.ReceiptID, string(payload), in.ActualAmount, in.TotalAmount)
 	if err != nil {
 		return err
 	}

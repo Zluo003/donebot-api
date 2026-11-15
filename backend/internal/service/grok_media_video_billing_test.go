@@ -53,7 +53,7 @@ func TestIsGrokVideoStatusBillable(t *testing.T) {
 	require.False(t, IsGrokVideoStatusBillable([]byte(`{"status":"completed","video":{"url":"https://vidgen.x.ai/x.mp4"}}`)))
 }
 
-func TestExtractGrokVideoBillingFromStatusBodyPrefersUpstreamParams(t *testing.T) {
+func TestExtractGrokVideoBillingFromStatusBodyUsesSubmittedDuration(t *testing.T) {
 	t.Parallel()
 	pending := &GrokVideoPendingBilling{
 		Model:                "pending-model",
@@ -74,8 +74,8 @@ func TestExtractGrokVideoBillingFromStatusBodyPrefersUpstreamParams(t *testing.T
 	require.Equal(t, "grok-imagine-video-1.5", result.Model)
 	// Resolution is not in official status response — use create-time request.
 	require.Equal(t, VideoBillingResolution720P, result.VideoResolution)
-	// Duration prefers official video.duration.
-	require.Equal(t, 12, result.VideoDurationSeconds)
+	// Duration always comes from the submitted snapshot.
+	require.Equal(t, 8, result.VideoDurationSeconds)
 }
 
 func TestExtractGrokVideoBillingFromStatusBodyFallsBackToPending(t *testing.T) {
@@ -128,7 +128,7 @@ func TestGrokMediaUsageFromResponseVideoStatusBillsOnOfficialDone(t *testing.T) 
 		[]byte(`{"status":"done","model":"grok-imagine-video-1.5","video":{"url":"https://vidgen.x.ai/a.mp4","duration":9}}`),
 	)
 	require.Equal(t, 1, meta.VideoCount)
-	require.Equal(t, 9, meta.VideoDurationSeconds)
+	require.Zero(t, meta.VideoDurationSeconds, "status output duration cannot replace the submission snapshot")
 	require.Equal(t, "grok-imagine-video-1.5", meta.Model)
 
 	// Official non-done must not set billable units.

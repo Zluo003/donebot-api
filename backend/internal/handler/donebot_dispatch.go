@@ -60,7 +60,7 @@ func (h *OpenAIGatewayHandler) serveDoneBotDispatchVideoContent(c *gin.Context) 
 	if response.ErrorFrom(c, err) {
 		return true
 	}
-	if task.Protocol != service.DoneBotDispatchSeedance || task.Kind != "video" {
+	if (task.Protocol != service.DoneBotDispatchSeedance && task.Protocol != service.DoneBotDispatchMuse) || task.Kind != "video" {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Video task not found")
 		return true
 	}
@@ -75,7 +75,11 @@ func (h *OpenAIGatewayHandler) serveDoneBotDispatchVideoContent(c *gin.Context) 
 		return true
 	}
 	result := &service.OpenAIForwardResult{SeedanceResponseBody: task.Response}
-	if err := h.gatewayService.WriteSeedanceVideoContent(c.Request.Context(), c, result, key.ID); err != nil && !service.IsResponseCommitted(c) {
+	writeContent := h.gatewayService.WriteSeedanceVideoContent
+	if task.Protocol == service.DoneBotDispatchMuse {
+		writeContent = h.gatewayService.WriteMuseVideoContent
+	}
+	if err := writeContent(c.Request.Context(), c, result, key.ID); err != nil && !service.IsResponseCommitted(c) {
 		if errors.Is(err, service.ErrAssetNotFound) || errors.Is(err, service.ErrAssetStorageUnavailable) {
 			response.ErrorFrom(c, err)
 		} else {

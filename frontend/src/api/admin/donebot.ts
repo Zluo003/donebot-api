@@ -11,6 +11,7 @@ export interface DoneBotModel extends ModelToggle {
  platform: string; available: boolean; kind: Modality
  pricing_configured?: boolean
  editable_pricing?: ModelSalePricing
+ video_billing?: 'actual' | 'submitted'
  video_resolutions?: string[]
  image_input_billing?: boolean
  image_resolutions?: string[]

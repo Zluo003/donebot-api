@@ -4,31 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
 	"time"
-
-	"github.com/tidwall/gjson"
 )
 
-// Ark can expose exact frames and frame rate; its duration is otherwise the
-// provider's authoritative output duration, and may be a rounded integer.
-func seedanceActualOutputSeconds(body []byte) float64 {
-	if gjson.GetBytes(body, "status").String() != "succeeded" || strings.TrimSpace(gjson.GetBytes(body, "content.video_url").String()) == "" {
-		return 0
-	}
-	frames, fps := gjson.GetBytes(body, "frames"), gjson.GetBytes(body, "framespersecond")
-	if frames.Type == gjson.Number && fps.Type == gjson.Number && frames.Float() > 0 && fps.Float() > 0 {
-		duration := frames.Float() / fps.Float()
-		if !math.IsNaN(duration) && !math.IsInf(duration, 0) {
-			return duration
-		}
-	}
-	duration := gjson.GetBytes(body, "duration")
-	if duration.Type != gjson.Number || duration.Float() <= 0 || math.IsInf(duration.Float(), 0) || math.IsNaN(duration.Float()) {
-		return 0
-	}
-	return duration.Float()
-}
 func (s *OpenAIGatewayService) seedanceResolvedPrice(ctx context.Context, key *APIKey, model, resolution string, reference bool) (*ResolvedPricing, error) {
 	if key == nil || key.Group == nil || s.resolver == nil {
 		return nil, ErrModelPricingUnavailable
@@ -52,7 +30,7 @@ func (s *OpenAIGatewayService) seedanceResolvedPrice(ctx context.Context, key *A
 }
 func (s *OpenAIGatewayService) calculateSeedanceVideoCost(ctx context.Context, model string, key *APIKey, result *OpenAIForwardResult, multiplier float64) (*CostBreakdown, error) {
 	if result == nil || result.VideoActualDurationSeconds <= 0 || math.IsNaN(result.VideoActualDurationSeconds) || math.IsInf(result.VideoActualDurationSeconds, 0) {
-		return nil, fmt.Errorf("seedance actual output duration is unavailable")
+		return nil, fmt.Errorf("seedance submitted output duration is unavailable")
 	}
 	seconds := result.VideoActualDurationSeconds
 	if result.VideoReference {
@@ -89,7 +67,7 @@ func (s *OpenAIGatewayService) SeedanceBillingModel(ctx context.Context, key *AP
 
 // SeedanceInflightCost checks the exact model/resolution/reference tariff before
 // an upstream job is created. The estimate only reserves existing user balance;
-// settlement uses actual output duration plus the trusted input total for
+// settlement uses submitted output duration plus the trusted input total for
 // reference-video requests.
 func (s *OpenAIGatewayService) SeedanceInflightCost(ctx context.Context, key *APIKey, model string, info GrokMediaRequestInfo) (float64, bool) {
 	if s == nil || key == nil || key.Group == nil {
@@ -102,7 +80,7 @@ func (s *OpenAIGatewayService) SeedanceInflightCost(ctx context.Context, key *AP
 	}
 	seconds := float64(info.DurationSeconds)
 	if seconds <= 0 {
-		seconds = 30
+		return 0, false
 	}
 	rate := key.Group.RateMultiplier
 	if key.User != nil && key.GroupID != nil {
@@ -118,10 +96,12 @@ func (s *OpenAIGatewayService) SeedanceInflightCost(ctx context.Context, key *AP
 // MergeSeedanceCompletion shares the native completion metering between durable
 // background settlement and interactive status polling.
 func MergeSeedanceCompletion(result *OpenAIForwardResult, pending *GrokVideoPendingBilling, taskKey string) *OpenAIForwardResult {
-	if result == nil || pending == nil || result.VideoActualDurationSeconds <= 0 {
+	if result == nil || pending == nil || result.VideoCount <= 0 || pending.VideoDurationSeconds <= 0 {
 		return nil
 	}
 	merged := *result
+	merged.VideoActualDurationSeconds = float64(pending.VideoDurationSeconds)
+	merged.VideoDurationSeconds = pending.VideoDurationSeconds
 	merged.Model = pending.Model
 	merged.BillingModel = firstNonEmpty(pending.BillingModel, pending.Model)
 	merged.UpstreamModel = firstNonEmpty(pending.UpstreamModel, result.UpstreamModel)

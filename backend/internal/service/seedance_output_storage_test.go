@@ -74,7 +74,7 @@ func TestSeedanceSystemOutputRewritesOnlyNativeURL(t *testing.T) {
 	result, err := svc.ForwardSeedance(WithAssetOwnerKeyID(context.Background(), 7), c, account, SeedanceEndpointStatus, "seedance:task", nil)
 	require.NoError(t, err)
 	require.Equal(t, 1, assets.uploads)
-	require.Equal(t, 6.0, result.VideoActualDurationSeconds)
+	require.Zero(t, result.VideoActualDurationSeconds)
 	require.NotContains(t, w.Body.String(), "supplier.example")
 	require.Equal(t, gjson.Get(body, "usage").Raw, gjson.GetBytes(w.Body.Bytes(), "usage").Raw)
 	require.Equal(t, "https://gateway.example/assets/generated?token=signed", gjson.GetBytes(w.Body.Bytes(), "content.video_url").String())

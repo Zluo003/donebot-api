@@ -48,7 +48,8 @@ func NewDoneBotAdminService(installs *DoneBotService, admin AdminService, channe
 }
 
 type DoneBotModel struct {
-	ImageInputBilling        bool `json:"image_input_billing,omitempty"`
+	VideoBilling             string `json:"video_billing,omitempty"`
+	ImageInputBilling        bool   `json:"image_input_billing,omitempty"`
 	routingModel             string
 	routingEndpoint          string
 	pricingModel             string
@@ -296,6 +297,12 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 		if configured := matchGroupModelPricing(g, row.Model); configured != nil && row.Kind != "llm" {
 			price = configured
 			row.ChannelPricing = configured
+		}
+		if row.Kind == "video" {
+			row.VideoBilling = "submitted"
+			if doneBotMuseModel(firstNonEmpty(row.routingModel, row.Model), accounts) {
+				row.VideoBilling = "actual"
+			}
 		}
 		if len(row.VideoResolutions) == 0 {
 			row.VideoResolutions = doneBotVideoResolutions(row.Model, accounts)

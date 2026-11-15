@@ -338,8 +338,10 @@ describe('EditAccountModal', () => {
 
   it.each([
     ['chat_completions', 'apimart_images'],
-    ['apimart_images', 'apimart_tts']
-  ])('preserves APIMart capabilities in a generic account edit (%s, %s)', async (...capabilities) => {
+    ['apimart_images', 'apimart_tts'],
+    ['chat_completions', 'muse'],
+    ['embeddings', 'muse']
+  ])('preserves media capabilities in a generic account edit (%s, %s)', async (...capabilities) => {
     const account = buildAccount()
     account.credentials.openai_capabilities = capabilities
     updateAccountMock.mockReset().mockResolvedValue(account)

@@ -421,7 +421,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		usageLog.VideoCount = result.VideoCount
 		usageLog.VideoResolution = optionalTrimmedStringPtr(NormalizeVideoBillingResolutionOrDefault(result.VideoResolution))
 		videoDurationSeconds := NormalizeVideoBillingDurationSecondsOrDefault(result.VideoDurationSeconds)
-		if strings.HasPrefix(result.ResponseID, "seedance:") {
+		if strings.HasPrefix(result.ResponseID, "seedance:") || strings.HasPrefix(result.ResponseID, "muse:") {
 			videoDurationSeconds = int(math.Ceil(result.VideoActualDurationSeconds))
 			usageLog.VideoResolution = optionalTrimmedStringPtr(result.VideoResolution)
 		}
@@ -612,6 +612,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		// 倍率与 image/video 按次口径一致：使用不含高峰因子的基础倍率
 		//（用户专属 > 分组 rate_multiplier > 系统默认），与分组表单的价格预览承诺一致。
 		return s.billingService.CalculateWebSearchCost(result.WebSearchCalls, webSearchPricePerCallFromAPIKey(apiKey), webSearchMultiplier), nil
+	}
+	if result != nil && strings.HasPrefix(result.ResponseID, "muse:") {
+		return s.calculateMuseVideoCost(ctx, billingModel, apiKey, result, videoMultiplier)
 	}
 	if result != nil && strings.HasPrefix(result.ResponseID, "seedance:") {
 		return s.calculateSeedanceVideoCost(ctx, billingModel, apiKey, result, videoMultiplier)

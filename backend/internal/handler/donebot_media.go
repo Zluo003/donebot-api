@@ -41,6 +41,19 @@ func (h *OpenAIGatewayHandler) doneBotVideoCreate(c *gin.Context, grok gin.Handl
 		return
 	}
 	requestmodel.ResetRequestBody(c.Request, body)
+	muse, err := h.gatewayService.IsMuseVideoRequest(c.Request.Context(), key, gjson.GetBytes(body, "model").String())
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video routing is unavailable")
+		return
+	}
+	if muse {
+		if c.Request.URL.Path != "/v1/videos" && c.Request.URL.Path != "/v1/videos/generations" && c.Request.URL.Path != "/videos" && c.Request.URL.Path != "/videos/generations" {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Muse supports video generation only")
+			return
+		}
+		h.MuseTasks(c)
+		return
+	}
 	seedance, err := h.gatewayService.IsSeedanceVideoRequest(c.Request.Context(), key, gjson.GetBytes(body, "model").String())
 	if err != nil {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video capabilities are unavailable")
@@ -64,6 +77,9 @@ func (h *OpenAIGatewayHandler) DoneBotVideoStatus(c *gin.Context) {
 	if h.serveDoneBotDispatch(c, c.Param("task_id")) {
 		return
 	}
+	if h.serveMuseTask(c, false) {
+		return
+	}
 	if seedance, ok := h.doneBotSeedanceTask(c); ok {
 		if seedance {
 			h.SeedanceTasks(c)
@@ -75,6 +91,9 @@ func (h *OpenAIGatewayHandler) DoneBotVideoStatus(c *gin.Context) {
 
 func (h *OpenAIGatewayHandler) DoneBotVideoContent(c *gin.Context) {
 	if h.serveDoneBotDispatchVideoContent(c) {
+		return
+	}
+	if h.serveMuseTask(c, true) {
 		return
 	}
 	if seedance, ok := h.doneBotSeedanceTask(c); ok {

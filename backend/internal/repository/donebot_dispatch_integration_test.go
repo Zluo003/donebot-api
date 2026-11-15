@@ -124,7 +124,7 @@ func TestDoneBotDispatchConcurrentLeaseAndDebitRollback(t *testing.T) {
 }
 
 func TestDoneBotDispatchRecoversOnlyQueryableOrDurableUncertainTasks(t *testing.T) {
-	for _, scenario := range []string{"unknown", "null_result", "partial_result", "images_id", "apimart_images_id", "apimart_music_id", "seedance_id", "durable_result", "durable_artifacts", "artifacts_without_result", "completed", "failed"} {
+	for _, scenario := range []string{"unknown", "null_result", "partial_result", "images_id", "apimart_images_id", "apimart_music_id", "seedance_id", "muse_id", "durable_result", "durable_artifacts", "artifacts_without_result", "completed", "failed"} {
 		t.Run(scenario, func(t *testing.T) {
 			repo, ops, owner, accountID := doneBotPrepaidFixture(t, 10, 20)
 			ctx := context.Background()
@@ -132,7 +132,7 @@ func TestDoneBotDispatchRecoversOnlyQueryableOrDurableUncertainTasks(t *testing.
 			task := service.DoneBotDispatch{ReceiptID: p.ReceiptID, TaskID: "dbtask_" + uuid.NewString(), UserID: owner.UserID, APIKeyID: owner.APIKeyID, State: "uncertain", Protocol: service.DoneBotDispatchImages}
 			recoverable := false
 			switch scenario {
-			case "images_id", "apimart_images_id", "apimart_music_id", "seedance_id":
+			case "images_id", "apimart_images_id", "apimart_music_id", "seedance_id", "muse_id":
 				task.Protocol = scenario[:len(scenario)-3]
 				task.ProviderTaskID = "provider-fixture"
 				recoverable = scenario != "images_id"

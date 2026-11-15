@@ -44,6 +44,9 @@ func (j APIMartSettlementJob) ID() string {
 }
 
 func (j APIMartSettlementJob) TaskKey() string {
+	if j.Provider == "muse" {
+		return MuseTaskKey(strings.TrimPrefix(j.TaskID, "muse:"))
+	}
 	if j.Provider == "seedance" {
 		return SeedanceTaskKey(strings.TrimPrefix(j.TaskID, "seedance:"))
 	}
@@ -244,7 +247,7 @@ func (w *apimartSettlementWorker) settle(ctx context.Context, job APIMartSettlem
 			return false, err
 		}
 	}
-	if job.Provider == "seedance" {
+	if job.Provider == "seedance" || job.Provider == "muse" {
 		return w.settleSeedance(ctx, job, key, account, subscription)
 	}
 	lookup := APIMartImageTask
@@ -339,17 +342,46 @@ func (w *apimartSettlementWorker) settleSeedance(ctx context.Context, job APIMar
 	if job.VideoPending == nil {
 		return false, fmt.Errorf("seedance pending metadata missing")
 	}
+	if recorded, err := w.service.UsageAlreadyRecorded(ctx, StableGrokVideoBillingRequestID(job.TaskKey()), key.ID); err != nil {
+		return false, err
+	} else if recorded {
+		return true, nil
+	}
 	ctx = WithAssetOwnerKeyID(WithResolvedTargetPlatform(ctx, PlatformOpenAI), job.APIKeyID)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request, _ = http.NewRequestWithContext(ctx, http.MethodGet, "http://gateway.invalid/api/v3/contents/generations/tasks/"+strings.TrimPrefix(job.TaskID, "seedance:"), nil)
-	result, err := w.service.ForwardSeedance(ctx, c, account, SeedanceEndpointStatus, job.TaskKey(), nil)
+	var result *OpenAIForwardResult
+	var err error
+	var native []byte
+	if job.Provider == "muse" {
+		c.Request, _ = http.NewRequestWithContext(ctx, http.MethodGet, "http://gateway.invalid/v1/videos/"+strings.TrimPrefix(job.TaskID, "muse:"), nil)
+		result, err = w.service.ForwardMuse(ctx, c, account, MuseEndpointStatus, job.TaskKey(), nil)
+		if result != nil {
+			native = result.SeedanceResponseBody
+		}
+	} else {
+		result, err = w.service.ForwardSeedance(ctx, c, account, SeedanceEndpointStatus, job.TaskKey(), nil)
+		native = recorder.Body.Bytes()
+	}
 	if err != nil {
 		return false, err
 	}
-	result = MergeSeedanceCompletion(result, job.VideoPending, job.TaskKey())
+	if result != nil && result.VideoCount > 0 && job.Provider != "muse" && job.VideoPending.VideoDurationSeconds <= 0 {
+		return false, fmt.Errorf("submitted video duration is missing; reconciliation required")
+	}
+	if job.Provider == "muse" {
+		if result != nil && result.VideoCount > 0 {
+			if err := w.service.MeasureMuseCompletion(ctx, result); err != nil {
+				return false, err
+			}
+		}
+		result = MergeMuseCompletion(result, job.VideoPending, job.TaskKey())
+	} else {
+		result = MergeSeedanceCompletion(result, job.VideoPending, job.TaskKey())
+	}
 	if result == nil {
-		status := gjson.GetBytes(recorder.Body.Bytes(), "status").String()
+		status := gjson.GetBytes(native, "status").String()
 		if status == "failed" || status == "cancelled" || status == "expired" {
 			err := w.service.RefundDoneBotMediaTask(ctx, key.ID, job.TaskKey())
 			return err == nil, err
@@ -397,12 +429,32 @@ func (w *apimartSettlementWorker) recoverDoneBotMedia(ctx context.Context, now t
 			}
 		} else if p.OperationStatus == "failed" || p.OperationStatus == "cancelled" {
 			err = w.service.refundDoneBotMedia(ctx, p.ReceiptID, p.APIKeyID, "")
-		} else if strings.HasPrefix(p.TaskKey, "seedance:") || strings.HasPrefix(p.TaskKey, "apimart:") {
+		} else if strings.HasPrefix(p.TaskKey, "seedance:") || strings.HasPrefix(p.TaskKey, "muse:") || strings.HasPrefix(p.TaskKey, "apimart:") {
 			job := APIMartSettlementJob{TaskID: p.TaskKey, UserID: p.UserID, APIKeyID: p.APIKeyID, GroupID: p.GroupID, AccountID: p.AccountID, QuotaPlatform: PlatformOpenAI}
 			created := p.CreatedAt.UTC().Format(time.RFC3339Nano)
-			if strings.HasPrefix(p.TaskKey, "seedance:") {
+			if strings.HasPrefix(p.TaskKey, "seedance:") || strings.HasPrefix(p.TaskKey, "muse:") {
 				job.Provider = "seedance"
-				job.VideoPending = &GrokVideoPendingBilling{Model: p.Model, BillingModel: p.Model, OriginalModel: p.Model, VideoResolution: p.Snapshot.Tier, VideoReference: p.Snapshot.InputSeconds > 0, VideoInputDurationSeconds: p.Snapshot.InputSeconds, CreatedAt: created}
+				if strings.HasPrefix(p.TaskKey, "muse:") {
+					job.Provider = "muse"
+				}
+				seconds := 0
+				if p.Snapshot.VideoBilling == "submitted" || job.Provider == "muse" {
+					seconds = int(p.Snapshot.MaxUnits - p.Snapshot.InputSeconds)
+				}
+				job.VideoPending = &GrokVideoPendingBilling{VideoDurationSeconds: seconds, Model: p.Model, BillingModel: p.Model, OriginalModel: p.Model, VideoResolution: p.Snapshot.Tier, VideoReference: p.Snapshot.InputSeconds > 0, VideoInputDurationSeconds: p.Snapshot.InputSeconds, CreatedAt: created}
+				// Legacy snapshots stored a model maximum, not the submitted
+				// duration. Recover the actual submission snapshot if it survives;
+				// never bill the model maximum as if the customer requested it.
+				if job.Provider == "seedance" && p.Snapshot.VideoBilling != "submitted" {
+					pending, loadErr := w.service.LoadGrokVideoPendingBilling(ctx, p.TaskKey, p.UserID, p.APIKeyID)
+					if loadErr != nil {
+						logger.LegacyPrintf("service.apimart", "receipt %s submission snapshot recovery pending: %v", p.ReceiptID, loadErr)
+						continue
+					}
+					if pending != nil {
+						job.VideoPending = pending
+					}
+				}
 			} else {
 				endpoint := APIMartImages
 				prefix := "apimart:image:"

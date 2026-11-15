@@ -76,7 +76,7 @@ func newMediaSettlementFixture(t *testing.T, seedance bool) *mediaSettlementFixt
 	gid := int64(24)
 	require.NoError(t, h.gatewayService.BindGrokMediaVideoRequestAccount(ctx, &gid, taskKey, 10, 20, 1))
 	if seedance {
-		require.NoError(t, h.gatewayService.StoreGrokVideoPendingBilling(ctx, taskKey, 10, 20, service.GrokVideoPendingBilling{Model: "movie", BillingModel: "movie", OriginalModel: "movie", VideoResolution: "720p", CreatedAt: service.GrokVideoPendingCreatedAtNow()}))
+		require.NoError(t, h.gatewayService.StoreGrokVideoPendingBilling(ctx, taskKey, 10, 20, service.GrokVideoPendingBilling{VideoDurationSeconds: 6, Model: "movie", BillingModel: "movie", OriginalModel: "movie", VideoResolution: "720p", CreatedAt: service.GrokVideoPendingCreatedAtNow()}))
 	} else {
 		require.NoError(t, h.gatewayService.StoreAPIMartPending(ctx, taskKey, 10, 20, service.APIMartPending{Endpoint: service.APIMartImages, Model: "seedream-5-0-flash", OriginalModel: "seedream-5-0-flash", Tier: "2K", CreatedAt: service.GrokVideoPendingCreatedAtNow()}))
 	}
@@ -158,8 +158,9 @@ func TestSeedanceMissingPendingFailsClosedUnlessDurablySettled(t *testing.T) {
 	require.Zero(t, f.money.calls)
 }
 
-func TestSeedanceSucceededProductRequiresMeteringOrDurableCharge(t *testing.T) {
+func TestSeedanceSucceededProductRequiresSubmittedDurationOrDurableCharge(t *testing.T) {
 	f := newMediaSettlementFixture(t, true)
+	require.NoError(t, f.h.gatewayService.StoreGrokVideoPendingBilling(context.Background(), f.taskKey, 10, 20, service.GrokVideoPendingBilling{Model: "movie", VideoResolution: "720p"}))
 	f.upstream.call = func(*http.Request, int64) (*http.Response, error) {
 		body := `{"id":"task-mart","status":"succeeded","content":{"video_url":"https://media.example/result.mp4"}}`
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil

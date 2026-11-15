@@ -147,6 +147,12 @@ func generatedMediaPaths(provider string, body []byte) []string {
 			paths = append(paths, path)
 		}
 	}
+	if provider == "muse" {
+		for _, path := range []string{"video_url", "url", "output.0.url"} {
+			add(path)
+		}
+		return paths
+	}
 	if provider == "seedance" {
 		add("content.video_url")
 		add("content.last_frame_url")

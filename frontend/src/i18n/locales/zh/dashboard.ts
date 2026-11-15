@@ -340,6 +340,7 @@ export default {
     description: '查看和分析您的 API 使用历史',
     costDetails: '费用明细',
     billingEvent: {
+      surcharge: '补扣',
       type: '计费事件',
       charge: '扣费',
       refund: '退款',

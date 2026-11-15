@@ -28,7 +28,7 @@ func TestSeedanceOwnedTaskLookupSurvivesZeroBalance(t *testing.T) {
 	key.Group.Platform = service.PlatformOpenAI
 	p := 0.1
 	key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"ep-seedance"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "720p|standard", PerRequestPrice: &p}}}}
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"ep-seedance","content":[{"type":"text","text":"waves"}]}`))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"ep-seedance","duration":5,"content":[{"type":"text","text":"waves"}]}`))
 	h.SeedanceTasks(c)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	billing := service.NewBillingCacheService(newHandlerInflightCache(0), nil, nil, nil, nil, nil, &config.Config{}, nil)
@@ -69,7 +69,7 @@ func TestSeedanceCreationUsesVideoPermissionsAndConcurrency(t *testing.T) {
 				require.True(t, acquired)
 				defer release()
 			}
-			c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"ep-seedance","content":[{"type":"text","text":"waves"}]}`))
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"ep-seedance","duration":5,"content":[{"type":"text","text":"waves"}]}`))
 			h.SeedanceTasks(c)
 			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 			require.Equal(t, 1, upstream.calls)

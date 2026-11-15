@@ -56,7 +56,11 @@ func (h *OpenAIGatewayHandler) GrokVideoContent(c *gin.Context) {
 func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.GrokMediaEndpoint, requestID string) {
 	platform := service.PlatformGrok
 	noAccountCode, noAccountMessage := "grok_media_no_eligible_account", "No eligible Grok media accounts"
-	if endpoint.IsSeedance() {
+	if endpoint.IsMuse() {
+		platform = service.PlatformOpenAI
+		noAccountCode, noAccountMessage = "muse_no_eligible_account", "No eligible Muse accounts"
+		c.Set(middleware2.DoneBotMediaProvider, "muse")
+	} else if endpoint.IsSeedance() {
 		platform = service.PlatformOpenAI
 		noAccountCode, noAccountMessage = "seedance_no_eligible_account", "No eligible Seedance accounts"
 		c.Set(middleware2.DoneBotMediaProvider, "seedance")
@@ -117,6 +121,17 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			return
 		}
 	}
+	if endpoint == service.MuseEndpointCreate {
+		requestInfo, err = service.ParseMuseRequest(body)
+		if err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+			return
+		}
+	}
+	if endpoint == service.SeedanceEndpointCreate && requestInfo.DurationSeconds <= 0 {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Seedance requires a positive submitted duration for billing")
+		return
+	}
 	requestModel := requestInfo.Model
 	routingModel := service.NormalizeGrokMediaModelForEndpoint(endpoint, requestModel, requestInfo.HasInputImage())
 	if endpoint.IsGenerationRequest() && strings.TrimSpace(requestModel) == "" {
@@ -133,7 +148,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
 
 	if endpoint.IsGenerationRequest() {
-		if !endpoint.IsSeedance() && !service.GroupAllowsImageGeneration(apiKey.Group) {
+		if !endpoint.IsNativeVideo() && !service.GroupAllowsImageGeneration(apiKey.Group) {
 			h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 			return
 		}
@@ -144,7 +159,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				return
 			}
 		}
-		if !endpoint.IsSeedance() {
+		if !endpoint.IsNativeVideo() {
 			imageReleaseFunc, acquired := h.acquireImageGenerationSlot(c, streamStarted)
 			if !acquired {
 				return
@@ -188,9 +203,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	inflightDone := func() {}
 	var inflightErr error
 	seedanceReservationTransferred := false
-	if endpoint == service.SeedanceEndpointCreate {
+	if endpoint.IsNativeVideoCreate() {
 		if !h.gatewayService.APIMartSettlementAvailable() {
-			h.errorResponse(c, 503, "api_error", "Seedance background settlement is unavailable")
+			h.errorResponse(c, 503, "api_error", "Video background settlement is unavailable")
 			return
 		}
 		// Reference assets belong to the selected upstream account. Measure
@@ -394,6 +409,8 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				}
 				requestInfo.ReferenceVideoDurationSeconds = inputSeconds
 			}
+		}
+		if endpoint.IsNativeVideoCreate() {
 			// Account failover can resolve a different provider asset. Replace any
 			// previous reservation using this account's verified input duration.
 			inflightDone()
@@ -401,8 +418,11 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			requestCtx = seedanceBaseContext
 			c.Request = c.Request.WithContext(requestCtx)
 			amount, priced := h.gatewayService.SeedanceInflightCost(c.Request.Context(), apiKey, routingModel, requestInfo)
+			if endpoint.IsMuse() {
+				amount, priced = h.gatewayService.MuseInflightCost(c.Request.Context(), apiKey, routingModel, requestInfo)
+			}
 			if !priced {
-				h.errorResponse(c, 503, "api_error", "Seedance model has no configured price for this resolution and reference-video tier")
+				h.errorResponse(c, 503, "api_error", "Video requires a configured per-second tariff and a positive submitted duration")
 				return
 			}
 			if service.DoneBotMediaReceiptID(requestCtx) == "" && (h.cfg == nil || h.cfg.RunMode != config.RunModeSimple) {
@@ -429,7 +449,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			}
 			requestCtx = c.Request.Context()
 		}
-		if endpoint.IsGenerationRequest() && !endpoint.IsSeedance() {
+		if endpoint.IsGenerationRequest() && !endpoint.IsNativeVideo() {
 			eligible, eligibilityReason, eligibilityErr := h.ensureGrokMediaAccountEligibility(requestCtx, account)
 			if !eligible {
 				releaseAccount()
@@ -476,8 +496,12 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
-		if endpoint == service.SeedanceEndpointCreate && service.DoneBotMediaReceiptID(requestCtx) != "" {
-			task, dispatchErr := h.gatewayService.SubmitDoneBotDispatch(requestCtx, apiKey, account, service.DoneBotDispatch{Protocol: service.DoneBotDispatchSeedance, Kind: "video", Model: requestModel, RoutingModel: routingModel, ForwardModel: routingModel, Path: c.Request.URL.Path, ContentType: contentType, Body: body, VideoInfo: requestInfo})
+		if endpoint.IsNativeVideoCreate() && service.DoneBotMediaReceiptID(requestCtx) != "" {
+			protocol := service.DoneBotDispatchSeedance
+			if endpoint.IsMuse() {
+				protocol = service.DoneBotDispatchMuse
+			}
+			task, dispatchErr := h.gatewayService.SubmitDoneBotDispatch(requestCtx, apiKey, account, service.DoneBotDispatch{Protocol: protocol, Kind: "video", Model: requestModel, RoutingModel: routingModel, ForwardModel: routingModel, Path: c.Request.URL.Path, ContentType: contentType, Body: body, VideoInfo: requestInfo})
 			releaseAccount()
 			if response.ErrorFrom(c, dispatchErr) {
 				return
@@ -495,6 +519,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		writerSizeBeforeForward := c.Writer.Size()
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer releaseAccount()
+			if endpoint.IsMuse() {
+				return h.gatewayService.ForwardMuse(requestCtx, c, account, endpoint, requestID, body)
+			}
 			if endpoint.IsSeedance() {
 				forwardEndpoint := endpoint
 				if endpoint == service.SeedanceEndpointContent {
@@ -519,7 +546,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
-				if endpoint == service.SeedanceEndpointCreate && service.DoneBotMediaReceiptID(requestCtx) != "" {
+				if endpoint.IsNativeVideoCreate() && service.DoneBotMediaReceiptID(requestCtx) != "" {
 					h.refundDoneBotRejectedMedia(c, failoverErr.StatusCode)
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
@@ -597,15 +624,15 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			return
 		}
 
-		if endpoint == service.SeedanceEndpointCreate {
+		if endpoint.IsNativeVideoCreate() {
 			result.VideoInputDurationSeconds = requestInfo.ReferenceVideoDurationSeconds
 			result.BillingModel = h.gatewayService.SeedanceBillingModel(requestCtx, apiKey, result.BillingModel)
 		}
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account, grokMediaScheduleModel(account, routingModel, result), true, nil)
 		if isGrokVideoCreateEndpoint(endpoint) && strings.TrimSpace(result.ResponseID) != "" {
 			taskID := result.ResponseID
-			if endpoint.IsSeedance() {
-				taskID = strings.TrimPrefix(taskID, "seedance:")
+			if endpoint.IsNativeVideo() {
+				taskID = strings.TrimPrefix(strings.TrimPrefix(taskID, "seedance:"), "muse:")
 			}
 			c.Set(middleware2.DoneBotMediaTaskID, taskID)
 			c.Set(middleware2.DoneBotMediaUsageRequestID, service.StableGrokVideoBillingRequestID(result.ResponseID))
@@ -630,8 +657,12 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				// Wall-clock start for usage duration_ms: create accepted → first done discovery.
 				CreatedAt: videoCreateStartedAt,
 			}
-			if endpoint == service.SeedanceEndpointCreate && h.gatewayService.APIMartSettlementAvailable() {
-				job := service.APIMartSettlementJob{Provider: "seedance", TaskID: strings.TrimPrefix(result.ResponseID, "seedance:"), UserID: subject.UserID, APIKeyID: apiKey.ID, GroupID: apiKey.Group.ID, AccountID: account.ID, VideoPending: &pending, UserAgent: c.GetHeader("User-Agent"), IPAddress: ip.GetClientIP(c), QuotaPlatform: service.QuotaPlatform(requestCtx, apiKey)}
+			if endpoint.IsNativeVideoCreate() && h.gatewayService.APIMartSettlementAvailable() {
+				provider := "seedance"
+				if endpoint.IsMuse() {
+					provider = "muse"
+				}
+				job := service.APIMartSettlementJob{Provider: provider, TaskID: taskID, UserID: subject.UserID, APIKeyID: apiKey.ID, GroupID: apiKey.Group.ID, AccountID: account.ID, VideoPending: &pending, UserAgent: c.GetHeader("User-Agent"), IPAddress: ip.GetClientIP(c), QuotaPlatform: service.QuotaPlatform(requestCtx, apiKey)}
 				if subscription != nil {
 					job.SubscriptionID = subscription.ID
 				}
@@ -646,7 +677,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			if err := h.gatewayService.BindGrokMediaVideoRequestAccount(
 				persistCtx, apiKey.GroupID, result.ResponseID, subject.UserID, apiKey.ID, account.ID,
 			); err != nil {
-				if endpoint == service.SeedanceEndpointCreate {
+				if endpoint.IsNativeVideoCreate() {
 					h.errorResponse(c, 503, "api_error", "Accepted task "+strings.TrimPrefix(result.ResponseID, "seedance:")+" could not be bound; do not resubmit")
 					return
 				}
@@ -665,7 +696,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				if err2 := h.gatewayService.StoreGrokVideoPendingBilling(persistCtx, result.ResponseID, subject.UserID, apiKey.ID, pending); err2 != nil {
 					// Response body may already be committed; completion path will fail-closed
 					// when pending is still missing and status cannot price duration.
-					if endpoint == service.SeedanceEndpointCreate {
+					if endpoint.IsNativeVideoCreate() {
 						h.errorResponse(c, 503, "api_error", "Accepted task "+strings.TrimPrefix(result.ResponseID, "seedance:")+" could not be persisted; do not resubmit")
 						return
 					}
@@ -677,18 +708,22 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				}
 			}
 		}
-		if endpoint == service.SeedanceEndpointCreate {
+		if endpoint.IsNativeVideoCreate() {
 			h.gatewayService.WriteSeedanceCreateResponse(c, result)
 		}
 		// Status poll OR content download can observe official done+video.url.
 		// Both paths share the same claim key so the customer is charged once.
-		if endpoint == service.SeedanceEndpointStatus || endpoint == service.SeedanceEndpointContent {
+		if endpoint == service.SeedanceEndpointStatus || endpoint == service.SeedanceEndpointContent || endpoint == service.MuseEndpointStatus || endpoint == service.MuseEndpointContent {
 			if err := h.settleSeedanceCompletionBilling(c, reqLog, apiKey, subject, subscription, account, requestID, result); err != nil {
 				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Task billing is unavailable; retry task lookup")
 				return
 			}
-			if endpoint == service.SeedanceEndpointContent {
-				if err := h.gatewayService.WriteSeedanceVideoContent(requestCtx, c, result, apiKey.ID); err != nil && !service.IsResponseCommitted(c) {
+			if endpoint == service.SeedanceEndpointContent || endpoint == service.MuseEndpointContent {
+				writeContent := h.gatewayService.WriteSeedanceVideoContent
+				if endpoint.IsMuse() {
+					writeContent = h.gatewayService.WriteMuseVideoContent
+				}
+				if err := writeContent(requestCtx, c, result, apiKey.ID); err != nil && !service.IsResponseCommitted(c) {
 					if errors.Is(err, service.ErrSeedanceVideoNotReady) {
 						c.Header("Retry-After", "3")
 						h.errorResponse(c, http.StatusConflict, "video_not_ready", "Video content is not ready")
@@ -730,6 +765,9 @@ func (h *OpenAIGatewayHandler) ensureGrokMediaAccountEligibility(ctx context.Con
 }
 
 func grokMediaRequiredCapability(endpoint service.GrokMediaEndpoint) service.OpenAIEndpointCapability {
+	if endpoint.IsMuse() {
+		return service.OpenAIEndpointCapabilityMuse
+	}
 	if endpoint.IsSeedance() {
 		return service.OpenAIEndpointCapabilitySeedance
 	}
@@ -751,7 +789,7 @@ func grokMediaScheduleModel(account *service.Account, routingModel string, resul
 
 func isGrokVideoCreateEndpoint(endpoint service.GrokMediaEndpoint) bool {
 	switch endpoint {
-	case service.SeedanceEndpointCreate, service.GrokMediaEndpointVideosGenerations,
+	case service.MuseEndpointCreate, service.SeedanceEndpointCreate, service.GrokMediaEndpointVideosGenerations,
 		service.GrokMediaEndpointVideosEdits,
 		service.GrokMediaEndpointVideosExtensions:
 		return true
@@ -779,7 +817,7 @@ func shouldRecordGrokMediaUsage(endpoint service.GrokMediaEndpoint, requestModel
 }
 
 // prepareGrokVideoCompletionBilling claims one-shot billing for official done+video.url
-// observations (status poll or content download). Duration/model prefer status body;
+// observations (status poll or content download). Duration uses the submitted snapshot;
 // resolution uses create-time request (status response does not document resolution).
 func prepareGrokVideoCompletionBilling(
 	ctx context.Context,
@@ -807,22 +845,11 @@ func prepareGrokVideoCompletionBilling(
 	if loadErr != nil {
 		reqLog.Warn("grok_media.video_pending_billing_load_failed", zap.String("request_id", taskRequestID), zap.Error(loadErr))
 	}
-	if pending == nil {
-		// Status omits resolution; without pending we would silently default to 480p and underbill.
-		// Allow billing only when official status carries duration (still may default resolution).
-		if statusResult.VideoDurationSeconds <= 0 {
-			reqLog.Error("grok_media.video_billing_skipped_missing_pending",
-				zap.String("request_id", taskRequestID),
-				zap.String("reason", "no create-time snapshot and status has no video.duration"),
-			)
-			return nil
-		}
-		reqLog.Error("grok_media.video_billing_without_pending",
-			zap.String("request_id", taskRequestID),
-			zap.Int("status_duration_seconds", statusResult.VideoDurationSeconds),
-			zap.String("note", "resolution falls back to default 480p; investigate pending store failures"),
-		)
+	if pending == nil || pending.VideoDurationSeconds <= 0 {
+		reqLog.Error("grok_media.video_billing_skipped_missing_submitted_duration", zap.String("request_id", taskRequestID))
+		return nil
 	}
+
 	claimed, err := h.gatewayService.ClaimGrokVideoBilling(ctx, taskRequestID, subject.UserID, apiKey.ID)
 	if err != nil {
 		reqLog.Warn("grok_media.video_billing_claim_failed", zap.String("request_id", taskRequestID), zap.Error(err))
@@ -848,9 +875,7 @@ func prepareGrokVideoCompletionBilling(
 		if strings.TrimSpace(pending.VideoResolution) != "" {
 			merged.VideoResolution = pending.VideoResolution
 		}
-		if merged.VideoDurationSeconds <= 0 {
-			merged.VideoDurationSeconds = pending.VideoDurationSeconds
-		}
+		merged.VideoDurationSeconds = pending.VideoDurationSeconds
 		if strings.TrimSpace(merged.ResponseID) == "" {
 			merged.ResponseID = taskRequestID
 		}

@@ -38,7 +38,7 @@ func TestSeedanceHandlerLifecycleAndOwnership(t *testing.T) {
 		key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"doubao-seedance"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "720p|standard", PerRequestPrice: &p}}}}
 		body := ""
 		if method == http.MethodPost {
-			body = `{"model":"doubao-seedance","content":[{"type":"text","text":"waves"}]}`
+			body = `{"model":"doubao-seedance","content":[{"type":"text","text":"waves"}],"duration":5}`
 		}
 		c.Request = httptest.NewRequest(method, "/api/v3/contents/generations/tasks", strings.NewReader(body))
 		c.Params = gin.Params{{Key: "task_id", Value: "task-ark"}}
@@ -100,7 +100,7 @@ func TestSeedanceQueueFailureReturnsAcceptedTaskAndNoSuccess(t *testing.T) {
 	key.Group.Platform = service.PlatformOpenAI
 	p := 0.1
 	key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"video"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "720p|standard", PerRequestPrice: &p}}}}
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"video","content":[{"type":"text","text":"waves"}]}`))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"video","content":[{"type":"text","text":"waves"}],"duration":5}`))
 	h.SeedanceTasks(c)
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	require.Contains(t, w.Body.String(), "do not resubmit")
@@ -130,7 +130,7 @@ func TestSeedancePaidCreateRequiresReservationSupport(t *testing.T) {
 	key.Group.RateMultiplier = 1
 	p := 0.1
 	key.Group.ModelPricing = []service.ChannelModelPricing{{Models: []string{"video"}, BillingMode: service.BillingModeVideo, Intervals: []service.PricingInterval{{TierLabel: "720p|standard", PerRequestPrice: &p}}}}
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"video","content":[{"type":"text","text":"waves"}]}`))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"video","content":[{"type":"text","text":"waves"}],"duration":5}`))
 	h.SeedanceTasks(c)
 	require.Equal(t, http.StatusServiceUnavailable, w.Code, w.Body.String())
 	require.Zero(t, upstream.calls)

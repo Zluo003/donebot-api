@@ -16,7 +16,7 @@ func (r *usageBillingRepository) TakeDoneBotDispatches(ctx context.Context, limi
  SELECT receipt_id FROM donebot_media_dispatches WHERE due_at<=NOW() AND state NOT IN ('completed','failed')
  AND (state<>'uncertain' OR (
    (NULLIF(payload->>'provider_task_id','') IS NOT NULL
-     AND payload->>'protocol' IN ('apimart_images','apimart_music','seedance'))
+     AND payload->>'protocol' IN ('apimart_images','apimart_music','seedance','muse'))
    OR (jsonb_typeof(payload->'result')='object' AND (
      NULLIF(payload->>'response','') IS NOT NULL
      OR (payload->>'donebot_intent'='true' AND jsonb_array_length(

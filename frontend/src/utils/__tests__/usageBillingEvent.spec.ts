@@ -15,4 +15,10 @@ describe('media billing events', () => {
     expect(log.actual_cost).toBe(-0.125)
     expect(usageBillingEvent({ actual_cost: -0.25 })).toBe('refund')
   })
+  it('shows Muse supplementary charges as debits', () => {
+    const log = { event_type: 'surcharge' as const, operation_receipt_id: 'receipt', actual_cost: 0.5 }
+    expect(usageBillingEvent(log)).toBe('surcharge')
+    expect(formatUsageBalanceAmount(log)).toBe('$0.500000')
+  })
+
 })

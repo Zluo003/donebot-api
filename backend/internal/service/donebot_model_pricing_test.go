@@ -78,6 +78,40 @@ func TestDoneBotVideoPricingUsesOfficialResolutionAndReferenceTier(t *testing.T)
 	require.Error(t, s.updatePricing(context.Background(), a.group, "video", in))
 }
 
+func TestMuseVideoPricingRoundTripsOnly720p(t *testing.T) {
+	s, a := doneBotCatalogFixture()
+	model := "muse-video"
+	a.candidates[PlatformOpenAI] = []string{model}
+	account := *musePricingTestAccount()
+	s.accounts = doneBotCatalogAccountsStub{accounts: []Account{account}}
+	s.channels = doneBotCatalogChannelsStub{}
+	rows, err := s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "actual", rows[0].VideoBilling)
+	require.Equal(t, "video", rows[0].Kind)
+	require.Empty(t, rows[0].VideoResolutions)
+	var in DoneBotPricingInput
+	require.NoError(t, json.Unmarshal([]byte(`{"models":[{"model":"muse-video","pricing":{"video_prices":[{"resolution":"720p","reference_video":false,"price_per_second":0.3}]}}]}`), &in))
+	require.NoError(t, s.updatePricing(context.Background(), a.group, "video", in))
+	price := matchGroupModelPricing(a.group, model)
+	require.NotNil(t, price)
+	require.Equal(t, BillingModeVideo, price.BillingMode)
+	require.Nil(t, price.PerRequestPrice)
+	require.Len(t, price.Intervals, 1)
+	require.Equal(t, "720p", price.Intervals[0].TierLabel)
+	rows, err = s.catalog(context.Background(), a.group)
+	require.NoError(t, err)
+	require.Len(t, rows[0].EditablePricing.VideoPrices, 1)
+	require.InDelta(t, .3, *rows[0].EditablePricing.VideoPrices[0].PricePerSecond, 1e-12)
+	in.Models[0].Pricing.VideoPrices[0].ReferenceVideo = true
+	require.Error(t, s.updatePricing(context.Background(), a.group, "video", in))
+}
+
+func musePricingTestAccount() *Account {
+	return &Account{Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://token.secure-skill.com", "api_key": "synthetic", "openai_capabilities": []string{"muse"}, "model_mapping": map[string]any{"muse-video": "muse-video"}}}
+}
+
 func TestDoneBotUnpricedLlmMultiplierDoesNotInventBasePrice(t *testing.T) {
 	s, a := doneBotCatalogFixture()
 	ctx := context.Background()

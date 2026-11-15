@@ -260,6 +260,11 @@ func newGrokMediaSlotHandlerWithBilling(t *testing.T, money service.UsageBilling
 			accounts[i].Platform = platforms[0]
 			accounts[i].Credentials["base_url"] = "https://ark.cn-beijing.volces.com/api/v3"
 			accounts[i].Credentials["openai_capabilities"] = []string{"seedance"}
+			if len(platforms) > 1 && platforms[1] == "muse" {
+				accounts[i].Credentials["base_url"] = "https://token.secure-skill.com"
+				accounts[i].Credentials["openai_capabilities"] = []string{"muse"}
+				accounts[i].Credentials["model_mapping"] = map[string]any{"public-muse": "muse-video"}
+			}
 			if len(platforms) > 1 && platforms[1] == "apimart" {
 				accounts[i].Credentials["base_url"] = "https://api.apimart.ai"
 				accounts[i].Credentials["openai_capabilities"] = []string{"apimart_images", "apimart_suno", "apimart_tts"}
@@ -472,6 +477,7 @@ func TestGrokMediaVideoLookupOwnerIsolation(t *testing.T) {
 
 func TestGrokMediaVideoCompletionStillClaimsBillingOnce(t *testing.T) {
 	h, _, bindings, _ := newGrokMediaSlotHandler(t, false, false)
+	require.NoError(t, h.gatewayService.StoreGrokVideoPendingBilling(context.Background(), "task", 10, 20, service.GrokVideoPendingBilling{Model: "grok-imagine-video", VideoDurationSeconds: 6}))
 	c, _ := grokMediaSlotContext(context.Background(), false)
 	key, ok := middleware2.GetAPIKeyFromContext(c)
 	require.True(t, ok)

@@ -1917,7 +1917,7 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	if a == nil {
 		return false
 	}
-	if capability == OpenAIEndpointCapabilitySeedance || capability == OpenAIEndpointCapabilityAPIMartImages || capability == OpenAIEndpointCapabilityAPIMartSuno || capability == OpenAIEndpointCapabilityAPIMartTTS {
+	if capability == OpenAIEndpointCapabilityMuse || capability == OpenAIEndpointCapabilitySeedance || capability == OpenAIEndpointCapabilityAPIMartImages || capability == OpenAIEndpointCapabilityAPIMartSuno || capability == OpenAIEndpointCapabilityAPIMartTTS {
 		configured, _ := a.openAIEndpointCapabilitySet()
 		return configured[string(capability)] && a.Platform == PlatformOpenAI && a.Type == AccountTypeAPIKey &&
 			strings.TrimSpace(a.GetCredential("base_url")) != ""

@@ -105,9 +105,8 @@ func TestDoneBotVideoContentRequiresDurableCompletionBilling(t *testing.T) {
 			case "pending":
 				f.bindings.pendingErr = errors.New("pending unavailable")
 			case "metering":
-				f.upstream.call = func(*http.Request, int64) (*http.Response, error) {
-					return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"task-mart","status":"succeeded","content":{"video_url":"https://media.example/result.mp4"}}`))}, nil
-				}
+				ctx := context.Background()
+				require.NoError(t, f.h.gatewayService.StoreGrokVideoPendingBilling(ctx, f.taskKey, 10, 20, service.GrokVideoPendingBilling{Model: "movie", VideoResolution: "720p"}))
 			}
 			c, w := doneBotVideoContext(http.MethodGet, "/v1/videos/task-mart/content", "task-mart")
 			key, _ := middleware.GetAPIKeyFromContext(c)

@@ -101,7 +101,7 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 			task.State = "retrieving"
 		case task.DoneBotIntent && task.Result != nil && len(task.Artifacts) > 0:
 			task.State = "settling"
-		case task.ProviderTaskID != "" && (task.Protocol == DoneBotDispatchAPIMartImages || task.Protocol == DoneBotDispatchAPIMartMusic || task.Protocol == DoneBotDispatchSeedance):
+		case task.ProviderTaskID != "" && (task.Protocol == DoneBotDispatchAPIMartImages || task.Protocol == DoneBotDispatchAPIMartMusic || task.Protocol == DoneBotDispatchSeedance || task.Protocol == DoneBotDispatchMuse):
 			task.State = "polling"
 		default:
 			if task.State == "uncertain" {
@@ -194,6 +194,10 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 			}
 			defer selection.ReleaseFunc()
 			account := selection.Account
+			if task.Protocol == DoneBotDispatchMuse && !account.SupportsMuseModel(task.RoutingModel) {
+				task.failed(account.ID, nil)
+				return save(time.Second)
+			}
 			if task.Protocol == DoneBotDispatchSeedance && !account.SeedanceAllowsResolution(task.RoutingModel, task.VideoInfo.Resolution) {
 				task.failed(account.ID, nil)
 				return save(time.Second)
@@ -260,9 +264,24 @@ func (w *apimartSettlementWorker) processDoneBot(ctx context.Context, task *Done
 		} else if task.Result == nil || len(task.Response) == 0 {
 			return fmt.Errorf("completed task is missing durable output")
 		} else {
+			if task.Protocol == DoneBotDispatchMuse && task.Result.VideoActualDurationSeconds <= 0 {
+				if err := s.MeasureMuseCompletion(ctx, task.Result); err != nil {
+					_ = save(10 * time.Second)
+					return err
+				}
+				task.Result = MergeMuseCompletion(task.Result, doneBotMusePending(task), task.TaskID)
+				if task.Result == nil {
+					return ErrDoneBotMediaReconciliation
+				}
+				if err := save(90 * time.Second); err != nil {
+					return err
+				}
+			}
 			provider := "apimart"
 			if task.Protocol == DoneBotDispatchSeedance {
 				provider = "seedance"
+			} else if task.Protocol == DoneBotDispatchMuse {
+				provider = "muse"
 			}
 			if task.DoneBotIntent {
 				kind := task.Kind
@@ -384,6 +403,8 @@ func doneBotDispatchRequiredCapabilities(ctx context.Context, service *OpenAIGat
 		capability = OpenAIEndpointCapabilityAPIMartImages
 	case DoneBotDispatchAPIMartMusic:
 		capability = OpenAIEndpointCapabilityAPIMartSuno
+	case DoneBotDispatchMuse:
+		capability = OpenAIEndpointCapabilityMuse
 	case DoneBotDispatchSeedance:
 		capability = OpenAIEndpointCapabilitySeedance
 	default:
@@ -414,6 +435,9 @@ func (s *OpenAIGatewayService) doneBotDispatchCandidateExhausted(ctx context.Con
 		account := &accounts[i]
 		if NormalizeOpenAICompatiblePlatform(account.Platform) != PlatformOpenAI || !account.IsOpenAICompatible() ||
 			!account.IsModelSupported(task.RoutingModel) || !accountSupportsOpenAICapabilities(account, capability, imageCapability) {
+			continue
+		}
+		if task.Protocol == DoneBotDispatchMuse && !account.SupportsMuseModel(task.RoutingModel) {
 			continue
 		}
 		if task.Protocol == DoneBotDispatchSeedance && !account.SeedanceAllowsResolution(task.RoutingModel, task.VideoInfo.Resolution) {
@@ -464,6 +488,14 @@ func (w *apimartSettlementWorker) sendDoneBot(ctx context.Context, task *DoneBot
 			task.State = "retrieving"
 			return nil
 		}
+	case DoneBotDispatchMuse:
+		task.Result, err = s.ForwardMuse(ctx, c, account, MuseEndpointCreate, "", requestBody)
+		status, body = recorder.Code, recorder.Body.Bytes()
+		if err == nil && task.Result != nil && task.Result.ResponseID != "" {
+			task.ProviderTaskID = strings.TrimPrefix(task.Result.ResponseID, "muse:")
+			task.State = "polling"
+			return nil
+		}
 	case DoneBotDispatchSeedance:
 		task.Result, err = s.ForwardSeedanceForBilling(ctx, c, account, SeedanceEndpointCreate, "", requestBody)
 		status, body = recorder.Code, recorder.Body.Bytes()
@@ -502,14 +534,22 @@ func (w *apimartSettlementWorker) sendDoneBot(ctx context.Context, task *DoneBot
 func (w *apimartSettlementWorker) pollDoneBot(ctx context.Context, task *DoneBotDispatch, account *Account) error {
 	c, _ := doneBotDispatchContext(ctx, task)
 	var response []byte
-	if task.Protocol == DoneBotDispatchSeedance {
-		result, err := w.service.ForwardSeedanceForBilling(ctx, c, account, SeedanceEndpointStatus, SeedanceTaskKey(task.ProviderTaskID), nil)
+	if task.Protocol == DoneBotDispatchSeedance || task.Protocol == DoneBotDispatchMuse {
+		forward := w.service.ForwardSeedanceForBilling
+		endpoint, providerKey := SeedanceEndpointStatus, SeedanceTaskKey(task.ProviderTaskID)
+		if task.Protocol == DoneBotDispatchMuse {
+			forward, endpoint, providerKey = w.service.ForwardMuse, MuseEndpointStatus, MuseTaskKey(task.ProviderTaskID)
+		}
+		result, err := forward(ctx, c, account, endpoint, providerKey, nil)
 		if err != nil {
 			return err
 		}
 		response = result.SeedanceResponseBody
-		pending := &GrokVideoPendingBilling{Model: task.Model, BillingModel: task.BillingModel, OriginalModel: task.Model, UpstreamModel: task.UpstreamModel, VideoResolution: task.VideoInfo.Resolution, VideoInputDurationSeconds: task.VideoInfo.ReferenceVideoDurationSeconds, VideoReference: task.VideoInfo.HasReferenceVideo, CreatedAt: task.CreatedAt.Format(time.RFC3339Nano)}
+		pending := &GrokVideoPendingBilling{VideoDurationSeconds: task.VideoInfo.DurationSeconds, Model: task.Model, BillingModel: task.BillingModel, OriginalModel: task.Model, UpstreamModel: task.UpstreamModel, VideoResolution: task.VideoInfo.Resolution, VideoInputDurationSeconds: task.VideoInfo.ReferenceVideoDurationSeconds, VideoReference: task.VideoInfo.HasReferenceVideo, CreatedAt: task.CreatedAt.Format(time.RFC3339Nano)}
 		task.Result = MergeSeedanceCompletion(result, pending, task.TaskID)
+		if task.Protocol == DoneBotDispatchMuse && result.VideoCount > 0 {
+			task.Result = result
+		}
 	} else {
 		endpoint := APIMartImageTask
 		if task.Protocol == DoneBotDispatchAPIMartMusic {
@@ -542,7 +582,15 @@ func (w *apimartSettlementWorker) pollDoneBot(ctx context.Context, task *DoneBot
 	switch strings.ToLower(root.Get("status").String()) {
 	case "failed", "error", "cancelled", "canceled", "expired":
 		diagnostic := DoneBotMediaErrorDiagnostic(http.StatusBadRequest, "", response)
+		if task.Protocol == DoneBotDispatchMuse {
+			task.State, task.Diagnostic = "refunding", diagnostic
+			return nil
+		}
 		task.failed(account.ID, diagnostic)
 	}
 	return nil
+}
+
+func doneBotMusePending(task *DoneBotDispatch) *GrokVideoPendingBilling {
+	return &GrokVideoPendingBilling{Model: task.Model, BillingModel: task.BillingModel, UpstreamModel: task.UpstreamModel, VideoResolution: task.VideoInfo.Resolution, VideoDurationSeconds: task.VideoInfo.DurationSeconds, CreatedAt: task.CreatedAt.Format(time.RFC3339Nano)}
 }

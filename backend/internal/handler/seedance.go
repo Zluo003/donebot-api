@@ -11,7 +11,6 @@ import (
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
-	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -49,7 +48,7 @@ func (h *OpenAIGatewayHandler) settleSeedanceCompletionBilling(c *gin.Context, l
 	if result == nil {
 		return nil
 	}
-	hasProduct := gjson.GetBytes(result.SeedanceResponseBody, "status").String() == "succeeded" && strings.TrimSpace(gjson.GetBytes(result.SeedanceResponseBody, "content.video_url").String()) != ""
+	hasProduct := result.VideoCount > 0
 	if result.VideoActualDurationSeconds <= 0 && !hasProduct {
 		return nil
 	}
@@ -64,11 +63,7 @@ func (h *OpenAIGatewayHandler) settleSeedanceCompletionBilling(c *gin.Context, l
 	} else if recorded {
 		return nil
 	}
-	if result.VideoActualDurationSeconds <= 0 {
-		err := errors.New("seedance actual output duration is unavailable")
-		log.Error("seedance.video_billing_metering_missing", zap.Error(err))
-		return err
-	}
+
 	pending, err := h.gatewayService.LoadGrokVideoPendingBilling(ctx, taskID, subject.UserID, key.ID)
 	if err != nil {
 		log.Error("seedance.video_billing_pending_load_failed", zap.Error(err))
@@ -80,6 +75,15 @@ func (h *OpenAIGatewayHandler) settleSeedanceCompletionBilling(c *gin.Context, l
 		return err
 	}
 	billingResult := service.MergeSeedanceCompletion(result, pending, taskID)
+	if strings.HasPrefix(taskID, "muse:") {
+		if err := h.gatewayService.MeasureMuseCompletion(ctx, result); err != nil {
+			return err
+		}
+		billingResult = service.MergeMuseCompletion(result, pending, taskID)
+	}
+	if billingResult == nil {
+		return errors.New("video billing duration is unavailable")
+	}
 	claimed, err := h.gatewayService.ClaimGrokVideoBilling(ctx, taskID, subject.UserID, key.ID)
 	if err != nil {
 		log.Error("seedance.video_billing_claim_failed", zap.Error(err))
