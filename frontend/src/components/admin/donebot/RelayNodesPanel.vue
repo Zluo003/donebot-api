@@ -1,4 +1,5 @@
 <template>
+  <MobileConnectionSettings @saved="load" />
   <section class="space-y-5" aria-labelledby="relay-title">
     <header class="flex flex-wrap items-start justify-between gap-3">
       <div><h2 id="relay-title" class="text-lg font-semibold">手机中继节点</h2><p class="mt-1 text-sm text-gray-500">网关统一下发节点地址。最多启用 4 个节点；手机与桌面自动寻找可用节点，无需手动选择。</p></div>
@@ -43,6 +44,7 @@
   <TotpStepUpDialog :controller="stepUp" />
 </template>
 <script setup lang="ts">
+import MobileConnectionSettings from './MobileConnectionSettings.vue'
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { isStepUpCancelled, useStepUp } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'

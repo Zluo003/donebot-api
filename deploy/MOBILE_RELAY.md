@@ -16,22 +16,17 @@
 
 ## 1. 配置网关签名
 
-在网关配置中设置：
+更新网关后打开管理后台「DoneBot → 手机连接 → 中继签名」，首次使用 `k1`，选择「由网关生成新密钥」并保存。也可导入已有的 32 字节无填充 base64url Ed25519 seed。私钥加密保存在数据库，不回显，也不复制给节点。
 
-```dotenv
-DONEBOT_MOBILE_RELAY_SEED=独立生成并持久保存的32字节Ed25519_seed的无填充base64url值
-DONEBOT_MOBILE_RELAY_KID=k1
-```
+保存后立即生效，多副本最多约 3 秒刷新，不需要为签名增加环境变量或重启网关。网关须已有持久 `TOTP_ENCRYPTION_KEY`（部署脚本通常已经生成）；保持该主密钥不变并随数据库备份。后台会明确提示主密钥缺失。
 
-可在管理员终端用 `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` 生成一次 seed，安全保存到网关环境配置。不要把真实值提交到仓库、复制到节点或在每次升级时重新生成。网关多副本必须使用相同的签名配置。
+旧部署的 `DONEBOT_MOBILE_RELAY_SEED` / `DONEBOT_MOBILE_RELAY_KID` 在尚未保存后台配置时继续读取；首次保存会继承，随后以数据库为准。不要每次升级都生成密钥。轮换签名必须换新的 Key ID，随后更新所有节点的 `RELAY_TOKEN_KEYS` 并重启节点，手机与电脑将重连。后台“未配置”提示消失后可取得验签公钥。
 
-二进制部署写入 `/etc/sub2api/environment` 并重启网关服务。Compose 部署写入网关的 `.env`，随后重建应用容器使环境变量生效。已有配置须保留数据库、JWT 和其他凭据。该步骤仅更新网关，不启动中继。
-
-后台“网关尚未配置中继签名密钥”的提示必须消失后，才能取得对应的中继验签公钥。
+同页「Apple 消息推送」支持上传 `.p8`、填写 Key ID / Team ID 并启用，详细步骤见 [手机中枢](../docs/donebot-mobile.md)。此步骤仅配置网关，不会启动独立中继进程。
 
 ## 2. 登记独立节点
 
-打开「DoneBot → 手机中继」：
+打开「DoneBot → 手机连接」：
 
 - 节点编号：`relay1`，后续节点可以使用 `relay2` 等。
 - 连接地址：`relay1.donebot.cn`，不填写 `wss://`、路径或端口。

@@ -15,14 +15,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func doneBotMobileService(db *sql.DB, auth *service.AuthService) *mobilehub.Service {
-	result := &mobilehub.Service{DB: db, Config: mobilehub.EnvironmentConfig(), Check: func(ctx context.Context, who mobilehub.Identity) error {
+func doneBotMobileService(db *sql.DB, auth *service.AuthService, settings *service.DoneBotMobileSettings) *mobilehub.Service {
+	result := &mobilehub.Service{DB: db, Check: func(ctx context.Context, who mobilehub.Identity) error {
 		return auth.CheckMobileSession(ctx, who.Owner, who.Session, who.Version)
 	}}
-	if sender := mobilehub.EnvironmentAPNs(); sender != nil {
-		result.Push = sender
-	}
-	if result.Config != nil && result.Push != nil {
+	if settings != nil {
+		result.ResolveConfig = settings.RelayConfig
+		result.ResolvePush = settings.PushSender
 		go result.RunDelivery(context.Background())
 	}
 	return result

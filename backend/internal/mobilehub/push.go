@@ -49,21 +49,26 @@ func EnvironmentAPNs() *APNs {
 	if err != nil {
 		return nil
 	}
-	block, _ := pem.Decode(raw)
-	if block == nil {
-		return nil
+	a, _ := ParseAPNsKey(raw, os.Getenv("DONEBOT_APNS_KEY_ID"), os.Getenv("DONEBOT_APNS_TEAM_ID"))
+	return a
+}
+
+func ParseAPNsKey(raw []byte, kid, team string) (*APNs, error) {
+	block, rest := pem.Decode(raw)
+	if block == nil || block.Type != "PRIVATE KEY" || len(bytes.TrimSpace(rest)) != 0 {
+		return nil, fmt.Errorf("invalid APNs private key")
 	}
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("invalid APNs private key")
 	}
 	ec, ok := key.(*ecdsa.PrivateKey)
-	kid, team := os.Getenv("DONEBOT_APNS_KEY_ID"), os.Getenv("DONEBOT_APNS_TEAM_ID")
 	if !ok || ec.Curve != elliptic.P256() || !appleID.MatchString(kid) || !appleID.MatchString(team) {
-		return nil
+		return nil, fmt.Errorf("invalid APNs credentials")
 	}
-	return &APNs{ec, kid, team, &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	return &APNs{ec, kid, team, &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
+
 func (a *APNs) Send(ctx context.Context, env, token string, payload []byte) (bool, error) {
 	if !pushToken.MatchString(token) || (env != "sandbox" && env != "production") {
 		return true, fmt.Errorf("invalid APNs destination")
@@ -122,8 +127,8 @@ func (s *Service) Subscribe(ctx context.Context, who Identity, in Subscription) 
 	if err := s.enabled(); err != nil {
 		return err
 	}
-	if s.Push == nil {
-		return unavailable()
+	if s.pushSender() == nil {
+		return infra.ServiceUnavailable("MOBILE_PUSH_UNAVAILABLE", "Apple push notifications are not configured")
 	}
 	if in.Platform != "ios" || in.Preview || !pushToken.MatchString(in.Token) || (in.Environment != "sandbox" && in.Environment != "production") {
 		return invalid()
@@ -207,7 +212,7 @@ func (s *Service) Events(ctx context.Context, owner int64, host string, events [
 
 // Deliver leases rows across gateway replicas and checks the current binding again before sending.
 func (s *Service) Deliver(ctx context.Context) error {
-	if s == nil || s.Push == nil {
+	if s == nil || s.pushSender() == nil {
 		return nil
 	}
 	rows, err := s.DB.QueryContext(ctx, `WITH due AS (SELECT id FROM donebot_mobile_outbox WHERE next_at<=now() AND attempts<5 AND created_at>now()-interval '5 minutes' ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 10) UPDATE donebot_mobile_outbox o SET next_at=now()+interval '120 seconds',attempts=attempts+1 FROM due WHERE o.id=due.id RETURNING o.id,o.host_id::text,o.device_id::text,o.session_id,o.payload`)
@@ -260,7 +265,11 @@ func (s *Service) Deliver(ctx context.Context) error {
 		invalidToken := false
 		var sendErr error
 		if valid {
-			invalidToken, sendErr = s.Push.Send(ctx, env, token, i.payload)
+			sender := s.pushSender()
+			if sender == nil {
+				return nil
+			}
+			invalidToken, sendErr = sender.Send(ctx, env, token, i.payload)
 		}
 		if invalidToken {
 			if _, err = s.DB.ExecContext(ctx, `UPDATE donebot_mobile_devices SET push_token=NULL,environment=NULL WHERE id=$1::uuid AND session_id=$2 AND push_token=$3`, i.device, i.session, token); err != nil {
@@ -282,7 +291,7 @@ func (s *Service) Deliver(ctx context.Context) error {
 }
 
 func (s *Service) Wake() {
-	if s == nil || s.Push == nil || !s.delivery.TryLock() {
+	if s == nil || s.pushSender() == nil || !s.delivery.TryLock() {
 		return
 	}
 	go func() {

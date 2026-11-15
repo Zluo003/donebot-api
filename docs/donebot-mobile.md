@@ -11,27 +11,32 @@
 
 ## 部署配置
 
-网关环境变量：
+网关管理后台入口为「DoneBot → 手机连接」。网关签名与 APNs 凭据存于现有 settings 数据库，使用已有持久 `TOTP_ENCRYPTION_KEY` 加密；不回显 seed 或 `.p8` 私钥。部署脚本已生成此主密钥的环境可以直接使用，不需要再增加中继 / APNs 环境变量。主密钥必须保留并随部署备份，不要在升级时替换。未配置持久主密钥时后台显示原因并禁止保存凭据。
+
+1. 发布更新后的网关镜像并应用迁移 265、266，打开「DoneBot → 手机连接」。
+2. 在「手机连接与消息推送 → 中继签名」填写 Key ID（首次如 `k1`），选择「由网关生成新密钥」并保存。也可导入已有 32 字节 Ed25519 seed（无填充 base64url）。新密钥仅由网关生成并加密保存，不进入手机或节点。修改使用原有管理员二次验证。
+3. 在下方登记 `relay1`，地址填 `relay1.donebot.cn`，设置最大手机会话数。保存一次性显示的节点凭据及验签公钥。节点地址与容量始终由后台管理。
+4. 从独立 `DoneBot-Relay` 项目构建节点镜像，在节点服务器配置 `relay.env`，按 [节点部署指南](../deploy/MOBILE_RELAY.md) 启动中继及其 HTTPS 代理。节点回环监听 18080，公网入口为 `wss://relay1.donebot.cn/v1/phone`；网关沿用 8080。保存后台配置不会启动节点服务。
+5. 在同页「Apple 消息推送」上传启用 APNs 的 Apple `.p8` 文件，填写 10 位 Key ID / Team ID，勾选启用并保存。私钥输入保存后清空，未上传替换文件时保留已有私钥。
+6. 发布桌面、Cloud runtime 和手机 App。同账号登录后手机按网关下发的节点连接，无需原版扫码配对。在手机中开启消息提醒，并进行真机送达验证。
+
+后台保存后当前网关立即采用配置，其他副本最长约 3 秒刷新；无需重启网关。首次保存会继承原有环境凭据，随后数据库记录为准；停用推送不会重新启用环境配置。网关数据库与加密主密钥必须一起备份。独立节点仍有自己的部署配置，不保存网关私钥。
+
+中继签名轮换需要新的 Key ID；保存后复制下方最新验签公钥到所有独立节点的 `RELAY_TOKEN_KEYS` 并重启节点，手机与电脑会重新连接。不要在每次升级时生成新密钥；只调容量或推送时保留签名密钥。
+
+Apple topic 固定为 `cn.donebot.mobile`，订阅自动区分 sandbox / production。开发签名真机可以使用 APNs，无需 App Store 正式发布，但 App ID 必须开启 Push Notifications 并使用含推送 entitlement 的有效签名。后台缺少或停用 APNs 时订阅返回 503 `MOBILE_PUSH_UNAVAILABLE`，手机明确提示后台配置 APNs。后台显示「已启用」表示凭据格式验证通过，不代表已通过 Apple 真实送达测试；错误的 Apple 归属或已撤销密钥仍可能被 Apple 拒绝。
+
+旧环境变量仅作尚未保存后台配置时的兼容入口：
 
 | 名称 | 内容 |
 | --- | --- |
-| `DONEBOT_MOBILE_RELAY_SEED` | 独立生成的 32 字节 Ed25519 seed，无填充 base64url；只放网关 |
-| `DONEBOT_MOBILE_RELAY_KID` | 如 `k1`，允许 k0 到 k999 |
-| `DONEBOT_MOBILE_RELAY_NODES` | 旧环境的兼容配置；独立节点以后台登记记录为准 |
-| `DONEBOT_APNS_KEY_FILE` | 仓库外 Apple APNs `.p8` 的只读绝对路径 |
-| `DONEBOT_APNS_KEY_ID` | Apple Key ID |
-| `DONEBOT_APNS_TEAM_ID` | Apple Team ID |
+| `DONEBOT_MOBILE_RELAY_SEED` | 32 字节 Ed25519 seed，无填充 base64url，只放网关 |
+| `DONEBOT_MOBILE_RELAY_KID` | 如 `k1`，兼容 k0 到 k999 |
+| `DONEBOT_MOBILE_RELAY_NODES` | 无后台节点记录时的旧地址，节点登记后以数据库为准 |
+| `DONEBOT_APNS_KEY_FILE` | 网关容器内 Apple `.p8` 的只读绝对路径 |
+| `DONEBOT_APNS_KEY_ID` / `DONEBOT_APNS_TEAM_ID` | Apple Key ID / Team ID |
 
-Apple topic 固定为 `cn.donebot.mobile`，通知订阅区分 sandbox 和 production。APNs 配置缺失时订阅返回不可用，客户端不会显示已开启提醒。中继未配置时手机连接接口返回不可用。
-
-中继与网关分别部署、启动和升级。节点服务器无需安装网关、PostgreSQL 或 Redis，使用 `relay1.donebot.cn` 等独立域名；网关后台登记节点及在线升级都不会创建或重启节点进程。
-
-1. 发布网关并应用迁移 265、266；配置独立且持久保存的 `DONEBOT_MOBILE_RELAY_SEED` 和 `DONEBOT_MOBILE_RELAY_KID`。Compose 修改环境后需重建应用容器。
-2. 打开管理后台「DoneBot → 手机中继」，创建 `relay1`，地址填 `relay1.donebot.cn`，设置最大手机会话数。保存一次性显示的节点凭据和验签公钥。
-3. 从独立 `DoneBot-Relay` 项目构建节点镜像，在节点服务器配置 `relay.env`，按 [节点部署指南](../deploy/MOBILE_RELAY.md) 启动中继及其 HTTPS 代理。中继回环监听 18080，公网入口为 `wss://relay1.donebot.cn/v1/phone`；网关继续使用原有 8080。
-4. 发布桌面、Cloud runtime 和手机 App。同账号登录后，手机通过网关下发的节点信息连接，不需要原版扫码配对。
-
-APNs `.p8` 文件须单独只读挂载到网关容器，`DONEBOT_APNS_KEY_FILE` 填容器内路径。没有 Apple 凭据仍可验证登录和聊天，无法验收后台推送。Cloud 节点需要向网关和中继开放 HTTPS/WSS 出站；未启用出站的实例不能通过手机连接。
+没有 Apple 凭据仍可验证登录和聊天。Cloud 节点需要允许向网关与中继发出 HTTPS/WSS 连接；不开通手机侧 Cloud 购买接口。
 
 中继在网关暂不可用时仍可启动并监听 18080；未获取或已过期的策略会使 `/healthz` 返回 503、拒绝新接入，进程不会因此退出。网关恢复后中继自动恢复策略。独立部署不意味着移除账号授权、接入策略或会话租约校验。
 
@@ -53,7 +58,7 @@ APNs `.p8` 文件须单独只读挂载到网关容器，`DONEBOT_APNS_KEY_FILE` 
 
 连接器每 5 秒更新一次，手机会话租约最长 70 秒，主机中继 token 最长 120 秒。账号切换会立即清除本机连接；手机退出先撤销绑定，再退出原版账号。即使离线手机未能成功 DELETE，refresh family 撤销或账号密码变化也会在后续检查中阻止续租和通知。原版设备列表/`donebot devices revoke ID` 可撤销该手机会话；本机保存撤销摘要，旧登录会话不能自动恢复，重新登录的手机获得新凭据。
 
-连接只放行 Bot 列表、消息历史、文本发送和已读四类操作，随后仍经过原版 session scope 与 Bot/thread 权限检查。主机身份按账号和安装持久化，手机在 Keychain 固定首次 HTTPS 授权拿到的公钥与 host ID；身份变化会拒绝连接，不自动覆盖。首次信任依赖自有账号服务，网关掌握签发密钥，不能把它描述为可抵御恶意中枢授权。
+连接只放行 Bot / 部门 / 群聊列表、消息历史、Bot 与群聊的发送和已读、图片上传及消息范围内的附件下载，随后仍经过原版 session scope 与 Bot/thread 权限检查。主机身份按账号和安装持久化，手机在 Keychain 固定首次 HTTPS 授权拿到的公钥与 host ID；身份变化会拒绝连接，不自动覆盖。首次信任依赖自有账号服务，网关掌握签发密钥，不能把它描述为可抵御恶意中枢授权。
 
 Cloud 列表投影使用现有实例、订阅和归属记录；已开通但尚未运行连接器的实例显示离线。取消续费但仍在已付费期限内的实例可继续显示；未开通、过期、清理锁定、已删除的实例不显示。电脑必须保持 DoneBot 运行，切换查看位置不会迁移任务。
 
@@ -67,6 +72,7 @@ outbox 持久化，由网关常驻发送循环每 5 秒领取发送，事件到�
 
 ```sh
 DONEBOT_MOBILE_PG_FIXTURE=1 DONEBOT_MOBILE_DESKTOP_ROOT=/Users/zluo/Dev/DoneBot DONEBOT_MOBILE_RELAY_ROOT=/Users/zluo/Dev/DoneBot-Relay go -C backend test -tags integration ./internal/mobilehub -count=1 -v -timeout 150s
+go -C backend test -tags unit ./internal/service -run TestDoneBotMobileSettings -count=1
 go -C backend test ./internal/service ./internal/handler ./internal/server/routes -run 'TestDoneBot' -count=1
 ```
 

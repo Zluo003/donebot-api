@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import RelayNodesPanel from '../RelayNodesPanel.vue'
 import { relayAPI, type RelayNodeInput } from '@/api/admin/relay'
 
+vi.mock('../MobileConnectionSettings.vue', () => ({ default: defineComponent({ template: '<div />' }) }))
 vi.mock('@/components/auth/TotpStepUpDialog.vue', () => ({ default: defineComponent({ name: 'TotpStepUpDialog', props: ['controller'], template: '<div />' }) }))
 vi.mock('@/api/admin/relay', () => ({ relayAPI: { list: vi.fn(), save: vi.fn(), rotate: vi.fn() } }))
 

@@ -21,11 +21,13 @@ type Identity struct {
 }
 type SessionCheck func(context.Context, Identity) error
 type Service struct {
-	delivery sync.Mutex
-	DB       *sql.DB
-	Config   *Config
-	Check    SessionCheck
-	Push     Sender
+	delivery      sync.Mutex
+	DB            *sql.DB
+	Config        *Config
+	Check         SessionCheck
+	Push          Sender
+	ResolveConfig func() *Config
+	ResolvePush   func() Sender
 }
 type Workspace struct {
 	ID          string `json:"id"`
@@ -68,7 +70,7 @@ func unavailable() error {
 func invalid() error { return infra.BadRequest("MOBILE_REQUEST", "Invalid mobile request") }
 func denied() error  { return infra.NotFound("MOBILE_WORKSPACE", "Workspace is unavailable") }
 func (s *Service) enabled() error {
-	if s == nil || s.DB == nil || s.Config == nil || s.Check == nil {
+	if s == nil || s.DB == nil || s.config() == nil || s.Check == nil {
 		return unavailable()
 	}
 	return nil
@@ -184,7 +186,11 @@ func (s *Service) Register(ctx context.Context, owner int64, install string, in 
 	if err != nil {
 		return nil, err
 	}
-	out := &HostReply{in.Host, nodes, s.Config.relayToken(in.Host, install, time.Now()), []Grant{}, 70}
+	signing := s.config()
+	if signing == nil {
+		return nil, unavailable()
+	}
+	out := &HostReply{in.Host, nodes, signing.relayToken(in.Host, install, time.Now()), []Grant{}, 70}
 	for _, r := range records {
 		if err = s.Check(ctx, Identity{owner, r.session, r.version}); err != nil {
 			continue
@@ -239,7 +245,11 @@ func (s *Service) Connection(ctx context.Context, who Identity, install, device 
 	if err = s.bind(ctx, who, device); err != nil {
 		return nil, err
 	}
-	token := s.Config.deviceToken(who.Owner, install, device, who.Session)
+	signing := s.config()
+	if signing == nil {
+		return nil, unavailable()
+	}
+	token := signing.deviceToken(who.Owner, install, device, who.Session)
 	hash := digest(token)
 	_, err = s.DB.ExecContext(ctx, `INSERT INTO donebot_mobile_grants(host_id,device_id,token_hash) SELECT $1::uuid,id,$3 FROM donebot_mobile_devices WHERE id=$2::uuid AND user_id=$4 AND session_id=$5 ON CONFLICT(host_id,device_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,acked_hash=CASE WHEN donebot_mobile_grants.token_hash=EXCLUDED.token_hash THEN donebot_mobile_grants.acked_hash ELSE NULL END`, install, device, hash, who.Owner, who.Session)
 	if err != nil {
@@ -294,3 +304,17 @@ func (s *Service) Disconnect(ctx context.Context, who Identity, device string) e
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM donebot_mobile_devices WHERE id=$1::uuid AND user_id=$2 AND session_id=$3`, device, who.Owner, who.Session)
 	return err
 }
+
+func (s *Service) config() *Config {
+	if s.ResolveConfig != nil {
+		return s.ResolveConfig()
+	}
+	return s.Config
+}
+func (s *Service) pushSender() Sender {
+	if s.ResolvePush != nil {
+		return s.ResolvePush()
+	}
+	return s.Push
+}
+func (s *Service) Configured() bool { return s != nil && s.config() != nil }

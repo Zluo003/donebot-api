@@ -40,6 +40,8 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUp middleware.StepUpAuthMiddleware) {
 	if h.Admin.DoneBot != nil {
 		donebot := admin.Group("/donebot")
+		donebot.GET("/mobile/settings", h.Admin.DoneBot.MobileSettings)
+		donebot.PUT("/mobile/settings", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateMobileSettings)
 		donebot.GET("/relay/nodes", h.Admin.DoneBot.RelayNodes)
 		donebot.PUT("/relay/nodes/:node", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SaveRelayNode)
 		donebot.POST("/relay/nodes/:node/credential", gin.HandlerFunc(stepUp), h.Admin.DoneBot.RotateRelayNodeToken)

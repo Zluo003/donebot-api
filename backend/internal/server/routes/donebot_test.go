@@ -41,6 +41,7 @@ func TestDoneBotRoutesInheritAuthAndAdminRevokeStepUp(t *testing.T) {
 		{http.MethodGet, "/api/v1/donebot/templates/example/1.0.0", http.StatusUnauthorized},
 		{http.MethodPost, "/api/v1/admin/donebot/templates", http.StatusForbidden},
 		{http.MethodPut, "/api/v1/admin/donebot/relay/nodes/relay1", http.StatusForbidden},
+		{http.MethodPut, "/api/v1/admin/donebot/mobile/settings", http.StatusForbidden},
 		{http.MethodPost, "/api/v1/admin/donebot/relay/nodes/relay1/credential", http.StatusForbidden},
 		{http.MethodPatch, "/api/v1/admin/donebot/templates/example/1.0.0", http.StatusForbidden},
 		{http.MethodGet, "/api/v1/donebot/account", http.StatusUnauthorized},
@@ -53,7 +54,7 @@ func TestDoneBotRoutesInheritAuthAndAdminRevokeStepUp(t *testing.T) {
 		r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
 		require.Equal(t, tc.status, w.Code)
 	}
-	require.Equal(t, 5, auditCalls)
+	require.Equal(t, 6, auditCalls)
 	var listPresent bool
 	for _, route := range r.Routes() {
 		if route.Method == http.MethodGet && route.Path == "/api/v1/admin/donebot/installs" {

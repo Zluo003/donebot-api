@@ -150,7 +150,11 @@ func (s *Service) relayNodes(ctx context.Context, preferred ...string) ([]string
 		return nil, err
 	}
 	if len(nodes) == 0 {
-		return s.Config.Nodes, nil
+		signing := s.config()
+		if signing == nil {
+			return nil, unavailable()
+		}
+		return signing.Nodes, nil
 	}
 	available := []Node{}
 	for _, n := range nodes {
@@ -195,14 +199,15 @@ func (s *Service) relayNodes(ctx context.Context, preferred ...string) ([]string
 	return out, nil
 }
 func (s *Service) PublicTokenKeys() string {
-	if s.Config == nil {
+	signing := s.config()
+	if signing == nil {
 		return ""
 	}
-	publicKey, ok := s.Config.Key.Public().(ed25519.PublicKey)
+	publicKey, ok := signing.Key.Public().(ed25519.PublicKey)
 	if !ok {
 		return ""
 	}
 	key := base64.RawURLEncoding.EncodeToString(publicKey)
-	raw, _ := json.Marshal(map[string]string{s.Config.Kid: key})
+	raw, _ := json.Marshal(map[string]string{signing.Kid: key})
 	return string(raw)
 }

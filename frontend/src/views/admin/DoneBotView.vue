@@ -55,7 +55,7 @@ const app = useAppStore()
 const route = useRoute()
 const active = ref<Modality | 'storage' | 'web-tools' | 'relay'>(route.query.tab === 'relay' ? 'relay' : route.query.tab === 'web-tools' ? 'web-tools' : route.query.tab === 'storage' ? 'storage' : 'llm')
 const overview = ref<Overview | null>(null)
-const tabs = [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }, { id: 'audio' as const, label: '音频' }, { id: 'video' as const, label: '视频' }, { id: 'storage' as const, label: '存储' }, { id: 'web-tools' as const, label: '联网工具' }, { id: 'relay' as const, label: '手机中继' }]
+const tabs = [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }, { id: 'audio' as const, label: '音频' }, { id: 'video' as const, label: '视频' }, { id: 'storage' as const, label: '存储' }, { id: 'web-tools' as const, label: '联网工具' }, { id: 'relay' as const, label: '手机连接' }]
 const metrics = computed(() => [
   { label: '已绑定用户', value: overview.value?.user_count },
   { label: '启用模型', value: overview.value?.model_count },

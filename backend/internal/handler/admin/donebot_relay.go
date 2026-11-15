@@ -17,7 +17,7 @@ func (h *DoneBotHandler) RelayNodes(c *gin.Context) {
 	}
 	nodes, err := h.mobile.Nodes(c.Request.Context())
 	if !response.ErrorFrom(c, err) {
-		response.Success(c, gin.H{"nodes": nodes, "token_keys": h.mobile.PublicTokenKeys(), "signing_configured": h.mobile.Config != nil})
+		response.Success(c, gin.H{"nodes": nodes, "token_keys": h.mobile.PublicTokenKeys(), "signing_configured": h.mobile.Configured()})
 	}
 }
 func (h *DoneBotHandler) SaveRelayNode(c *gin.Context) {

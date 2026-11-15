@@ -47,7 +47,7 @@ func (s *Service) Devices(ctx context.Context, owner int64) (*DeviceList, error)
 	if s == nil || s.DB == nil || s.Check == nil {
 		return nil, unavailable()
 	}
-	out := &DeviceList{Desktop: []Device{}, Mobile: []Device{}, RelayConfigured: s.Config != nil}
+	out := &DeviceList{Desktop: []Device{}, Mobile: []Device{}, RelayConfigured: s.config() != nil}
 	rows, err := s.DB.QueryContext(ctx, `SELECT i.installation_id::text,COALESCE(h.name,i.name),COALESCE(i.fingerprint,''),COALESCE(h.last_seen,i.last_seen_at),i.created_at,COALESCE(h.relay_state,'unregistered'),COALESCE(h.last_seen>now()-interval '45 seconds',false) FROM donebot_installs i JOIN api_keys k ON k.id=i.api_key_id JOIN users u ON u.id=i.user_id LEFT JOIN donebot_mobile_hosts h ON h.installation_id=i.installation_id AND h.user_id=i.user_id LEFT JOIN donebot_cloud_instances c ON c.id=i.installation_id WHERE i.user_id=$1 AND c.id IS NULL AND COALESCE(i.fingerprint,'')<>'donebot-cloud' AND i.status='active' AND k.status='active' AND k.deleted_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>now()) AND u.status='active' AND u.deleted_at IS NULL ORDER BY i.created_at DESC`, owner)
 	if err != nil {
 		return nil, err

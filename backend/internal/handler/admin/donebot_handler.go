@@ -19,13 +19,14 @@ type doneBotInstallAdmin interface {
 }
 
 type DoneBotHandler struct {
-	mobile    *mobilehub.Service
-	cloud     *cloudbilling.Service
-	templates *service.DoneBotTemplateService
-	installs  doneBotInstallAdmin
-	catalog   *service.DoneBotAdminService
-	storage   *service.DoneBotStorageService
-	webTools  doneBotWebToolsSettings
+	mobile         *mobilehub.Service
+	mobileSettings *service.DoneBotMobileSettings
+	cloud          *cloudbilling.Service
+	templates      *service.DoneBotTemplateService
+	installs       doneBotInstallAdmin
+	catalog        *service.DoneBotAdminService
+	storage        *service.DoneBotStorageService
+	webTools       doneBotWebToolsSettings
 }
 
 func NewDoneBotHandler(installs *service.DoneBotService, catalog *service.DoneBotAdminService) *DoneBotHandler {
@@ -135,9 +136,14 @@ func (h *DoneBotHandler) UpdateVideoModels(c *gin.Context) { h.updateModels(c, "
 func (h *DoneBotHandler) VideoPricing(c *gin.Context)      { h.pricing(c, "video") }
 func (h *DoneBotHandler) SyncVideoModels(c *gin.Context)   { h.sync(c, "video") }
 
-func ProvideDoneBotHandler(installs *service.DoneBotService, catalog *service.DoneBotAdminService, storage *service.DoneBotStorageService, webTools *service.DoneBotWebToolsService, templates *service.DoneBotTemplateService, cloud *cloudbilling.Service, db *sql.DB) *DoneBotHandler {
+func ProvideDoneBotHandler(installs *service.DoneBotService, catalog *service.DoneBotAdminService, storage *service.DoneBotStorageService, webTools *service.DoneBotWebToolsService, templates *service.DoneBotTemplateService, cloud *cloudbilling.Service, db *sql.DB, mobileSettings *service.DoneBotMobileSettings) *DoneBotHandler {
 	h := NewDoneBotHandler(installs, catalog)
-	h.mobile = &mobilehub.Service{DB: db, Config: mobilehub.EnvironmentConfig()}
+	h.mobile = &mobilehub.Service{DB: db}
+	if mobileSettings != nil {
+		h.mobile.ResolveConfig = mobileSettings.RelayConfig
+		h.mobile.ResolvePush = mobileSettings.PushSender
+	}
+	h.mobileSettings = mobileSettings
 	h.cloud = cloud
 	h.storage = storage
 	h.webTools = webTools
