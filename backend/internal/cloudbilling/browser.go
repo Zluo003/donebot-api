@@ -39,6 +39,14 @@ type browserSession struct {
 }
 
 var browserTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+var browserAssetPattern = regexp.MustCompile(`^/assets/[A-Za-z0-9_-]+-[A-Za-z0-9_-]{8,}\.(js|css|woff2)$`)
+
+func browserResponseCache(r *http.Request, res *http.Response) string {
+	if r.Method == http.MethodGet && r.URL.RawQuery == "" && res.StatusCode == http.StatusOK && browserAssetPattern.MatchString(r.URL.Path) {
+		return "private, max-age=31536000, immutable"
+	}
+	return "no-store"
+}
 
 func (s *Service) BrowserConfig() (*BrowserConfig, error) {
 	raw := os.Getenv("DONEBOT_CLOUD_BROWSER_ORIGIN")

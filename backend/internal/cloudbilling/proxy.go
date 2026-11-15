@@ -156,6 +156,7 @@ func (s *Service) proxy(w http.ResponseWriter, r *http.Request, id string, owner
 		res.Header.Set("Cache-Control", "no-store")
 		if browserMaster != "" {
 			browserHeaders(res.Header)
+			res.Header.Set("Cache-Control", browserResponseCache(r, res))
 			// ReverseProxy appends upstream headers; isolation headers must remain single-valued.
 			for name := range res.Header {
 				w.Header().Del(name)

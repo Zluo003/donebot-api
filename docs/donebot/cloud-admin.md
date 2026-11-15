@@ -25,3 +25,11 @@
 ## 本地验证
 
 相关前端 Vitest 78 项、生产构建（含类型检查）、新增组件 ESLint 和 Cloud 后端三个包测试通过。Cloud 集成测试使用自建临时 PostgreSQL；worker/agent 的 34 项测试使用合成运行服务与时间推进检查长租约、到期及明确撤销。Playwright 已在无生产请求的隔离页面检查实际侧边栏和六页面切换。未更新生产主控、节点或镜像。
+
+## Cloud 切换缓存与退出恢复
+
+网关浏览器代理允许成功 GET 的带版本 hash `/assets/*.js`、`.css`、`.woff2` 使用浏览器私有长期缓存；HTML、API、附件、带查询参数和错误响应保持 `no-store`。前置代理禁止共享缓存并保留主控 Cache-Control。缓存不改变归属、订阅、Cookie 有效期或撤销验证；新版桌面客户端在 Cookie 失效后通过本机 DoneBot 账号自动续连，不注销手机的独立连接。
+
+网关更新只提供上述静态资源缓存优化。用户运行服务意外退出后的自动拉起位于 DoneBot-Cloud agent/worker，需更新节点代码；避免重复写响应导致进程崩溃的修复位于 DoneBot 服务镜像，需另发新镜像并保留资料升级实际容器。自动续连及消息缓存需新版桌面客户端。仅更新网关不能安装这些节点、镜像或客户端修复，不需要因此更新独立手机中继。
+
+本轮 `TestBrowser` 单元测试及临时 PostgreSQL 的 `TestPostgresBrowserCredentialLifetimeAndStorage` 通过。新增缓存规则覆盖版本资源、HTML/API/附件、查询、错误和 POST；PostgreSQL 检查覆盖原生/网页会话及期限，未进行生产访问或镜像发布。节点部署步骤见相邻 DoneBot-Cloud 的 `docs/deployment.md`。

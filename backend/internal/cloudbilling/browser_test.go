@@ -1,12 +1,30 @@
 package cloudbilling
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestBrowserCachesOnlyVersionedApplicationAssets(t *testing.T) {
+	for _, path := range []string{"/assets/index-Abc123xy.js", "/assets/index-Abc123xy.css", "/assets/font-Abc123xy.woff2"} {
+		r := httptest.NewRequest("GET", "https://cloud.example.test"+path, nil)
+		require.Equal(t, "private, max-age=31536000, immutable", browserResponseCache(r, &http.Response{StatusCode: 200}))
+	}
+	for _, path := range []string{"/", "/index.html", "/assets/index.js", "/assets/index-Abc123xy.js?token=secret", "/api/bots", "/api/attachments/private-Abc123xy.js", "/assets/private-Abc123xy.json"} {
+		r := httptest.NewRequest("GET", "https://cloud.example.test"+path, nil)
+		require.Equal(t, "no-store", browserResponseCache(r, &http.Response{StatusCode: 200}))
+	}
+	r := httptest.NewRequest("GET", "https://cloud.example.test/assets/index-Abc123xy.js", nil)
+	for _, status := range []int{401, 403, 404, 500} {
+		require.Equal(t, "no-store", browserResponseCache(r, &http.Response{StatusCode: status}))
+	}
+	r.Method = "POST"
+	require.Equal(t, "no-store", browserResponseCache(r, &http.Response{StatusCode: 200}))
+}
 
 func TestBrowserNamespaceNeverFallsThroughToGateway(t *testing.T) {
 	base, err := url.Parse("https://cloud.donebot.cn")
