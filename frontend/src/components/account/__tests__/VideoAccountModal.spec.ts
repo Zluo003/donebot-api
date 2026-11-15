@@ -11,7 +11,7 @@ vi.mock('@/composables/useStepUp', () => ({
 }))
 vi.mock('vue-i18n', async () => ({ ...await vi.importActual('vue-i18n'), useI18n: () => ({ t: (key: string) => key }) }))
 import VideoAccountModal from '../VideoAccountModal.vue'
-import { isSeedanceVideoAccount, SEEDANCE_MODELS, createSeedanceModelMappings } from '../videoAccount'
+import { isVideoAccount, SEEDANCE_MODELS, createSeedanceModelMappings } from '../videoAccount'
 
 const Dialog = defineComponent({ props: ['show'], template: '<div v-if="show"><slot/><slot name="footer"/></div>' })
 const GroupSelector = defineComponent({ props: ['modelValue', 'groups', 'platform'], emits: ['update:modelValue'], template: '<div/>' })
@@ -28,7 +28,99 @@ beforeEach(() => {
   mocks.update.mockResolvedValue({ id: 2 })
 })
 
-describe('Seedance video account panel', () => {
+describe('Video account panel', () => {
+  it('creates Muse from its service tab with a custom downstream alias and no Seedance settings', async () => {
+    const wrapper = setup()
+    await wrapper.get('[data-testid=video-provider-muse]').trigger('click')
+    expect(wrapper.get('[data-testid=video-provider-muse]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[role=tabpanel]').attributes('aria-labelledby')).toBe('video-provider-muse')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-base-url]').element.value).toBe('https://token.secure-skill.com')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-model-upstream-0]').element.value).toBe('muse-video')
+    expect(wrapper.findAll('[data-testid^=video-model-enabled-]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-testid^=video-resolution-]')).toHaveLength(0)
+    expect(wrapper.find('[data-testid=video-model-spec-0]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=video-output-storage]').exists()).toBe(false)
+    await wrapper.get('[data-testid=video-name]').setValue('Muse upstream')
+    await wrapper.get('[data-testid=video-api-key]').setValue('synthetic-muse-key')
+    await wrapper.get('[data-testid=video-model-downstream-0]').setValue('public-muse')
+    wrapper.getComponent(GroupSelector).vm.$emit('update:modelValue', [7])
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Muse upstream', platform: 'openai', type: 'apikey', group_ids: [7], extra: {},
+      credentials: {
+        api_key: 'synthetic-muse-key', base_url: 'https://token.secure-skill.com',
+        openai_capabilities: ['muse'], model_mapping: { 'public-muse': 'muse-video' }
+      }
+    }))
+    expect(mocks.run).toHaveBeenCalledOnce()
+    expect(wrapper.emitted('created')).toHaveLength(1)
+  })
+
+  it('keeps upstream drafts and keys separate across tabs and clears them when closed', async () => {
+    const wrapper = setup()
+    await wrapper.get('[data-testid=video-base-url]').setValue('https://seedance.example.test/v3')
+    await wrapper.get('[data-testid=video-api-key]').setValue('synthetic-seedance-key')
+    await wrapper.get('[data-testid=video-model-downstream-0]').setValue('my-seedance')
+    await wrapper.get('[data-testid=video-resolution-1080p]').setValue(true)
+    await wrapper.get('[data-testid=video-provider-muse]').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-api-key]').element.value).toBe('')
+    await wrapper.get('[data-testid=video-base-url]').setValue('https://muse.example.test/v1')
+    await wrapper.get('[data-testid=video-api-key]').setValue('synthetic-muse-key')
+    await wrapper.get('[data-testid=video-model-downstream-0]').setValue('my-muse')
+    await wrapper.get('[data-testid=video-provider-seedance]').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-base-url]').element.value).toBe('https://seedance.example.test/v3')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-api-key]').element.value).toBe('synthetic-seedance-key')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-model-downstream-0]').element.value).toBe('my-seedance')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-resolution-1080p]').element.checked).toBe(true)
+    await wrapper.get('[data-testid=video-provider-muse]').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-base-url]').element.value).toBe('https://muse.example.test/v1')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-api-key]').element.value).toBe('synthetic-muse-key')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-model-downstream-0]').element.value).toBe('my-muse')
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-api-key]').element.value).toBe('')
+    await wrapper.get('[data-testid=video-provider-muse]').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-api-key]').element.value).toBe('')
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-base-url]').element.value).toBe('https://token.secure-skill.com')
+  })
+
+  it('supports keyboard navigation between service tabs', async () => {
+    const wrapper = setup()
+    await wrapper.get('[role=tablist]').trigger('keydown', { key: 'ArrowRight' })
+    expect(wrapper.get('[data-testid=video-provider-muse]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-testid=video-provider-muse]').attributes('tabindex')).toBe('0')
+    await wrapper.get('[role=tablist]').trigger('keydown', { key: 'Home' })
+    expect(wrapper.get('[data-testid=video-provider-seedance]').attributes('aria-selected')).toBe('true')
+  })
+
+  it('edits an existing Muse account in its own tab without exposing its secret or changing its service', async () => {
+    const wrapper = setup({ id: 8, name: 'Existing Muse', platform: 'openai', type: 'apikey', group_ids: [7],
+      credentials: { api_key: 'must-not-display', base_url: 'https://muse.example.test/v1', openai_capabilities: ['muse'],
+        model_mapping: { 'my-muse': 'muse-video' }, future_option: { keep: true } }, extra: { existing_setting: true }
+    } as Account)
+    expect(wrapper.get('[data-testid=video-provider-muse]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get<HTMLButtonElement>('[data-testid=video-provider-seedance]').element.disabled).toBe(true)
+    expect(wrapper.get<HTMLInputElement>('[data-testid=video-api-key]').element.value).toBe('')
+    expect(wrapper.html()).not.toContain('must-not-display')
+    await wrapper.get('[data-testid=video-provider-seedance]').trigger('click')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(mocks.update).toHaveBeenCalledWith(8, expect.objectContaining({ group_ids: [7], extra: { existing_setting: true }, credentials: {
+      base_url: 'https://muse.example.test/v1', openai_capabilities: ['muse'], model_mapping: { 'my-muse': 'muse-video' }, future_option: { keep: true }
+    } }))
+    expect(wrapper.emitted('updated')).toHaveLength(1)
+  })
+
+  it('rejects a Muse upstream model that would not route through the Muse protocol', async () => {
+    const wrapper = setup()
+    await wrapper.get('[data-testid=video-provider-muse]').trigger('click')
+    await wrapper.get('[data-testid=video-name]').setValue('Muse')
+    await wrapper.get('[data-testid=video-api-key]').setValue('synthetic-muse-key')
+    await wrapper.get('[data-testid=video-model-upstream-0]').setValue('other-video')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(mocks.create).not.toHaveBeenCalled()
+    expect(mocks.error).toHaveBeenCalledWith('admin.accounts.videoAccount.museModelRequired')
+  })
+
   it('creates a video-only account with documented models and selected resolution capabilities', async () => {
     const wrapper = setup()
     expect(wrapper.get<HTMLInputElement>('[data-testid="video-base-url"]').element.value).toBe('https://api.newtoken.club')
@@ -209,10 +301,13 @@ describe('Seedance video account panel', () => {
     expect(wrapper.get<HTMLInputElement>('[data-testid="video-api-key"]').element.value).toBe('')
   })
 
-  it('only routes dedicated Seedance accounts to this editor', () => {
+  it('only routes dedicated video accounts to this editor', () => {
     const account = { platform: 'openai', type: 'apikey', credentials: { openai_capabilities: ['seedance'] } } as Account
-    expect(isSeedanceVideoAccount(account)).toBe(true)
-    expect(isSeedanceVideoAccount({ ...account, credentials: { openai_capabilities: ['seedance', 'chat_completions'] } })).toBe(false)
-    expect(isSeedanceVideoAccount({ ...account, platform: 'grok' })).toBe(false)
+    expect(isVideoAccount(account)).toBe(true)
+    expect(isVideoAccount({ ...account, credentials: { openai_capabilities: ['muse'] } })).toBe(true)
+    expect(isVideoAccount({ ...account, credentials: { openai_capabilities: ['muse', 'chat_completions'] } })).toBe(false)
+    expect(isVideoAccount({ ...account, credentials: { openai_capabilities: ['seedance', 'muse'] } })).toBe(false)
+    expect(isVideoAccount({ ...account, credentials: { openai_capabilities: ['seedance', 'chat_completions'] } })).toBe(false)
+    expect(isVideoAccount({ ...account, platform: 'grok' })).toBe(false)
   })
 })

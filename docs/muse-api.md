@@ -5,8 +5,8 @@
 
 ## 账号与价格配置
 
-1. 创建 OpenAI 平台的 **API Key** 账号，Base URL 填 `https://token.secure-skill.com` 或 `https://token.secure-skill.com/v1`，使用上游 Muse 分组的密钥。
-2. 在账号的端点能力中勾选 **Muse**。该能力默认关闭，不支持 OAuth 账号。填写明确的模型映射，例如 `muse-video` → `muse-video`；公开别名也可映射到该上游模型。将账号绑定到调用方分组，并允许对应公开模型。
+1. 在管理后台进入 **账号管理 → 添加视频账号 → Muse** 标签。面板自动带入上游地址 `https://token.secure-skill.com` 和模型映射 `muse-video` → `muse-video`；填写账号名称和上游 Muse 分组的 API Key，按需修改地址或下游别名。地址也可包含 `/v1`。
+2. 将账号绑定到调用方分组，并允许对应公开模型。面板自动保存 Muse 端点能力；已有 Muse 专用账号也使用该面板编辑，留空密钥会保留原值。视频服务在账号创建后不可切换，已有任务继续绑定原账号。Muse 不支持 OAuth 账号。
 3. DoneBot 管理页同步视频模型，配置 Muse 的 **720p 每秒售价**并启用。Muse 只支持 720p，提交时长限定 **4–30 秒（含边界）**。
 4. 请求显式提交 `resolution: "720p"`。计价优先使用 `720p` 秒价，也支持已有平坦视频秒价；未配置价格不会当作免费，不回退到其他分辨率或 Seedance 价格。显式价格 `0` 表示免费。
 5. 应用迁移 `267_muse_video_surcharge.sql`，保留现有 PostgreSQL、Redis 持久化与后台媒体工作进程。该迁移允许追加补扣流水；应用启动时沿用项目迁移机制。

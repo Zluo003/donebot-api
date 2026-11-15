@@ -197,8 +197,8 @@ describe('admin AccountsView lite account list', () => {
     wrapper.unmount()
   })
 
-  it('opens the dedicated video editor after loading a Seedance account', async () => {
-    getById.mockResolvedValueOnce({ ...fullAccount, type: 'apikey', credentials: { openai_capabilities: ['seedance'] } })
+  it.each(['seedance', 'muse'])('opens the dedicated video editor after loading a %s account', async provider => {
+    getById.mockResolvedValueOnce({ ...fullAccount, type: 'apikey', credentials: { openai_capabilities: [provider] } })
     const wrapper = mountView()
     await flushPromises()
     const edit = wrapper.findAll('button').find(button => button.text().includes('common.edit'))!

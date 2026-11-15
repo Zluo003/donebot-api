@@ -514,7 +514,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { CreateAccountModal, ApimartAccountModal, VideoAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
 import { apimartAccountKind, isApimartAccount, type ApimartServiceKind } from '@/components/account/apimartAccount'
-import { isSeedanceVideoAccount } from '@/components/account/videoAccount'
+import { isVideoAccount } from '@/components/account/videoAccount'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
@@ -1909,7 +1909,7 @@ const handleEdit = async (a: AccountListItem) => {
     showApimartAccount.value = true
     return
   }
-  if (isSeedanceVideoAccount(account)) {
+  if (isVideoAccount(account)) {
     videoAccount.value = account
     showVideoAccount.value = true
     return
