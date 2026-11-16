@@ -28,6 +28,7 @@
         <AudioModelsPanel v-else-if="active === 'audio'" />
         <VideoModelsPanel v-else-if="active === 'video'" />
         <StoragePanel v-else-if="active === 'storage'" />
+        <ClientReleasesPanel v-else-if="active === 'releases'" />
         <WebToolsPanel v-else-if="active === 'web-tools'" />
         <RelayNodesPanel v-else-if="active === 'relay'" />
       </div>
@@ -45,6 +46,7 @@ import ImageModelsPanel from '@/components/admin/donebot/ImageModelsPanel.vue'
 import AudioModelsPanel from '@/components/admin/donebot/AudioModelsPanel.vue'
 import VideoModelsPanel from '@/components/admin/donebot/VideoModelsPanel.vue'
 import StoragePanel from '@/components/admin/donebot/StoragePanel.vue'
+import ClientReleasesPanel from '@/components/admin/donebot/ClientReleasesPanel.vue'
 import WebToolsPanel from '@/components/admin/donebot/WebToolsPanel.vue'
 import RelayNodesPanel from '@/components/admin/donebot/RelayNodesPanel.vue'
 import InstallList from '@/components/admin/donebot/InstallList.vue'
@@ -53,9 +55,9 @@ import { useAppStore } from '@/stores/app'
 
 const app = useAppStore()
 const route = useRoute()
-const active = ref<Modality | 'storage' | 'web-tools' | 'relay'>(route.query.tab === 'relay' ? 'relay' : route.query.tab === 'web-tools' ? 'web-tools' : route.query.tab === 'storage' ? 'storage' : 'llm')
+const active = ref<Modality | 'storage' | 'releases' | 'web-tools' | 'relay'>(route.query.tab === 'releases' ? 'releases' : route.query.tab === 'relay' ? 'relay' : route.query.tab === 'web-tools' ? 'web-tools' : route.query.tab === 'storage' ? 'storage' : 'llm')
 const overview = ref<Overview | null>(null)
-const tabs = [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }, { id: 'audio' as const, label: '音频' }, { id: 'video' as const, label: '视频' }, { id: 'storage' as const, label: '存储' }, { id: 'web-tools' as const, label: '联网工具' }, { id: 'relay' as const, label: '手机连接' }]
+const tabs = [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }, { id: 'audio' as const, label: '音频' }, { id: 'video' as const, label: '视频' }, { id: 'storage' as const, label: '存储' }, { id: 'releases' as const, label: '客户端版本' }, { id: 'web-tools' as const, label: '联网工具' }, { id: 'relay' as const, label: '手机连接' }]
 const metrics = computed(() => [
   { label: '已绑定用户', value: overview.value?.user_count },
   { label: '启用模型', value: overview.value?.model_count },

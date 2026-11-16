@@ -65,6 +65,9 @@ func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, ste
 		donebot.GET("/web-tools", h.Admin.DoneBot.WebTools)
 		donebot.PUT("/web-tools", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateWebTools)
 		donebot.PUT("/storage", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateStorage)
+		donebot.GET("/releases", h.Admin.DoneBot.ClientReleases)
+		donebot.POST("/releases/upload", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UploadClientRelease)
+		donebot.POST("/releases/:version/publish", gin.HandlerFunc(stepUp), h.Admin.DoneBot.PublishClientRelease)
 		donebot.GET("/overview", h.Admin.DoneBot.Overview)
 		donebot.GET("/llm/models", h.Admin.DoneBot.LlmModels)
 		donebot.PUT("/llm/models", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateLlmModels)
@@ -91,4 +94,16 @@ func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, ste
 		installs.GET("", h.Admin.DoneBot.List)
 		installs.DELETE("/:id", gin.HandlerFunc(stepUp), h.Admin.DoneBot.Revoke)
 	}
+}
+
+func RegisterDoneBotClientReleaseRoutes(v1 *gin.RouterGroup, h *handler.Handlers) {
+	if h == nil || h.Admin == nil || h.Admin.DoneBot == nil {
+		return
+	}
+	client := v1.Group("/client")
+	client.GET("/releases/latest", h.Admin.DoneBot.LatestClientRelease)
+	client.GET("/releases/check", h.Admin.DoneBot.CheckClientRelease)
+	client.GET("/releases/:version/:platform/:filename", h.Admin.DoneBot.DownloadClientRelease)
+	client.GET("/updates/:platform/latest.yml", h.Admin.DoneBot.ClientUpdateFeed)
+	client.GET("/updates/:platform/latest-mac.yml", h.Admin.DoneBot.ClientUpdateFeed)
 }

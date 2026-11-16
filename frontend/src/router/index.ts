@@ -429,6 +429,11 @@ const routes: RouteRecordRaw[] = [
 
   // ==================== Admin Routes ====================
   {
+    path: '/admin/login',
+    name: 'AdminLogin',
+    redirect: (to) => ({ path: '/login', query: { ...to.query, admin: '1' } })
+  },
+  {
     path: '/admin',
     redirect: '/admin/dashboard'
   },
@@ -864,6 +869,10 @@ router.beforeEach(async (to, _from, next) => {
   if (!requiresAuth) {
     // If already authenticated and trying to access login/register, redirect to appropriate dashboard
     if (authStore.isAuthenticated && (to.path === '/login' || to.path === '/register')) {
+      if (to.query.admin === '1' && !authStore.isAdmin) {
+        next('/')
+        return
+      }
       // In backend mode, non-admin users should NOT be redirected away from login
       // (they are blocked from all protected routes, so redirecting would cause a loop)
       if (appStore.backendModeEnabled && !authStore.isAdmin) {
@@ -921,7 +930,7 @@ router.beforeEach(async (to, _from, next) => {
   if (!authStore.isAuthenticated) {
     // Not authenticated, redirect to login
     next({
-      path: '/login',
+      path: requiresAdmin ? '/admin/login' : '/login',
       query: { redirect: to.fullPath } // Save intended destination
     })
     return
@@ -929,8 +938,7 @@ router.beforeEach(async (to, _from, next) => {
 
   // Check admin requirement
   if (requiresAdmin && !authStore.isAdmin) {
-    // User is authenticated but not admin, redirect to user dashboard
-    next('/dashboard')
+    next('/')
     return
   }
 

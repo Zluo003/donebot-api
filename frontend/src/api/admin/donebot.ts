@@ -44,6 +44,9 @@ export interface StoragePolicyInput {
 export interface StoragePolicy extends StoragePolicyInput { secret_configured?: boolean; usage_bytes?: number; file_count?: number }
 export interface StorageSettingsInput { upload: StoragePolicyInput; generated: StoragePolicyInput }
 export interface StorageSettings { upload: StoragePolicy; generated: StoragePolicy }
+export type ClientReleasePlatform = 'windows-x64' | 'macos-arm64'
+export interface ClientReleaseArtifact { filename: string; size_bytes: number; sha256: string; sha512: string; download_url: string }
+export interface ClientRelease { version: string; notes?: string; status: 'draft' | 'published'; created_at: string; published_at?: string; platforms: Partial<Record<ClientReleasePlatform, ClientReleaseArtifact>> }
 export interface WebToolsSettings { enabled: boolean; key_configured: boolean }
 export interface WebToolsSettingsInput { enabled: boolean; api_key?: string; clear_api_key?: boolean }
 export interface CloudRuntimePolicy { outage_grace_minutes: number }
@@ -62,6 +65,9 @@ const donebot = {
  async saveWebTools(input: WebToolsSettingsInput) { return (await apiClient.put<WebToolsSettings>('/admin/donebot/web-tools', input)).data },
  async storage() { return (await apiClient.get<StorageSettings>('/admin/donebot/storage')).data },
  async saveStorage(input: StorageSettingsInput) { return (await apiClient.put<StorageSettings>('/admin/donebot/storage', input)).data },
+ async clientReleases() { return (await apiClient.get<{ releases: ClientRelease[] }>('/admin/donebot/releases')).data },
+ async uploadClientRelease(input: FormData) { return (await apiClient.post<ClientRelease>('/admin/donebot/releases/upload', input, { headers: { 'Content-Type': 'multipart/form-data' } })).data },
+ async publishClientRelease(version: string) { return (await apiClient.post<ClientRelease>(`/admin/donebot/releases/${encodeURIComponent(version)}/publish`)).data },
  async overview() { return (await apiClient.get<Overview>('/admin/donebot/overview')).data },
  async getModels(kind: Modality) { return (await apiClient.get<ModelsResult>(`/admin/donebot/${kind}/models`)).data },
  async models(kind: Modality, models: ModelToggle[]) { return (await apiClient.put<ModelsResult>(`/admin/donebot/${kind}/models`, { models })).data },

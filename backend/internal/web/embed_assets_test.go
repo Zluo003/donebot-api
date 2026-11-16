@@ -157,7 +157,14 @@ func TestEmbeddedFrontendPreservesBuildAssetsAndSPAFallback(t *testing.T) {
 					require.Equal(t, staticAssetsCacheControl, response.Header().Get("Cache-Control"))
 				})
 			}
-			for _, path := range []string{"/dashboard", "/assets/missing-build-file.js", "/assets/ast_0123456789abcdef0123456789abcdef.js"} {
+			for _, path := range []string{"/assets/missing-build-file.js", "/assets/ast_0123456789abcdef0123456789abcdef.js"} {
+				t.Run(path, func(t *testing.T) {
+					response := httptest.NewRecorder()
+					router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+					require.Equal(t, http.StatusNotFound, response.Code)
+				})
+			}
+			for _, path := range []string{"/", "/product", "/admin", "/admin/login"} {
 				t.Run(path, func(t *testing.T) {
 					response := httptest.NewRecorder()
 					router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
@@ -166,6 +173,12 @@ func TestEmbeddedFrontendPreservesBuildAssetsAndSPAFallback(t *testing.T) {
 					require.Contains(t, response.Body.String(), "<!doctype html>")
 				})
 			}
+			t.Run("redirects_legacy_frontend_route", func(t *testing.T) {
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/dashboard", nil))
+				require.Equal(t, http.StatusFound, response.Code)
+				require.Equal(t, "/", response.Header().Get("Location"))
+			})
 		})
 	}
 }

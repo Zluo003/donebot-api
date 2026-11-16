@@ -112,6 +112,16 @@ main() {
     fi
     print_success "Downloaded .env.example"
 
+    # Keep the upgrade helper next to the generated deployment files.
+    print_info "Downloading docker-upgrade.sh..."
+    if command_exists curl; then
+        curl -fsSL "${GITHUB_RAW_URL}/docker-upgrade.sh" -o docker-upgrade.sh
+    else
+        wget -q "${GITHUB_RAW_URL}/docker-upgrade.sh" -O docker-upgrade.sh
+    fi
+    chmod +x docker-upgrade.sh
+    print_success "Downloaded docker-upgrade.sh"
+
     # Generate .env file with auto-generated secrets
     print_info "Generating secure secrets..."
     echo ""
@@ -178,6 +188,7 @@ main() {
     echo ""
     echo "Directory structure:"
     echo "  docker-compose.local.yml  - Docker Compose configuration (local directories)"
+    echo "  docker-upgrade.sh         - Pull and upgrade the gateway container"
     echo "  .env                      - Environment variables (generated secrets)"
     echo "  .env.example              - Example template (for reference)"
     echo "  data/                     - Application data (will be created on first run)"
@@ -194,6 +205,9 @@ main() {
     echo ""
     echo "  4. Access Web UI:"
     echo "     http://localhost:8080"
+    echo ""
+    echo "To update the gateway later, run:"
+    echo "     ./docker-upgrade.sh"
     echo ""
     print_info "If admin password is not set in .env, it will be auto-generated."
     print_info "Check logs for the generated admin password on first startup."

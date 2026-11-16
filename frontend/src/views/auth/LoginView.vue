@@ -1,13 +1,13 @@
 <template>
-  <AuthLayout>
-    <div class="space-y-6">
+  <AuthLayout :donebot-admin="isAdminLogin">
+    <div class="space-y-6" :class="{ 'donebot-admin-login': isAdminLogin }">
       <!-- Title -->
       <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-          {{ t('auth.welcomeBack') }}
+        <h2 class="text-2xl font-bold" :class="isAdminLogin ? 'text-white' : 'text-gray-900 dark:text-white'">
+          {{ isAdminLogin ? '管理员登录' : t('auth.welcomeBack') }}
         </h2>
-        <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
-          {{ t('auth.signInToAccount') }}
+        <p class="mt-2 text-sm" :class="isAdminLogin ? 'text-gray-400' : 'text-gray-500 dark:text-dark-400'">
+          {{ isAdminLogin ? 'DoneBot 管理控制台' : t('auth.signInToAccount') }}
         </p>
       </div>
       <!-- Login Form -->
@@ -69,7 +69,7 @@
           <div class="mt-1 flex items-center justify-between">
             <span></span>
             <router-link
-              v-if="passwordResetEnabled && !backendModeEnabled"
+              v-if="passwordResetEnabled && !backendModeEnabled && !isAdminLogin"
               to="/forgot-password"
               class="text-sm font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
             >
@@ -124,7 +124,7 @@
             ></path>
           </svg>
           <Icon v-else name="login" size="md" class="mr-2" />
-          {{ isLoading ? t('auth.signingIn') : t('auth.signIn') }}
+          {{ isLoading ? t('auth.signingIn') : isAdminLogin ? '登录管理后台' : t('auth.signIn') }}
         </button>
 
         <LoginAgreementPrompt
@@ -197,7 +197,7 @@
     </div>
 
     <!-- Footer -->
-    <template v-if="!backendModeEnabled && publicSettingsLoaded && registrationEnabled" #footer>
+    <template v-if="!isAdminLogin && !backendModeEnabled && publicSettingsLoaded && registrationEnabled" #footer>
       <p class="text-gray-500 dark:text-dark-400">
         {{ t('auth.dontHaveAccount') }}
         <router-link
@@ -223,7 +223,7 @@
 
 <script setup lang="ts">
 import { computed, ref, reactive, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import LinuxDoOAuthSection from '@/components/auth/LinuxDoOAuthSection.vue'
@@ -258,8 +258,10 @@ const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 // ==================== Router & Stores ====================
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const isAdminLogin = computed(() => route.query.admin === '1')
 
 // ==================== State ====================
 
@@ -598,6 +600,8 @@ async function handleLogin(): Promise<void> {
       return
     }
 
+    if (!(await confirmAdminLogin())) return
+
     // Show success toast
     clearAllAffiliateReferralCodes()
     appStore.showSuccess(t('auth.loginSuccess'))
@@ -642,6 +646,7 @@ async function handlePasskeyLogin(): Promise<void> {
     }
 
     await authStore.loginWithPasskey(proof)
+    if (!(await confirmAdminLogin())) return
     clearAllAffiliateReferralCodes()
     appStore.showSuccess(t('auth.loginSuccess'))
     const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
@@ -706,6 +711,10 @@ async function handle2FAVerify(code: string): Promise<void> {
 
   try {
     await authStore.login2FA(totpTempToken.value, code)
+    if (!(await confirmAdminLogin())) {
+      show2FAModal.value = false
+      return
+    }
 
     // Close modal and show success
     show2FAModal.value = false
@@ -731,9 +740,20 @@ function handle2FACancel(): void {
   totpTempToken.value = ''
   totpUserEmailMasked.value = ''
 }
+
+async function confirmAdminLogin(): Promise<boolean> {
+  if (!isAdminLogin.value || authStore.isAdmin) return true
+  await authStore.logout()
+  errorMessage.value = '此账号没有 DoneBot 管理员权限'
+  appStore.showError(errorMessage.value)
+  return false
+}
 </script>
 
 <style scoped>
+.donebot-admin-login :deep(.input) { color: #fff; background: #0d0d0d; border-color: #393939; }
+.donebot-admin-login :deep(.input-label) { color: #d5d5d5; }
+.donebot-admin-login :deep(.btn-primary) { color: #fff; background: #df3037; border-color: #df3037; }
 .fade-enter-active,
 .fade-leave-active {
   transition: all 0.3s ease;

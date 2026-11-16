@@ -56,7 +56,8 @@ function injectPublicSettings(backendUrl: string): Plugin {
     apply: 'serve',
     transformIndexHtml: {
       order: 'pre',
-      async handler(html) {
+      async handler(html, context) {
+        if (context.filename.endsWith('marketing.html')) return html
         try {
           const response = await fetch(`${backendUrl}/api/v1/settings/public`, {
             signal: AbortSignal.timeout(2000)
@@ -77,6 +78,44 @@ function injectPublicSettings(backendUrl: string): Plugin {
   }
 }
 
+function marketingPages(): Plugin {
+  const routes = new Set(['/', '/product', '/scenarios', '/cloud', '/download'])
+  return {
+    name: 'donebot-marketing-pages',
+    configureServer: server => {
+      server.middlewares.use((request, response, next) => {
+        const [pathname, query = ''] = (request.url || '/').split('?')
+        const path = pathname || '/'
+        if (routes.has(path)) {
+          request.url = `/marketing.html${query ? `?${query}` : ''}`
+          next()
+          return
+        }
+        if (path === '/login') {
+          request.url = `/admin/login${query ? `?${query}` : ''}`
+          next()
+          return
+        }
+        if (
+          path === '/admin' || path.startsWith('/admin/') ||
+          path.startsWith('/api/') || path.startsWith('/v1/') ||
+          path.startsWith('/setup/') || path.startsWith('/auth/') ||
+          path.startsWith('/assets/') || path.startsWith('/client-demo/') ||
+          path.startsWith('/@vite/') || path.startsWith('/@id/') ||
+          path.startsWith('/@fs/') || path.startsWith('/@vite-plugin-checker-runtime') || path.startsWith('/@react-refresh') ||
+          /\.[a-z0-9]+$/i.test(path)
+        ) {
+          next()
+          return
+        }
+        response.statusCode = 302
+        response.setHeader('Location', '/')
+        response.end()
+      })
+    }
+  }
+}
+
 export default defineConfig(({ mode }) => {
   // 加载环境变量
   const env = loadEnv(mode, process.cwd(), '')
@@ -86,6 +125,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       vue(),
+      marketingPages(),
       checker({
         vueTsc: true
       }),
@@ -103,6 +143,10 @@ export default defineConfig(({ mode }) => {
     outDir: '../backend/internal/web/dist',
     emptyOutDir: true,
     rollupOptions: {
+      input: {
+        index: resolve(__dirname, 'index.html'),
+        marketing: resolve(__dirname, 'marketing.html')
+      },
       output: {
         /**
          * 手动分包配置

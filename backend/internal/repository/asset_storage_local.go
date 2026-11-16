@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -44,8 +45,14 @@ func (s *LocalAssetStorage) file(key string) (string, error) {
 	return filepath.Join(s.root, key), nil
 }
 func (s *LocalAssetStorage) Save(ctx context.Context, key, contentType string, data []byte) (string, error) {
+	return s.SaveStream(ctx, key, contentType, bytes.NewReader(data), int64(len(data)))
+}
+func (s *LocalAssetStorage) SaveStream(ctx context.Context, key, contentType string, source io.Reader, size int64) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
+	}
+	if size < 0 {
+		return "", fmt.Errorf("invalid asset size")
 	}
 	target, err := s.file(key)
 	if err != nil {
@@ -60,9 +67,14 @@ func (s *LocalAssetStorage) Save(ctx context.Context, key, contentType string, d
 	}
 	name := file.Name()
 	defer func() { _ = os.Remove(name) }()
-	if _, err = file.Write(data); err != nil {
+	written, err := io.Copy(file, io.LimitReader(source, size+1))
+	if err != nil {
 		_ = file.Close()
 		return "", err
+	}
+	if written != size {
+		_ = file.Close()
+		return "", fmt.Errorf("asset size does not match the declared size")
 	}
 	if err = file.Close(); err != nil {
 		return "", err

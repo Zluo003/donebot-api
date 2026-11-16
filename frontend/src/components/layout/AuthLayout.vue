@@ -1,12 +1,13 @@
 <template>
-  <div class="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+  <div class="relative flex min-h-screen items-center justify-center overflow-hidden p-4" :class="{ 'donebot-admin-layout': donebotAdmin }">
     <!-- Background -->
     <div
+      v-if="!donebotAdmin"
       class="absolute inset-0 bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
     ></div>
 
     <!-- Decorative Elements -->
-    <div class="pointer-events-none absolute inset-0 overflow-hidden">
+    <div v-if="!donebotAdmin" class="pointer-events-none absolute inset-0 overflow-hidden">
       <!-- Gradient Orbs -->
       <div
         class="absolute -right-40 -top-40 h-80 w-80 rounded-full bg-primary-400/20 blur-3xl"
@@ -29,7 +30,12 @@
       <!-- Logo/Brand -->
       <div class="mb-8 text-center">
         <!-- Custom Logo or Default Logo -->
-        <template v-if="settingsLoaded">
+        <template v-if="donebotAdmin">
+          <img src="/donebot-logo.png" alt="DoneBot" class="mx-auto mb-4 h-14 w-14 rounded-lg" />
+          <h1 class="mb-2 text-3xl font-bold text-white">DoneBot</h1>
+          <p class="text-sm text-gray-400">管理员控制台</p>
+        </template>
+        <template v-else-if="settingsLoaded">
           <div
             class="mb-4 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl shadow-lg shadow-primary-500/30"
           >
@@ -45,7 +51,7 @@
       </div>
 
       <!-- Card Container -->
-      <div class="card-glass rounded-2xl p-8 shadow-glass">
+      <div :class="donebotAdmin ? 'donebot-admin-card' : 'card-glass rounded-2xl p-8 shadow-glass'">
         <slot />
       </div>
 
@@ -55,8 +61,9 @@
       </div>
 
       <!-- Copyright -->
-      <div class="mt-8 text-center text-xs text-gray-400 dark:text-dark-500">
-        &copy; {{ currentYear }} {{ siteName }}. All rights reserved.
+      <div class="mt-8 text-center text-xs" :class="donebotAdmin ? 'text-gray-600' : 'text-gray-400 dark:text-dark-500'">
+        <template v-if="donebotAdmin">&copy; {{ currentYear }} DoneBot</template>
+        <template v-else>&copy; {{ currentYear }} {{ siteName }}. All rights reserved.</template>
       </div>
     </div>
   </div>
@@ -68,6 +75,7 @@ import { useAppStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
 
 const appStore = useAppStore()
+defineProps<{ donebotAdmin?: boolean }>()
 
 const siteName = computed(() => appStore.siteName || 'Sub2API')
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
@@ -85,4 +93,6 @@ onMounted(() => {
 .text-gradient {
   @apply bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent;
 }
+.donebot-admin-layout { color: #fff; background: #090909; }
+.donebot-admin-card { padding: 2rem; background: #141414; border: 1px solid #343434; border-radius: 4px; }
 </style>

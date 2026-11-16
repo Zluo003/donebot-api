@@ -32,6 +32,7 @@ done
 case "$url" in
     */docker-compose.local.yml) cp "$TEST_COMPOSE_FIXTURE" "$output" ;;
     */.env.example) cp "$TEST_ENV_FIXTURE" "$output" ;;
+    */docker-upgrade.sh) printf '#!/usr/bin/env bash\n' > "$output" ;;
     *) printf 'Unexpected deployment download: %s\n' "$url" >&2; exit 22 ;;
 esac
 EOF
@@ -46,6 +47,7 @@ bash "$ROOT_DIR/deploy/docker-deploy.sh" > "$TEST_ROOT/run.log"
 
 test -f docker-compose.local.yml
 test ! -e docker-compose.yml
+test -x docker-upgrade.sh
 grep -Fq './postgres_data:/var/lib/postgresql/data' docker-compose.local.yml
 grep -Fxq 'COMPOSE_FILE=docker-compose.local.yml' .env
 test -d data

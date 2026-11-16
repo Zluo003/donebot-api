@@ -264,9 +264,8 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 # Restart Sub2API only
 docker compose -f docker-compose.local.yml restart sub2api
 
-# Update to latest version
-docker compose -f docker-compose.local.yml pull
-docker compose -f docker-compose.local.yml up -d
+# Update the gateway to the latest configured image
+./docker-upgrade.sh
 
 # Remove all data (caution!)
 docker compose -f docker-compose.local.yml down
@@ -289,13 +288,18 @@ docker compose -f docker-compose.yml logs -f sub2api
 # Restart Sub2API only
 docker compose -f docker-compose.yml restart sub2api
 
-# Update to latest version
-docker compose -f docker-compose.yml pull
-docker compose -f docker-compose.yml up -d
+# Update the gateway to the latest configured image
+./docker-upgrade.sh -f docker-compose.yml
 
 # Remove all data (caution!)
 docker compose -f docker-compose.yml down -v
 ```
+
+`docker-upgrade.sh` is installed by `docker-deploy.sh`. For an existing
+deployment without the helper, download it from
+`https://raw.githubusercontent.com/Zluo003/donebot-api/main/deploy/docker-upgrade.sh`.
+It recreates only the gateway service and leaves PostgreSQL, Redis and their
+data volumes alone.
 
 ### Environment Variables
 

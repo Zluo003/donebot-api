@@ -11,6 +11,10 @@ type AssetStorage interface {
 	Kind() string
 }
 
+type StreamingAssetStorage interface {
+	SaveStream(context.Context, string, string, io.Reader, int64) (string, error)
+}
+
 type LocalAssetReader interface {
 	Open(context.Context, string) (io.ReadCloser, error)
 }

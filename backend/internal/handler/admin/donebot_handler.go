@@ -26,6 +26,7 @@ type DoneBotHandler struct {
 	installs       doneBotInstallAdmin
 	catalog        *service.DoneBotAdminService
 	storage        *service.DoneBotStorageService
+	releases       *service.ClientReleaseService
 	webTools       doneBotWebToolsSettings
 }
 
@@ -146,6 +147,7 @@ func ProvideDoneBotHandler(installs *service.DoneBotService, catalog *service.Do
 	h.mobileSettings = mobileSettings
 	h.cloud = cloud
 	h.storage = storage
+	h.releases = service.NewClientReleaseService(storage)
 	h.webTools = webTools
 	h.templates = templates
 	return h

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -52,12 +53,17 @@ func NewS3ImageStorage(ctx context.Context, cfg *config.ImageStorageConfig) (*S3
 
 // Save 上传图片字节，返回可访问 URL：配了 public_base_url 则返回公开直链，否则返回 presigned 临时链接。
 func (s *S3ImageStorage) Save(ctx context.Context, key, contentType string, data []byte) (string, error) {
+	return s.SaveStream(ctx, key, contentType, bytes.NewReader(data), int64(len(data)))
+}
+
+func (s *S3ImageStorage) SaveStream(ctx context.Context, key, contentType string, body io.Reader, size int64) (string, error) {
 	finish := servertiming.ObserveDependency(ctx, "s3")
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      &s.bucket,
-		Key:         &key,
-		Body:        bytes.NewReader(data),
-		ContentType: &contentType,
+		Bucket:        &s.bucket,
+		Key:           &key,
+		Body:          body,
+		ContentLength: &size,
+		ContentType:   &contentType,
 	})
 	finish()
 	if err != nil {

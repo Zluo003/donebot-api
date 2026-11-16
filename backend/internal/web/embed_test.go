@@ -370,14 +370,14 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 
 		// First request to populate cache and get ETag
 		w1 := httptest.NewRecorder()
-		req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+		req1 := httptest.NewRequest(http.MethodGet, "/admin", nil)
 		router.ServeHTTP(w1, req1)
 		etag := w1.Header().Get("ETag")
 		require.NotEmpty(t, etag)
 
 		// Second request with If-None-Match
 		w2 := httptest.NewRecorder()
-		req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+		req2 := httptest.NewRequest(http.MethodGet, "/admin", nil)
 		req2.Header.Set("If-None-Match", etag)
 		router.ServeHTTP(w2, req2)
 
@@ -624,12 +624,7 @@ func TestFrontendServer_Middleware(t *testing.T) {
 		})
 		router.Use(server.Middleware())
 
-		spaPaths := []string{
-			"/",
-			"/dashboard",
-			"/users/123",
-			"/settings/profile",
-		}
+		spaPaths := []string{"/admin", "/admin/login"}
 
 		for _, path := range spaPaths {
 			t.Run(path, func(t *testing.T) {
@@ -639,6 +634,25 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 				assert.Equal(t, http.StatusOK, w.Code)
 				assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+			})
+		}
+
+		for _, path := range []string{"/product", "/scenarios", "/cloud", "/download"} {
+			t.Run(path, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+				assert.Equal(t, http.StatusOK, w.Code)
+				assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+				assert.Contains(t, w.Body.String(), "DoneBot")
+			})
+		}
+
+		for _, path := range []string{"/dashboard", "/settings/profile"} {
+			t.Run(path, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+				assert.Equal(t, http.StatusFound, w.Code)
+				assert.Equal(t, "/", w.Header().Get("Location"))
 			})
 		}
 	})
@@ -795,6 +809,7 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
 		assert.Contains(t, w.Body.String(), "<!doctype html>")
+		assert.Contains(t, w.Body.String(), "DoneBot")
 	})
 
 	t.Run("serves_index_html_for_spa_routes", func(t *testing.T) {
@@ -803,7 +818,7 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 		router := gin.New()
 		router.Use(middleware)
 
-		spaPaths := []string{"/dashboard", "/users/123", "/settings"}
+		spaPaths := []string{"/admin", "/admin/login"}
 
 		for _, path := range spaPaths {
 			t.Run(path, func(t *testing.T) {
@@ -813,6 +828,25 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 
 				assert.Equal(t, http.StatusOK, w.Code)
 				assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+			})
+		}
+
+		for _, path := range []string{"/product", "/scenarios", "/cloud", "/download"} {
+			t.Run(path, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+				assert.Equal(t, http.StatusOK, w.Code)
+				assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+				assert.Contains(t, w.Body.String(), "DoneBot")
+			})
+		}
+
+		for _, path := range []string{"/dashboard", "/settings"} {
+			t.Run(path, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+				assert.Equal(t, http.StatusFound, w.Code)
+				assert.Equal(t, "/", w.Header().Get("Location"))
 			})
 		}
 	})

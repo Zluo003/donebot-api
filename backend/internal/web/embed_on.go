@@ -36,12 +36,13 @@ type PublicSettingsProvider interface {
 
 // FrontendServer serves the embedded frontend with settings injection
 type FrontendServer struct {
-	distFS      fs.FS
-	fileServer  http.Handler
-	baseHTML    []byte
-	cache       *HTMLCache
-	settings    PublicSettingsProvider
-	overrideDir string // local file override directory
+	distFS        fs.FS
+	fileServer    http.Handler
+	baseHTML      []byte
+	marketingHTML []byte
+	cache         *HTMLCache
+	settings      PublicSettingsProvider
+	overrideDir   string // local file override directory
 }
 
 // NewFrontendServer creates a new frontend server with settings injection
@@ -62,17 +63,27 @@ func NewFrontendServer(settingsProvider PublicSettingsProvider) (*FrontendServer
 	if err != nil {
 		return nil, err
 	}
+	marketingFile, err := distFS.Open("marketing.html")
+	if err != nil {
+		return nil, err
+	}
+	marketingHTML, err := io.ReadAll(marketingFile)
+	_ = marketingFile.Close()
+	if err != nil {
+		return nil, err
+	}
 
 	cache := NewHTMLCache()
 	cache.SetBaseHTML(baseHTML)
 
 	return &FrontendServer{
-		distFS:      distFS,
-		fileServer:  http.FileServer(http.FS(distFS)),
-		baseHTML:    baseHTML,
-		cache:       cache,
-		settings:    settingsProvider,
-		overrideDir: filepath.Join("data", "public"),
+		distFS:        distFS,
+		fileServer:    http.FileServer(http.FS(distFS)),
+		baseHTML:      baseHTML,
+		marketingHTML: marketingHTML,
+		cache:         cache,
+		settings:      settingsProvider,
+		overrideDir:   filepath.Join("data", "public"),
 	}, nil
 }
 
@@ -93,26 +104,36 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-
-		cleanPath := strings.TrimPrefix(path, "/")
-		if cleanPath == "" {
-			cleanPath = "index.html"
+		if isDoneBotMarketingPath(path) {
+			c.Header("Cache-Control", "no-cache")
+			c.Data(http.StatusOK, "text/html; charset=utf-8", s.marketingHTML)
+			c.Abort()
+			return
+		}
+		if redirectLegacyFrontend(c, path) {
+			return
 		}
 
-		// For index.html or SPA routes, serve with injected settings
-		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
+		cleanPath := strings.TrimPrefix(path, "/")
+		if s.fileExists(cleanPath) {
+			if s.tryServeOverride(c, cleanPath) {
+				return
+			}
+			applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)
+			s.fileServer.ServeHTTP(c.Writer, c.Request)
+			c.Abort()
+			return
+		}
+		if isAdminFrontendPath(path) {
 			s.serveIndexHTML(c)
 			return
 		}
-
-		// Try local override first
-		if s.tryServeOverride(c, cleanPath) {
+		if filepath.Ext(path) != "" {
+			c.Status(http.StatusNotFound)
+			c.Abort()
 			return
 		}
-
-		// Serve static files normally (hashed assets get long-lived cache headers)
-		applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)
-		s.fileServer.ServeHTTP(c.Writer, c.Request)
+		c.Redirect(http.StatusFound, "/")
 		c.Abort()
 	}
 }
@@ -315,11 +336,18 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		if isDoneBotMarketingPath(path) {
+			c.Request.URL.Path = "/marketing.html"
+			applyStaticAssetCacheHeaders(c.Writer.Header(), "marketing.html")
+			fileServer.ServeHTTP(c.Writer, c.Request)
+			c.Abort()
+			return
+		}
+		if redirectLegacyFrontend(c, path) {
+			return
+		}
 
 		cleanPath := strings.TrimPrefix(path, "/")
-		if cleanPath == "" {
-			cleanPath = "index.html"
-		}
 
 		if file, err := distFS.Open(cleanPath); err == nil {
 			_ = file.Close()
@@ -333,8 +361,49 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 			return
 		}
 
-		serveIndexHTML(c, distFS)
+		if isAdminFrontendPath(path) {
+			serveIndexHTML(c, distFS)
+			return
+		}
+		if filepath.Ext(path) != "" {
+			c.Status(http.StatusNotFound)
+			c.Abort()
+			return
+		}
+		c.Redirect(http.StatusFound, "/")
+		c.Abort()
 	}
+}
+
+func isDoneBotMarketingPath(path string) bool {
+	switch path {
+	case "/", "/product", "/scenarios", "/cloud", "/download":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAdminFrontendPath(path string) bool {
+	return path == "/admin" || strings.HasPrefix(path, "/admin/")
+}
+
+func redirectLegacyFrontend(c *gin.Context, path string) bool {
+	if path == "/index.html" {
+		c.Redirect(http.StatusFound, "/")
+		c.Abort()
+		return true
+	}
+	if path == "/login" {
+		location := "/admin/login"
+		if c.Request.URL.RawQuery != "" {
+			location += "?" + c.Request.URL.RawQuery
+		}
+		c.Redirect(http.StatusFound, location)
+		c.Abort()
+		return true
+	}
+	return false
 }
 
 // tryServeOverrideFile is a standalone version of tryServeOverride for legacy usage.
