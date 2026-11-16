@@ -637,7 +637,7 @@ func TestFrontendServer_Middleware(t *testing.T) {
 			})
 		}
 
-		for _, path := range []string{"/product", "/scenarios", "/cloud", "/download"} {
+		for _, path := range []string{"/download"} {
 			t.Run(path, func(t *testing.T) {
 				w := httptest.NewRecorder()
 				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
@@ -831,7 +831,7 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 			})
 		}
 
-		for _, path := range []string{"/product", "/scenarios", "/cloud", "/download"} {
+		for _, path := range []string{"/download"} {
 			t.Run(path, func(t *testing.T) {
 				w := httptest.NewRecorder()
 				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))

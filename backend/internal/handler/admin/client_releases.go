@@ -132,3 +132,32 @@ func (h *DoneBotHandler) DownloadClientRelease(c *gin.Context) {
 	c.Header("X-Checksum-Sha256", artifact.SHA256)
 	c.DataFromReader(http.StatusOK, artifact.SizeBytes, contentType, reader, nil)
 }
+
+func (h *DoneBotHandler) ClientReleaseStorage(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if h.releases == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Client release service is unavailable")
+		return
+	}
+	out, err := h.releases.StorageSettings(c.Request.Context())
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+
+func (h *DoneBotHandler) UpdateClientReleaseStorage(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if h.releases == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Client release service is unavailable")
+		return
+	}
+	var input service.ClientReleaseStorageSettings
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "Invalid client release storage settings")
+		return
+	}
+	out, err := h.releases.UpdateStorageSettings(c.Request.Context(), input)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}

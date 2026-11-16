@@ -6,10 +6,12 @@
         <p class="mt-1 max-w-2xl text-sm text-gray-500">同一版本需上传 Windows 安装器、macOS 安装镜像和在线更新包。</p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <button class="btn btn-secondary" @click="router.push({ path: '/admin/donebot', query: { tab: 'storage' } })">安装包存储设置</button>
+        <button class="btn btn-secondary" :aria-expanded="showStorage" @click="showStorage = !showStorage">安装包独立存储设置</button>
         <button class="btn btn-secondary" :disabled="busy" @click="load">刷新版本</button>
       </div>
     </div>
+
+    <ClientReleaseStoragePanel v-if="showStorage" />
 
     <p v-if="error" role="alert" class="text-sm text-red-600">{{ error }}</p>
 
@@ -57,7 +59,7 @@
     </div>
 
     <div class="flex flex-wrap items-center justify-between gap-4">
-      <p class="max-w-2xl text-xs leading-6 text-gray-500">安装包使用「存储」页的上传存储配置，可选服务器本地或 S3 兼容存储（包括 OSS / R2）；发布文件独立保留，不受素材清理策略影响。</p>
+      <p class="max-w-2xl text-xs leading-6 text-gray-500">安装包使用上方独立存储配置，支持本地或 OSS / R2。发行文件长期保留，不参与素材自动清理。</p>
       <button class="btn btn-primary" :disabled="busy || !canPublish" data-testid="publish-client-release" @click="publish">{{ busy ? '处理中…' : '发布此版本' }}</button>
     </div>
 
@@ -88,13 +90,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import ClientReleaseStoragePanel from './ClientReleaseStoragePanel.vue'
 import donebot, { type ClientRelease, type ClientReleasePlatform } from '@/api/admin/donebot'
 import { useAppStore } from '@/stores/app'
 import { isStepUpCancelled, useStepUp } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 
-const router = useRouter()
+const showStorage = ref(false)
 const app = useAppStore()
 const stepUp = useStepUp()
 const releases = ref<ClientRelease[]>([])

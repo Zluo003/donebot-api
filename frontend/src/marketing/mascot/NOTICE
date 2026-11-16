@@ -1,0 +1,1 @@
+DoneBot mascot renderer, body geometry, palette and facial motion are adapted from the DoneBot client based on OpenMausBot, licensed under Apache-2.0. The original circle, squircle, blob, capsule, hexagon and star geometry, color gradients, expressions and motion are retained. Import paths, default silhouette and accessible label are adapted for the DoneBot website.

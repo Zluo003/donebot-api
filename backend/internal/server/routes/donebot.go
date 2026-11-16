@@ -65,6 +65,8 @@ func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, ste
 		donebot.GET("/web-tools", h.Admin.DoneBot.WebTools)
 		donebot.PUT("/web-tools", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateWebTools)
 		donebot.PUT("/storage", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateStorage)
+		donebot.GET("/releases/storage", h.Admin.DoneBot.ClientReleaseStorage)
+		donebot.PUT("/releases/storage", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateClientReleaseStorage)
 		donebot.GET("/releases", h.Admin.DoneBot.ClientReleases)
 		donebot.POST("/releases/upload", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UploadClientRelease)
 		donebot.POST("/releases/:version/publish", gin.HandlerFunc(stepUp), h.Admin.DoneBot.PublishClientRelease)

@@ -377,7 +377,7 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 
 func isDoneBotMarketingPath(path string) bool {
 	switch path {
-	case "/", "/product", "/scenarios", "/cloud", "/download":
+	case "/", "/download":
 		return true
 	default:
 		return false
@@ -389,6 +389,11 @@ func isAdminFrontendPath(path string) bool {
 }
 
 func redirectLegacyFrontend(c *gin.Context, path string) bool {
+	if section, ok := map[string]string{"/product": "features", "/scenarios": "scenarios", "/cloud": "cloud"}[path]; ok {
+		c.Redirect(http.StatusFound, "/#"+section)
+		c.Abort()
+		return true
+	}
 	if path == "/index.html" {
 		c.Redirect(http.StatusFound, "/")
 		c.Abort()

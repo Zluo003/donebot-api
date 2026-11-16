@@ -164,7 +164,7 @@ func TestEmbeddedFrontendPreservesBuildAssetsAndSPAFallback(t *testing.T) {
 					require.Equal(t, http.StatusNotFound, response.Code)
 				})
 			}
-			for _, path := range []string{"/", "/product", "/admin", "/admin/login"} {
+			for _, path := range []string{"/", "/download", "/admin", "/admin/login"} {
 				t.Run(path, func(t *testing.T) {
 					response := httptest.NewRecorder()
 					router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
@@ -228,4 +228,19 @@ func (*embeddedAssetStorage) Kind() string { return "local" }
 func (s *embeddedAssetStorage) Open(context.Context, string) (io.ReadCloser, error) {
 	s.opens++
 	return io.NopCloser(bytes.NewReader(s.data)), nil
+}
+
+func TestDoneBotMarketingPagesAndSectionRedirects(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for path, section := range map[string]string{"/product": "features", "/scenarios": "scenarios", "/cloud": "cloud"} {
+		require.False(t, isDoneBotMarketingPath(path))
+		r := gin.New()
+		r.Use(func(c *gin.Context) { redirectLegacyFrontend(c, c.Request.URL.Path) })
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusFound, w.Code)
+		require.Equal(t, "/#"+section, w.Header().Get("Location"))
+	}
+	require.True(t, isDoneBotMarketingPath("/"))
+	require.True(t, isDoneBotMarketingPath("/download"))
 }

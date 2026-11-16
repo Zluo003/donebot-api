@@ -197,7 +197,7 @@ func (s *ClientReleaseService) Upload(ctx context.Context, version, platform, fi
 	case ClientReleaseMacOSArm64DMG:
 		contentType = "application/x-apple-diskimage"
 	}
-	storageConfig, err := s.storage.SaveReleaseObject(ctx, objectKey, contentType, io.TeeReader(source, io.MultiWriter(sha256Hash, sha512Hash)), size)
+	storageConfig, err := s.saveReleaseObject(ctx, objectKey, contentType, io.TeeReader(source, io.MultiWriter(sha256Hash, sha512Hash)), size)
 	if err != nil {
 		return nil, err
 	}
@@ -521,12 +521,12 @@ func yamlString(value string) string {
 	return string(quoted)
 }
 
-func (s *DoneBotStorageService) SaveReleaseObject(ctx context.Context, key, contentType string, source io.Reader, size int64) (json.RawMessage, error) {
-	policy, err := s.Policy(ctx, AssetPurposeUpload)
+func (s *ClientReleaseService) saveReleaseObject(ctx context.Context, key, contentType string, source io.Reader, size int64) (json.RawMessage, error) {
+	policy, err := s.releaseStoragePolicy(ctx)
 	if err != nil {
 		return nil, err
 	}
-	storage, err := s.storage(ctx, policy)
+	storage, err := s.storage.storage(ctx, policy)
 	if err != nil {
 		return nil, err
 	}
@@ -537,7 +537,7 @@ func (s *DoneBotStorageService) SaveReleaseObject(ctx context.Context, key, cont
 	if _, err = writer.SaveStream(ctx, key, contentType, source, size); err != nil {
 		return nil, err
 	}
-	return s.snapshot(policy)
+	return s.storage.snapshot(policy)
 }
 
 func (s *DoneBotStorageService) OpenReleaseObject(ctx context.Context, key string, storageConfig json.RawMessage) (io.ReadCloser, error) {

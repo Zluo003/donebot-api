@@ -79,7 +79,7 @@ function injectPublicSettings(backendUrl: string): Plugin {
 }
 
 function marketingPages(): Plugin {
-  const routes = new Set(['/', '/product', '/scenarios', '/cloud', '/download'])
+  const routes = new Set(['/', '/download'])
   return {
     name: 'donebot-marketing-pages',
     configureServer: server => {
@@ -91,6 +91,12 @@ function marketingPages(): Plugin {
           next()
           return
         }
+        if (['/product', '/scenarios', '/cloud'].includes(path)) {
+          response.statusCode = 302
+          response.setHeader('Location', `/#${path === '/product' ? 'features' : path.slice(1)}`)
+          response.end()
+          return
+        }
         if (path === '/login') {
           request.url = `/admin/login${query ? `?${query}` : ''}`
           next()
@@ -100,7 +106,7 @@ function marketingPages(): Plugin {
           path === '/admin' || path.startsWith('/admin/') ||
           path.startsWith('/api/') || path.startsWith('/v1/') ||
           path.startsWith('/setup/') || path.startsWith('/auth/') ||
-          path.startsWith('/assets/') || path.startsWith('/client-demo/') ||
+          path.startsWith('/assets/') ||
           path.startsWith('/@vite/') || path.startsWith('/@id/') ||
           path.startsWith('/@fs/') || path.startsWith('/@vite-plugin-checker-runtime') || path.startsWith('/@react-refresh') ||
           /\.[a-z0-9]+$/i.test(path)
@@ -139,6 +145,7 @@ export default defineConfig(({ mode }) => {
       'vue-i18n': 'vue-i18n/dist/vue-i18n.runtime.esm-bundler.js'
     }
   },
+  esbuild: { jsx: 'transform' },
   build: {
     outDir: '../backend/internal/web/dist',
     emptyOutDir: true,
@@ -154,6 +161,7 @@ export default defineConfig(({ mode }) => {
          */
         manualChunks(id: string) {
           if (id.includes('node_modules')) {
+            if (/\/(react|react-dom|scheduler)\//.test(id)) return 'vendor-mascot'
             // Vue 核心库
             if (
               id.includes('/vue/') ||

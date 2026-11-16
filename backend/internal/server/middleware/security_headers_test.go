@@ -151,7 +151,7 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
 	})
 
-	t.Run("client_demo_allows_same_origin_embedding", func(t *testing.T) {
+	t.Run("retired_client_demo_keeps_embedding_protection", func(t *testing.T) {
 		cfg := config.CSPConfig{
 			Enabled: true,
 			Policy:  "default-src 'self'; frame-ancestors 'none'",
@@ -164,13 +164,13 @@ func TestSecurityHeaders(t *testing.T) {
 
 		middleware(c)
 
-		assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
+		assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
 		csp := w.Header().Get("Content-Security-Policy")
-		assert.Equal(t, 1, countDirectiveValue(csp, "frame-ancestors", "'self'"))
-		assert.Equal(t, 0, countDirectiveValue(csp, "frame-ancestors", "'none'"))
+		assert.Equal(t, 0, countDirectiveValue(csp, "frame-ancestors", "'self'"))
+		assert.Equal(t, 1, countDirectiveValue(csp, "frame-ancestors", "'none'"))
 	})
 
-	t.Run("only_client_demo_document_allows_embedding", func(t *testing.T) {
+	t.Run("static_demo_assets_keep_embedding_protection", func(t *testing.T) {
 		cfg := config.CSPConfig{Enabled: true, Policy: "default-src 'self'; frame-ancestors 'none'"}
 		middleware := SecurityHeaders(cfg, nil)
 

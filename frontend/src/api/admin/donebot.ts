@@ -44,6 +44,7 @@ export interface StoragePolicyInput {
 export interface StoragePolicy extends StoragePolicyInput { secret_configured?: boolean; usage_bytes?: number; file_count?: number }
 export interface StorageSettingsInput { upload: StoragePolicyInput; generated: StoragePolicyInput }
 export interface StorageSettings { upload: StoragePolicy; generated: StoragePolicy }
+export interface ClientReleaseStorageSettings { driver: 'local' | 's3'; local_path: string; s3: StoragePolicyInput['s3']; secret_configured?: boolean }
 export type ClientReleasePlatform = 'windows-x64' | 'macos-arm64' | 'macos-arm64-dmg'
 export interface ClientReleaseArtifact { filename: string; size_bytes: number; sha256: string; sha512: string; download_url: string }
 export interface ClientRelease { version: string; notes?: string; status: 'draft' | 'published'; created_at: string; published_at?: string; platforms: Partial<Record<ClientReleasePlatform, ClientReleaseArtifact>> }
@@ -65,6 +66,8 @@ const donebot = {
  async saveWebTools(input: WebToolsSettingsInput) { return (await apiClient.put<WebToolsSettings>('/admin/donebot/web-tools', input)).data },
  async storage() { return (await apiClient.get<StorageSettings>('/admin/donebot/storage')).data },
  async saveStorage(input: StorageSettingsInput) { return (await apiClient.put<StorageSettings>('/admin/donebot/storage', input)).data },
+ async clientReleaseStorage() { return (await apiClient.get<ClientReleaseStorageSettings>('/admin/donebot/releases/storage')).data },
+ async saveClientReleaseStorage(input: ClientReleaseStorageSettings) { return (await apiClient.put<ClientReleaseStorageSettings>('/admin/donebot/releases/storage', input)).data },
  async clientReleases() { return (await apiClient.get<{ releases: ClientRelease[] }>('/admin/donebot/releases')).data },
  async uploadClientRelease(input: FormData) { return (await apiClient.post<ClientRelease>('/admin/donebot/releases/upload', input, { headers: { 'Content-Type': 'multipart/form-data' } })).data },
  async publishClientRelease(version: string) { return (await apiClient.post<ClientRelease>(`/admin/donebot/releases/${encodeURIComponent(version)}/publish`)).data },

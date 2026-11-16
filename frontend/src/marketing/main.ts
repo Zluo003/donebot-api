@@ -1,310 +1,461 @@
 import "./site.css";
 
-type PageId = "home" | "product" | "scenarios" | "cloud" | "download";
 type Theme = "light" | "dark";
-type Platform = "windows-x64" | "macos-arm64" | "macos-arm64-dmg";
-type Artifact = { filename: string; size_bytes: number; sha256: string; download_url: string };
-type Release = { version: string; notes?: string; published_at?: string; platforms: Partial<Record<Platform, Artifact>> };
-
-const themeSkin: Record<Theme, string> = { light: "daylight", dark: "midnight" };
-const currentTheme = (): Theme => document.documentElement.dataset.theme === "dark" ? "dark" : "light";
-
-const routes: Record<string, PageId> = {
-  "/": "home",
-  "/product": "product",
-  "/scenarios": "scenarios",
-  "/cloud": "cloud",
-  "/download": "download",
+type Platform = "windows-x64" | "macos-arm64-dmg";
+type Artifact = { filename: string; size_bytes: number; download_url: string };
+type Release = {
+  version: string;
+  notes?: string;
+  platforms: Partial<Record<Platform, Artifact>>;
 };
-const page = routes[location.pathname.replace(/\/$/, "") || "/"] ?? "home";
-const navItems: Array<{ href: string; id: PageId; label: string }> = [
-  { href: "/product", id: "product", label: "产品能力" },
-  { href: "/scenarios", id: "scenarios", label: "使用场景" },
-  { href: "/cloud", id: "cloud", label: "云端与手机" },
-  { href: "/download", id: "download", label: "下载客户端" },
+type Scene = {
+  name: string;
+  role: string;
+  headline: string;
+  description: string;
+  benefit: string;
+  tasks: string[];
+  ask: string;
+  reply: string;
+  work: string;
+  files: string[];
+  result: string;
+};
+const scenes: Scene[] = [
+  {
+    name: "独立站团队",
+    role: "增长研究员",
+    headline: "让每一次上新，\n都有更充分的准备。",
+    description:
+      "把评论、竞品和商品资料变成购买理由，再交给内容与设计机器人接着做。运营、设计、投放围绕同一份研究推进。",
+    benefit: "少重复调研，少来回沟通，让团队更快测试能打动顾客的卖点。",
+    tasks: [
+      "研究机器人：归纳用户顾虑与购买动机",
+      "内容机器人：完成商品页和广告文案",
+      "设计机器人：整理主图方向与补拍清单",
+    ],
+    ask: "分析这 60 条商品评价，整理购买动机，再准备商品页文案和素材清单。",
+    reply: "我会先合并重复反馈，找到用户最在意的卖点，再交给内容和设计机器人。",
+    work: "正在整理评论与竞品信息",
+    files: ["用户洞察与来源.docx", "商品页文案.docx", "素材拍摄清单.xlsx"],
+    result: "研究、文案和素材需求已经整理好，团队可以直接开始下一步。",
+  },
+  {
+    name: "TikTok Shop",
+    role: "广告创意助手",
+    headline: "从一个商品卖点，\n到多种广告创意。",
+    description:
+      "围绕产品卖点和目标人群，准备不同 Hook、脚本和分镜，生成画面、配音与音乐，再剪成可供团队评审的短视频。",
+    benefit: "把时间花在测试创意上，让每次投放都有更多角度可以选。",
+    tasks: [
+      "研究机器人：提炼受众痛点与使用场景",
+      "创意机器人：写出三种开场与分镜",
+      "视频机器人：制作画面、字幕与配乐",
+    ],
+    ask: "给这款便携榨汁杯做 3 条广告视频，分别突出通勤、健身和露营场景。",
+    reply:
+      "先做三种开场：早八早餐、训练后补给、周末轻露营。每条都包含产品演示和行动引导。",
+    work: "正在准备脚本、分镜与视频素材",
+    files: ["三版广告脚本.docx", "分镜与素材清单.xlsx", "广告视频草稿.mp4"],
+    result: "三种创意方向已经就绪，字幕和配乐已加入，等你挑选和调整。",
+  },
+  {
+    name: "自媒体工作室",
+    role: "内容研究员",
+    headline: "不再从空白开始，\n把好题材做成内容。",
+    description:
+      "持续关注行业动态与受众反馈，筛选有价值的题材，附上来源和素材，再接着写稿、制作画面与音乐、自动剪辑。",
+    benefit: "减少搜集和整理的时间，让创作者专注角度、判断与表达。",
+    tasks: [
+      "研究机器人：搜集信息，核对引用来源",
+      "编辑机器人：整理选题、标题与脚本",
+      "制作机器人：准备素材并剪辑视频",
+    ],
+    ask: "追踪本周 AI 创作工具动态，找 5 个选题，整理来源，并做一条 60 秒视频草稿。",
+    reply:
+      "我会核对官方更新和创作者反馈，合并重复信息，优先选择有新变化、能讲清楚的题材。",
+    work: "正在核对来源并整理选题",
+    files: ["本周选题与来源.docx", "脚本与素材清单.xlsx", "60秒视频草稿.mp4"],
+    result: "5 个选题、原始来源和视频草稿已经整理好，工作室可以接着创作。",
+  },
 ];
-
-function header(): string {
-  return `<header class="site-header">
-    <a class="brand" href="/" aria-label="DoneBot 首页"><img class="brand-mark" src="/donebot-logo.png" alt="" /><span>DoneBot</span></a>
-    <nav class="site-nav" aria-label="主导航">${navItems.map((item) => `<a class="${page === item.id ? "is-current" : ""}" href="${item.href}">${item.label}</a>`).join("")}</nav>
-    <div class="header-actions"><div class="theme-toggle" role="group" aria-label="选择显示主题"><button type="button" data-theme-choice="light" aria-label="浅色模式" title="浅色模式" aria-pressed="${currentTheme() === "light"}"><img class="theme-icon" src="/marketing-icons/sun.svg" alt="" /></button><button type="button" data-theme-choice="dark" aria-label="深色模式" title="深色模式" aria-pressed="${currentTheme() === "dark"}"><img class="theme-icon" src="/marketing-icons/moon.svg" alt="" /></button></div></div>
-  </header>`;
+const isDownload = location.pathname.replace(/\/$/, "") === "/download";
+const icon = (name: string, extra = "") =>
+  `<img class="icon ${extra}" src="/marketing-icons/${name}.svg" alt="" aria-hidden="true" />`;
+const mascot = (
+  state = "idle",
+  extra = "",
+  body = "circle",
+  color = "yellow",
+) =>
+  `<span class="mascot ${extra}" data-mascot="${state}" data-body="${body}" data-color="${color}" aria-hidden="true"></span>`;
+const botLooks = [
+  ["circle", "yellow"],
+  ["squircle", "cyan"],
+  ["blob", "pink"],
+] as const;
+function heroWordmark() {
+  const letters = [..."DoneBot"]
+    .map(
+      (letter, i) =>
+        `<span class="letter-arrival" style="--i:${i}"><span class="hero-letter">${letter}</span></span>`,
+    )
+    .join("");
+  const flyers = [
+    ["playful", "circle", "yellow"],
+    ["thinking", "squircle", "cyan"],
+    ["happy", "blob", "pink"],
+    ["working", "capsule", "orange"],
+    ["curious", "hexagon", "teal"],
+    ["proud", "star", "chrome"],
+  ]
+    .map(
+      ([state, body, color], i) =>
+        `<span class="hero-flyer" style="--i:${i}">${mascot(state, "", body, color)}</span>`,
+    )
+    .join("");
+  return `<div class="hero-wordmark" aria-hidden="true"><span class="wordmark-ghost ghost-top">DoneBot</span><span class="wordmark-main">${letters}</span><span class="wordmark-ghost ghost-bottom">DoneBot</span>${flyers}</div>`;
 }
+const brand = () =>
+  `<a class="brand" href="/" aria-label="DoneBot 首页"><img src="/donebot-logo.png" width="29" height="29" alt="" /><span>DoneBot</span></a>`;
+const theme = (): Theme =>
+  document.documentElement.dataset.theme === "dark" ? "dark" : "light";
 
-function footer(): string {
-  return `<footer class="site-footer">
-    <a class="brand" href="/"><img class="brand-mark" src="/donebot-logo.png" alt="" /><span>DoneBot</span></a>
-    <span>一个机器人，接住从想法到交付的工作。</span>
-    <a href="/download">获取最新版 <span aria-hidden="true">↗</span></a>
-  </footer>`;
+function header() {
+  return `<a class="skip-link" href="#main">跳到内容</a><header class="site-header"><div class="header-inner">${brand()}<nav aria-label="主导航"><a href="/#features">产品能力</a><a href="/#scenarios">使用场景</a><a href="/#cloud">云端与手机</a></nav><div class="header-actions"><a href="/download" class="button small primary">下载 DoneBot ${icon("arrow-up-right")}</a><button class="theme-toggle" type="button" aria-label="切换到${theme() === "dark" ? "浅" : "深"}色模式" title="切换主题">${icon("sun", "sun-icon")}${icon("moon", "moon-icon")}</button></div></div></header>`;
 }
-
-function clientFrame(scene: "store" | "tiktok" | "studio", extraClass = "", phone = false): string {
-  const query = new URLSearchParams({ scene, skin: themeSkin[currentTheme()] });
-  if (phone) query.set("layout", "phone");
-  const src = `/client-demo/client-demo.html?${query.toString().replace(/&/g, "&amp;")}`;
-  return `<div class="client-stage ${extraClass}">
-    <iframe title="DoneBot 实际客户端动态演示" src="${src}" loading="eager" allow="clipboard-read; clipboard-write"></iframe>
-    <div class="client-stage-caption"><span class="live-dot"></span><span>DoneBot 客户端 · 实时演示</span><span class="caption-scene">${scene === "store" ? "独立站协作" : scene === "tiktok" ? "短视频投放" : "内容研究"}</span></div>
-  </div>`;
+function footer() {
+  return `<footer class="site-footer"><div class="footer-inner">${brand()}<p>让任务走到完成。</p><a href="/download">下载客户端 ${icon("arrow-up-right")}</a><span>© ${new Date().getFullYear()} DoneBot</span></div></footer>`;
 }
-
-function home(): string {
-  return `<main class="page page-home">
-    <section class="home-hero section-dark">
-      <div class="hero-copy reveal">
-        <p class="eyebrow"><span class="eyebrow-rule"></span> 7×24 云端机器人团队</p>
-        <h1>机器人团队<br /><span>持续工作。</span></h1>
-        <p class="hero-lede">你下班后，DoneBot 仍在云端搜集信息、整理文件、制作内容并推进任务。手机随时查看和补充，早上团队直接接手结果。</p>
-        <div class="hero-actions"><a class="button button-red" href="/download">下载 DoneBot <span aria-hidden="true">↗</span></a><a class="text-link" href="/product">看看它能做什么 <span aria-hidden="true">→</span></a></div>
-        <div class="hero-latest">当前最新版 <strong data-latest-version>正在获取</strong></div>
-      </div>
-      <div class="hero-live reveal reveal-late">
-        <div class="demo-label"><span>01 / 一条任务，完整交付</span><span class="demo-label-live"><i></i> LIVE</span></div>
-        ${clientFrame("store", "client-stage-home")}
-        <div class="hero-flow" aria-label="全天候协作流程"><span>你交代任务</span><b></b><span>云端整夜推进</span><b></b><span>手机与团队接力</span></div>
-      </div>
-      <a class="scroll-cue" href="#workflows"><span></span> 向下探索</a>
+function demo(phone = false) {
+  const scene = scenes[phone ? 2 : 0]!;
+  return `<div class="demo ${phone ? "phone-demo" : "desktop-demo"}" data-demo="${phone ? "scenario" : "hero"}" data-step="0" role="img" aria-label="DoneBot 自动任务演示：从研究、内容到文件交付">
+    ${phone ? '<div class="phone-island"></div>' : `<aside class="demo-sidebar"><div class="workspace-label">${icon("cloud")} 我的机器人团队</div><div class="sidebar-label">机器人 <span>7×24 在线</span></div>${scenes.map((s, i) => `<div class="bot-row ${i === 0 ? "active" : ""}" data-bot-row="${i}">${mascot(i === 0 ? "thinking" : "idle", "", ...botLooks[i]!)}<div><strong>${s.role}</strong><small>${["正在处理任务", "准备创意方向", "持续关注新动态"][i]}</small></div><span class="online-dot"></span></div>`).join("")}<div class="sidebar-note">交代目标，接收结果。<br />让机器人各司其职。</div></aside>`}
+    <div class="demo-main"><div class="demo-top">${mascot("thinking", "", ...botLooks[phone ? 2 : 0]!)}<div><strong data-demo-role>${scene.role}</strong><span>DoneBot · <span data-demo-status>正在执行</span></span></div></div>
+    <div class="demo-conversation"><div class="conversation-label">${phone ? "今天 · 云端工作空间" : "今天的任务"}</div><div class="demo-message user-message" data-demo-ask>${scene.ask}</div><div class="demo-message bot-message stage-one" data-demo-reply>${scene.reply}</div><div class="work-state stage-two">${mascot("working", "", ...botLooks[phone ? 2 : 0]!)}<span data-demo-work>${scene.work}</span><span class="typing-dots"><i></i><i></i><i></i></span></div><div class="deliverables stage-three"><span class="delivery-label">${icon("check")} 已整理交付</span><div data-demo-files>${scene.files.map((file) => `<div class="file-row">${icon(file.endsWith("mp4") ? "play" : "file-text")}<span>${file}</span>${icon("check")}</div>`).join("")}</div><p data-demo-result>${scene.result}</p></div></div><div class="demo-bottom">${icon("shield-check")} 按你的授权执行，关键动作由你决定</div></div></div>`;
+}
+function home() {
+  return `<main id="main">
+    <section class="hero container">
+      ${heroWordmark()}
+      <div class="hero-copy"><p class="eyebrow"><span class="online-dot"></span> 你的 7×24 机器人团队</p><h1>让<span class="rotating-word" data-rotating-word>日常工作</span>，自动向前。</h1><p class="hero-description">会研究、能创作、懂协作。<br class="mobile-only" />从一句交代，到一份能用的结果。<br class="desktop-only" />把重复的工作交给 DoneBot，把时间留给更重要的事。</p><div class="hero-actions"><a class="button primary" href="/download">${icon("download")} 下载 DoneBot</a><a class="button secondary" href="#demo">看看它怎么工作 ${icon("arrow-right")}</a></div><p class="platform-note">${icon("apple")} macOS Apple 芯片 <span>·</span> ${icon("windows")} Windows x64</p></div>
+      <div id="demo" class="hero-demo">${demo()}<p class="demo-caption">你定方向，机器人把工作接着做。</p></div>
     </section>
-    <section class="workflow-intro section-light" id="workflows">
-      <div class="section-kicker reveal">不是只会回答</div>
-      <div class="workflow-head reveal"><h2>从一句需求，<br />到一份能用的结果。</h2><p>DoneBot 会理解上下文、调用需要的应用、把中间产物整理好，再把下一步接上。</p></div>
-      <div class="workflow-rail" data-reveal-group>
-        <article class="workflow-step is-active"><span class="step-index">01</span><div><h3>说清目标</h3><p>用自然语言交代要解决的问题、背景和交付方式。</p></div></article>
-        <article class="workflow-step"><span class="step-index">02</span><div><h3>机器人展开工作</h3><p>查资料、读文档、连接应用、生成内容，按任务推进。</p></div></article>
-        <article class="workflow-step"><span class="step-index">03</span><div><h3>结果交回团队</h3><p>文稿、素材、视频草稿与后续任务保持在同一条工作线上。</p></div></article>
-      </div>
+    <section class="section container getting-started"><div class="section-heading"><p class="eyebrow">从第一句话开始</p><h2>多一位同事，<br class="mobile-only" />少一些琐事。</h2><p>不用先学一套复杂流程。像交代同事一样，把目标告诉它。</p></div><div class="steps-grid">${[
+      ["download", "下载并登录", "安装 DoneBot 客户端，登录你的账号。"],
+      ["bot", "组建机器人团队", "给研究、运营、创作安排合适的机器人。"],
+      ["mail", "告诉它你的目标", "说清想要的结果，补充必要的背景与文件。"],
+      ["check", "把结果拿来用", "接收文档、素材和成品，继续追问或调整。"],
+    ]
+      .map(
+        ([symbol, title, desc], i) =>
+          `<article class="step-card"><div class="step-top"><span>0${i + 1}</span>${icon(symbol!)}</div><h3>${title}</h3><p>${desc}</p></article>`,
+      )
+      .join("")}</div></section>
+    <section class="section container" id="features"><div class="section-heading"><p class="eyebrow">能做的，比你想的更多</p><h2>从信息，到成品。<br />工作在这里连起来。</h2><p>文档、图片、视频、音乐，还有你每天使用的应用。<br class="desktop-only" />让一个目标带动一整段工作。</p></div>
+      <div class="feature-grid"><article class="feature-card feature-wide"><div class="feature-copy"><span class="feature-icon">${icon("search")}</span><h3>找得到信息，<br />也整理得出结论。</h3><p>搜索网页、阅读文件、比对资料。把散落的信息变成有来源的报告、表格和下一步行动。</p><span class="benefit">少找一遍资料，多做一步判断。</span></div><div class="research-art" aria-hidden="true"><div class="research-source"><span>商品评价</span><span>竞品资料</span><span>行业动态</span></div><div class="document-art"><div class="document-top">${icon("file-text")} 用户洞察报告 <span>已完成</span></div><h4>从用户反馈，找到增长机会。</h4><div class="document-metric"><strong>60</strong><span>条评价已归纳</span><strong>3</strong><span>个核心购买理由</span></div><div class="document-item">${icon("check")} 购买动机与常见顾虑</div><div class="document-item">${icon("check")} 页面文案与素材建议</div><div class="document-item">${icon("check")} 原始来源与引用记录</div></div>${mascot("writing", "research-mascot", "squircle", "cyan")}</div></article>
+      <article class="feature-card media-card"><div class="media-art image-art" aria-hidden="true"><div class="image-poster"><span>NEW<br />PERSPECTIVE.</span><div class="poster-orbit"></div><small>为你的品牌，换个新视角。</small></div><div class="image-swatch"><i></i><i></i><i></i><span>品牌素材</span></div></div><div class="feature-copy"><h3>${icon("image")} 图片与设计</h3><p>商品主图、内容封面、广告素材。把卖点变成看得见的表达。</p></div></article>
+      <article class="feature-card media-card"><div class="media-art video-art" aria-hidden="true"><div class="video-frame"><span>通勤路上，<br />也有新鲜好状态。</span><div class="play-badge">${icon("play")}</div><small>00:18 / 00:30</small></div><div class="video-tracks"><span>画面</span><i></i><i></i><i></i><span>字幕 · 配乐</span></div></div><div class="feature-copy"><h3>${icon("play")} 视频与剪辑</h3><p>脚本、分镜、画面、字幕到自动剪辑，让创意更快进入评审。</p></div></article>
+      <article class="feature-card media-card"><div class="media-art music-art" aria-hidden="true"><div class="music-disc">${icon("music")}</div><div class="waveform">${Array.from({ length: 26 }, (_, i) => `<i style="--bar:${18 + ((i * 31) % 53)}px;--delay:${i * 0.07}s"></i>`).join("")}</div><span>让每个画面，都有情绪。</span></div><div class="feature-copy"><h3>${icon("music")} 音乐与声音</h3><p>为短视频、品牌和故事创作配乐或歌曲，让表达完整发生。</p></div></article></div>
     </section>
-    <section class="media-strip section-red">
-      <div class="media-strip-head"><p class="eyebrow"><span class="eyebrow-rule"></span> 一种能力，多种产出</p><h2>文档、图片、视频、音乐，<br />都能在任务里完成。</h2></div>
-      <div class="media-words" aria-label="内容类型"><span>文档</span><span>图片</span><span>视频</span><span>音乐</span></div>
-      <a class="light-link" href="/product">探索产品能力 <span aria-hidden="true">→</span></a>
-    </section>
-    <section class="scenes-preview section-light">
-      <div class="section-kicker reveal">放进真实业务里</div>
-      <div class="scenes-head reveal"><h2>同一个机器人，<br />接住不同团队的工作。</h2><a class="text-link" href="/scenarios">查看场景 <span aria-hidden="true">→</span></a></div>
-      <div class="scene-lines" data-reveal-group>
-        <a href="/scenarios#store"><span>01</span><strong>独立站团队</strong><span>调研 → 页面文案 → 素材任务</span><span class="scene-arrow">↗</span></a>
-        <a href="/scenarios#tiktok"><span>02</span><strong>TikTok Shop</strong><span>卖点 → 脚本分镜 → 广告视频</span><span class="scene-arrow">↗</span></a>
-        <a href="/scenarios#studio"><span>03</span><strong>自媒体工作室</strong><span>搜集信息 → 选题素材 → 剪辑草稿</span><span class="scene-arrow">↗</span></a>
-      </div>
-    </section>
-    <section class="apps-band section-dark">
-      <div class="apps-count reveal"><strong>1,000<span>+</span></strong><span>可连接的应用</span></div>
-      <div class="apps-copy reveal"><p class="eyebrow"><span class="eyebrow-rule"></span> 让工作留在原来的地方</p><h2>一个机器人，<br />连接团队已经在用的工具。</h2><p>邮件、文档、表格、商店、社交平台与自动化服务，按任务接入，让信息和动作连起来。</p><a class="text-link text-link-light" href="/product">了解应用连接 <span aria-hidden="true">→</span></a></div>
-      <div class="app-flow" aria-hidden="true"><span>SHOPIFY</span><i></i><span>NOTION</span><i></i><span>GOOGLE DRIVE</span><i></i><span>TIKTOK</span><i></i><span>SLACK</span></div>
-    </section>
-    <section class="last-cta section-light"><p class="eyebrow"><span class="eyebrow-rule"></span> 把时间留给更重要的工作</p><h2>交代一次，<br />让 DoneBot 接着做。</h2><a class="button button-dark" href="/download">下载客户端 <span aria-hidden="true">↗</span></a></section>
+    <section class="section container" id="scenarios"><div class="section-heading"><p class="eyebrow">放进你的业务里</p><h2>不只是功能。<br />是团队每天少一点忙乱。</h2><p>从研究、创作到交付，让机器人接住那些反复发生的工作。</p></div><div class="scenarios-layout"><div class="scenario-content"><div class="scene-tabs" role="tablist" aria-label="选择使用场景">${scenes.map((scene, i) => `<button type="button" role="tab" id="scene-tab-${i}" aria-controls="scene-panel" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-scene="${i}">${scene.name}</button>`).join("")}</div><div id="scene-panel" role="tabpanel" aria-labelledby="scene-tab-0"><h3 data-scene-headline></h3><p class="scene-description" data-scene-description></p><div class="handoff" data-scene-tasks></div><div class="scene-benefit">${icon("zap")}<p data-scene-benefit></p></div></div></div><div class="phone-wrap">${demo(true)}</div></div></section>
+    <section class="section container" id="cloud"><div class="cloud-card"><div class="cloud-copy"><p class="eyebrow">电脑可以休息，云端团队继续。</p><h2>7×24<span>一直有进展。</span></h2><p>把需要持续在线的机器人放在 Cloud 工作空间。你离开电脑后，它们仍在搜集信息、跟踪变化、推进任务。</p><p>手机随时查看进展、补充方向。回到工作时，先看结果，再做决定。</p><div class="cloud-tags"><span>${icon("cloud")} 云端持续运行</span><span>${icon("smartphone")} 手机随时查看</span></div></div><div class="night-shift"><div class="shift-label"><span>云端团队的一晚</span><span class="online-dot"></span> 持续在线</div><div class="shift-row"><time>22:00</time>${mascot("thinking")}<div><strong>研究机器人</strong><span>追踪行业动态，整理可靠来源</span></div></div><div class="shift-row"><time>02:30</time>${mascot("writing", "", "blob", "pink")}<div><strong>内容机器人</strong><span>将新信息整理成选题与脚本</span></div></div><div class="shift-row"><time>07:00</time>${mascot("working", "", "capsule", "orange")}<div><strong>运营机器人</strong><span>汇总进展，准备今日工作简报</span></div></div><div class="morning-result">${icon("check")} 早上好，新的工作简报已准备好。</div></div></div></section>
+    <section class="section container apps-section"><div class="section-heading"><p class="eyebrow">应用连接，也是机器人的能力</p><h2>1,000+ 个应用，<br />接进你的工作。</h2><p>资料在文档，订单在商店，讨论在团队工具里。<br class="desktop-only" />按需授权，让机器人在你已有的工具之间完成工作。</p></div><div class="app-chips" aria-label="可连接的应用示例">${["Shopify", "Google Drive", "Notion", "Slack", "Gmail", "TikTok", "Google Sheets", "WordPress", "Discord", "GitHub", "Outlook", "Zapier"].map((name, i) => `<span>${icon(["layers", "file-text", "file-text", "mail", "mail", "play", "file-text", "globe", "mail", "layers", "mail", "zap"][i]!)}${name}</span>`).join("")}</div><p class="small-note">根据所用应用安装相应能力，并完成必要授权。</p></section>
+    <section class="section container faq-section"><div class="section-heading"><p class="eyebrow">还有几个你可能想问的</p><h2>先了解，再开始。</h2></div><div class="faq-list">${[
+      [
+        "DoneBot 和普通 AI 聊天有什么不同？",
+        "除了回答问题，DoneBot 还能读取文件、研究信息、创作多媒体、调用应用，并由不同角色的机器人协作完成任务。你可以继续补充要求，让它沿着目标往下做。",
+      ],
+      [
+        "本地电脑关机后，机器人还会工作吗？",
+        "本地工作空间的机器人需要电脑保持运行。Cloud 工作空间中的机器人在云端独立运行，可以 7×24 工作；电脑关机不影响云端机器人。",
+      ],
+      [
+        "我可以从手机查看吗？",
+        "可以。通过手机连接相应的工作空间，查看机器人进展、补充信息或确认关键操作。本地工作空间仍需要电脑在线，Cloud 工作空间不依赖本地电脑运行。",
+      ],
+      [
+        "图片、视频、音乐需要切换到别的软件吗？",
+        "你可以直接在任务里要求机器人制作图片、视频和音乐，再结合文档、脚本与素材继续处理。需要使用其他应用时，可以按需安装对应能力并授权。",
+      ],
+      [
+        "它会未经确认就执行操作吗？",
+        "DoneBot 按你授予的权限执行任务。你可以设置机器人和工具的使用范围；需要人工决定的关键步骤，可以在对话中确认。",
+      ],
+      [
+        "支持什么系统？怎样升级？",
+        "目前支持 Windows x64 和搭载 Apple 芯片的 macOS。安装后通过客户端检查更新即可获取新版，官网也会提供最新已发布版本。",
+      ],
+    ]
+      .map(
+        ([q, a]) =>
+          `<details><summary>${q}${icon("chevron-down")}</summary><p>${a}</p></details>`,
+      )
+      .join("")}</div></section>
+    <section class="final-cta container">${mascot("happy", "cta-mascot")}<p class="eyebrow">你的下一位同事，准备好了。</p><h2>把工作交给 DoneBot。<br />把时间，还给你。</h2><a class="button primary" href="/download">${icon("download")} 下载 DoneBot</a><p class="small-note">macOS Apple 芯片 · Windows x64</p></section>
   </main>`;
 }
-
-function product(): string {
-  return `<main class="page page-product">
-    <section class="page-hero section-dark product-hero"><div class="page-hero-copy reveal"><p class="eyebrow"><span class="eyebrow-rule"></span> 产品能力</p><h1>把多种工作，<br /><span>交给同一个机器人。</span></h1><p>DoneBot 不止生成答案。它能在同一段任务里搜集信息、处理文件、创作多媒体，再连接你正在用的应用。</p><a class="button button-red" href="/download">开始使用 <span aria-hidden="true">↗</span></a></div><div class="product-live reveal reveal-late">${clientFrame("tiktok", "client-stage-product")}</div></section>
-    <section class="capabilities section-light"><div class="section-kicker reveal">从信息到成品</div><h2 class="capabilities-title reveal">工作需要什么，<br />它就接着做什么。</h2>
-      <div class="capability-list" data-reveal-group>
-        <article><span class="capability-no">01</span><div><h3>文档与研究</h3><p>搜索资料、比对信息、汇总报告，把来源和结论放在一起。</p></div><span class="capability-result">找信息 → 有依据的判断</span></article>
-        <article><span class="capability-no">02</span><div><h3>图片与设计素材</h3><p>围绕产品卖点生成图像方向和素材，服务页面、广告与内容创作。</p></div><span class="capability-result">有想法 → 可用素材</span></article>
-        <article><span class="capability-no">03</span><div><h3>视频与剪辑</h3><p>从脚本、分镜到视频素材与剪辑草稿，让创意更快进入制作。</p></div><span class="capability-result">一个主题 → 多条视频</span></article>
-        <article><span class="capability-no">04</span><div><h3>音乐与声音</h3><p>为内容制作合适的音乐，让视频从画面到声音都准备好。</p></div><span class="capability-result">画面 → 完整表达</span></article>
-      </div>
-    </section>
-    <section class="connected-work section-red"><div class="connected-work-copy reveal"><p class="eyebrow"><span class="eyebrow-rule"></span> 应用扩展是机器人的能力</p><h2>连接 1,000+ 个应用，<br />让任务跨过工具边界。</h2><p>当资料在文档、订单在商店、讨论在团队工具里，DoneBot 可以按你的授权调用应用，把动作接起来。</p><a class="light-link" href="/scenarios">看团队怎么接力 <span aria-hidden="true">→</span></a></div><div class="connector-flow reveal reveal-late"><div class="connector-node">任务<br /><strong>找出高转化卖点</strong></div><div class="connector-path"><span>读取评价</span><i></i><span>写页面</span><i></i><span>同步素材任务</span></div><div class="connector-node connector-node-end">交付<br /><strong>结果回到团队</strong></div></div></section>
-    <section class="product-principle section-light"><div class="section-kicker reveal">一直在同一条线上</div><div class="principle-columns"><h2 class="reveal">上下文不断，<br />工作才不会重来。</h2><div class="principle-copy reveal"><p>机器人记得当前任务的目标和进度。你可以继续追问、补充文件、调整方向，或让团队成员从结果接手。</p><p>从本地客户端到云端工作空间，DoneBot 围绕同一套机器人体验延展。</p><a class="text-link" href="/cloud">了解云端与手机 <span aria-hidden="true">→</span></a></div></div></section>
-  </main>`;
+function download() {
+  return `<main id="main" class="download-page container"><div class="download-heading"><img src="/donebot-logo.png" width="64" height="64" alt="DoneBot" /><h1>下载 DoneBot</h1><p>你的机器人团队，从这里开始。</p><span class="release-status" role="status" data-release-status>正在获取最新版本…</span></div><div class="download-grid">${[
+    [
+      "macos-arm64-dmg",
+      "apple",
+      "macOS",
+      "Apple 芯片 · M 系列",
+      "下载 DMG",
+      "打开 DMG，将 DoneBot 拖入「应用程序」。",
+    ],
+    [
+      "windows-x64",
+      "windows",
+      "Windows",
+      "x64 · 64 位",
+      "下载 EXE",
+      "打开安装程序，按提示完成安装。",
+    ],
+  ]
+    .map(
+      ([platform, symbol, title, description, label, hint]) =>
+        `<article class="download-card">${icon(symbol!, "platform-logo")}<h2>${title}</h2><p>${description}</p><a class="button primary is-disabled" data-download-platform="${platform}" aria-disabled="true" tabindex="-1">${icon("download")} ${label}</a><span class="package-meta" data-package-meta="${platform}">正在检查安装包</span><p class="install-hint">${hint}</p></article>`,
+    )
+    .join(
+      "",
+    )}</div><p class="download-footnote">已安装 DoneBot？在客户端检查更新即可。</p><button class="retry-release" type="button" hidden>重新获取版本</button></main>`;
 }
+const root = document.querySelector<HTMLDivElement>("#donebot-site")!;
+root.innerHTML = header() + (isDownload ? download() : home()) + footer();
+const mascotRenderer = isDownload ? null : import("./mascot/mount");
+void mascotRenderer?.then((module) => module.mountMascots());
 
-function scenarios(): string {
-  return `<main class="page page-scenarios">
-    <section class="page-hero section-dark scenarios-hero"><div class="page-hero-copy reveal"><p class="eyebrow"><span class="eyebrow-rule"></span> 使用场景</p><h1>一条工作链路，<br /><span>让团队少切换。</span></h1><p>从研究到内容，从商品卖点到广告素材，DoneBot 把多角色之间容易断开的工作连起来。</p></div><div class="scenario-live reveal reveal-late">${clientFrame("store", "client-stage-scenarios")}</div></section>
-    <section class="scenario-tabs section-light"><div class="scene-selector" role="tablist" aria-label="选择团队场景">
-      <button class="scene-tab is-active" role="tab" aria-selected="true" data-scene="store"><span>01</span>独立站团队</button><button class="scene-tab" role="tab" aria-selected="false" data-scene="tiktok"><span>02</span>TikTok Shop</button><button class="scene-tab" role="tab" aria-selected="false" data-scene="studio"><span>03</span>自媒体工作室</button>
-    </div><div class="scene-detail" data-scene-detail>
-      <div class="scene-detail-copy"><p class="eyebrow"><span class="eyebrow-rule"></span><span data-scene-eyebrow>商品研究到上架</span></p><h2 data-scene-title>让商品页和素材，<br />从同一份研究开始。</h2><p data-scene-copy>先归纳评论里的真实购买理由，再完成详情页结构、广告卖点和拍摄任务。运营、设计和投放不必反复找同一份资料。</p><div class="scene-outcome"><span>带来的变化</span><strong data-scene-outcome>研究、文案、素材一次交接，减少等待和重复沟通。</strong></div></div><div class="scene-steps" data-scene-steps><div class="scene-step is-active"><span>01</span><div><strong>读评论与竞品</strong><small>快速看见购买动机和顾虑</small></div></div><div class="scene-step"><span>02</span><div><strong>生成页面与广告内容</strong><small>把卖点变成可发布的表达</small></div></div><div class="scene-step"><span>03</span><div><strong>同步团队下一步</strong><small>让素材工作直接开始</small></div></div></div>
-    </div></section>
-    <section class="scenario-video section-red"><div class="scenario-video-copy reveal"><p class="eyebrow"><span class="eyebrow-rule"></span> 视频广告从目标出发</p><h2>不是只写一段脚本，<br />而是把广告做成投放准备。</h2><p>围绕产品卖点生成 Hook、分镜、字幕和视频素材，让团队可以更快制作不同角度的创意。</p></div><div class="ad-angles" data-reveal-group><span>痛点开场</span><span>对比演示</span><span>真实场景</span><span>优惠行动</span></div></section>
-    <section class="studio-work section-light"><div class="studio-work-copy reveal"><p class="eyebrow"><span class="eyebrow-rule"></span> 内容团队的素材流水线</p><h2>从信息过载，<br />到下一条值得发的内容。</h2><p>机器人跟踪变化，筛出值得做的题材，整理可靠来源与素材，再协助制作短视频草稿。</p></div><div class="studio-steps" data-reveal-group><div><span>收集</span><strong>行业变化与受众反馈</strong></div><div><span>筛选</span><strong>有角度、有来源的选题</strong></div><div><span>制作</span><strong>文案、画面、字幕、配乐</strong></div><div><span>交付</span><strong>可继续编辑的视频草稿</strong></div></div></section>
-    <section class="last-cta section-dark"><p class="eyebrow"><span class="eyebrow-rule"></span> 让每个人少做重复劳动</p><h2>下一条任务，<br />交给 DoneBot 接手。</h2><a class="button button-red" href="/download">下载客户端 <span aria-hidden="true">↗</span></a></section>
-  </main>`;
-}
-
-function cloud(): string {
-  return `<main class="page page-cloud">
-    <section class="cloud-hero section-dark"><div class="cloud-copy reveal"><p class="eyebrow"><span class="eyebrow-rule"></span> 7×24 云端与手机接力</p><h1>电脑合上了，<br /><span>工作仍在继续。</span></h1><p>让任务留在云端持续推进。你从手机查看进度、补充方向或确认关键动作；需要团队接手时，研究、文件和创作结果已经整理好。</p><a class="button button-red" href="/download">下载客户端 <span aria-hidden="true">↗</span></a></div><div class="phone-preview reveal reveal-late"><div class="phone-camera"></div>${clientFrame("studio", "client-stage-phone", true)}</div><div class="cloud-caption">云端持续运行 · 手机随时接力 · 团队拿到结果</div></section>
-    <section class="continuity section-light"><div class="section-kicker reveal">不必守在电脑前</div><div class="continuity-head reveal"><h2>让机器人团队<br />接过跨时段工作。</h2><p>云端持续推进，手机成为轻量的任务入口。机器人把需要你决定的部分送到面前，也把结果带回来。</p></div><div class="continuity-list" data-reveal-group><article><span>01</span><div><h3>云端 7×24 持续工作</h3><p>研究、整理、创作任务留在云端，不因你离开电脑而中断。</p></div><strong>全天候推进</strong></article><article><span>02</span><div><h3>手机接住关键时刻</h3><p>查看进度、补充上下文、确认需要你参与的步骤。</p></div><strong>随时接力</strong></article><article><span>03</span><div><h3>团队按结果继续</h3><p>文档、素材和任务上下文都在同一条工作线上，减少早晨重新交接。</p></div><strong>醒来即可接手</strong></article></div></section>
-    <section class="mobile-scenes section-red"><p class="eyebrow"><span class="eyebrow-rule"></span> 适合真实工作节奏</p><h2>早上交代，<br />路上跟进，<br />回到工位拿结果。</h2><div class="mobile-timeline"><span>电脑</span><i></i><span>云端</span><i></i><span>手机</span><i></i><span>团队</span></div></section>
-    <section class="last-cta section-light"><p class="eyebrow"><span class="eyebrow-rule"></span> 从桌面开始，也不止于桌面</p><h2>你的机器人，<br />跟着工作一起移动。</h2><a class="button button-dark" href="/download">获取 DoneBot <span aria-hidden="true">↗</span></a></section>
-  </main>`;
-}
-
-function download(): string {
-  return `<main class="page page-download">
-    <section class="download-hero section-dark"><p class="eyebrow reveal"><span class="eyebrow-rule"></span> 下载 DoneBot</p><h1 class="reveal">把机器人，<br /><span>带进你的工作。</span></h1><p class="download-intro reveal">选择适合你设备的最新版客户端。版本号会从 DoneBot 发布服务实时读取。</p><div class="release-status" data-release-status role="status">正在获取最新版本…</div>
-      <div class="download-options" data-reveal-group>
-        <article class="download-option"><div class="platform-icon platform-windows" aria-hidden="true"><img src="/marketing-icons/windows.svg" alt="" /></div><div class="platform-content"><span class="platform-label">WINDOWS</span><h2>Windows x64</h2><p data-artifact-windows>正在检查安装包</p></div><a class="download-link is-disabled" data-download-platform="windows-x64" href="#" aria-disabled="true">下载 <span aria-hidden="true">↓</span></a></article>
-        <article class="download-option"><div class="platform-icon platform-mac" aria-hidden="true"><img src="/marketing-icons/apple.svg" alt="" /></div><div class="platform-content"><span class="platform-label">MACOS</span><h2>Apple 芯片</h2><p data-artifact-mac>正在检查 DMG 安装镜像</p></div><a class="download-link is-disabled" data-download-platform="macos-arm64-dmg" href="#" aria-disabled="true">下载 DMG <span aria-hidden="true">↓</span></a></article>
-      </div>
-      <div class="release-note"><span>最新版</span><strong data-latest-version>正在获取</strong><span data-release-date></span></div>
-    </section>
-    <section class="updates section-light"><div class="updates-copy"><p class="eyebrow"><span class="eyebrow-rule"></span> 保持更新</p><h2>新版本，<br />机器人会告诉你。</h2><p>DoneBot 客户端会检查当前系统对应的最新版本，下载并安装适合的更新。</p></div><div class="update-flow"><div><span>客户端</span><strong>检查当前版本</strong></div><i></i><div><span>DoneBot</span><strong>返回最新版本</strong></div><i></i><div><span>完成</span><strong>获取对应安装包</strong></div></div></section>
-  </main>`;
-}
-
-const content = ({ home, product, scenarios, cloud, download } satisfies Record<PageId, () => string>)[page]();
-document.getElementById("donebot-site")!.innerHTML = `${header()}${content}${footer()}`;
-
-function setSiteTheme(theme: Theme): void {
-  document.documentElement.dataset.theme = theme;
+function setTheme(value: Theme) {
+  document.documentElement.dataset.theme = value;
   try {
-    localStorage.setItem("donebot-site-theme", theme);
+    localStorage.setItem("donebot-site-theme", value);
   } catch {
+    /* Browser storage may be unavailable in private sessions. */
   }
-  const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-  if (themeColor) themeColor.content = theme === "dark" ? "#000000" : "#ffffff";
-  document.querySelectorAll<HTMLButtonElement>("[data-theme-choice]").forEach((button) => {
-    button.setAttribute("aria-pressed", String(button.dataset.themeChoice === theme));
-  });
-  document.querySelectorAll<HTMLIFrameElement>(".client-stage iframe").forEach((frame) => {
-    const url = new URL(frame.src, location.href);
-    if (url.searchParams.get("skin") === themeSkin[theme]) return;
-    url.searchParams.set("skin", themeSkin[theme]);
-    frame.src = `${url.pathname}${url.search}${url.hash}`;
-  });
+  document
+    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    ?.setAttribute("content", value === "dark" ? "#000000" : "#ffffff");
+  document
+    .querySelector(".theme-toggle")
+    ?.setAttribute(
+      "aria-label",
+      `切换到${value === "dark" ? "浅" : "深"}色模式`,
+    );
 }
+document
+  .querySelector(".theme-toggle")
+  ?.addEventListener("click", () =>
+    setTheme(theme() === "dark" ? "light" : "dark"),
+  );
 
-document.querySelectorAll<HTMLButtonElement>("[data-theme-choice]").forEach((button) => {
-  button.addEventListener("click", () => setSiteTheme(button.dataset.themeChoice === "dark" ? "dark" : "light"));
-});
-document.body.dataset.page = page;
-
-const sceneContent: Record<string, { eyebrow: string; title: string; copy: string; outcome: string; steps: string[] }> = {
-  store: {
-    eyebrow: "商品研究到上架",
-    title: "让商品页和素材，<br />从同一份研究开始。",
-    copy: "先归纳评论里的真实购买理由，再完成详情页结构、广告卖点和拍摄任务。运营、设计和投放不必反复找同一份资料。",
-    outcome: "研究、文案、素材一次交接，减少等待和重复沟通。",
-    steps: ["读评论与竞品|快速看见购买动机和顾虑", "生成页面与广告内容|把卖点变成可发布的表达", "同步团队下一步|让素材工作直接开始"],
-  },
-  tiktok: {
-    eyebrow: "TikTok Shop 广告视频",
-    title: "从一个商品，<br />做出多角度投放素材。",
-    copy: "围绕便携、续航和清洗生成不同开场，自动组织脚本、分镜、字幕与音乐方向，让团队更快进入剪辑和测试。",
-    outcome: "一个产品卖点，变成多条可以测试的创意角度。",
-    steps: ["提炼商品卖点|从商品信息和评价找证据", "生成脚本与分镜|围绕不同人群设计 Hook", "制作视频素材|整理画面、字幕和音乐方向"],
-  },
-  studio: {
-    eyebrow: "自媒体研究与创作",
-    title: "从热点线索，<br />接到能发布的视频草稿。",
-    copy: "持续搜集可靠信息，筛选有差异的选题，整理原始素材，再把文稿、画面、字幕和配乐接进剪辑流程。",
-    outcome: "减少找题和找素材的时间，把精力留给观点和表达。",
-    steps: ["跟踪信息变化|收集更新、反馈和可靠来源", "筛选内容题材|按热度、受众和差异化排序", "生成剪辑草稿|文案、素材、字幕与配乐衔接"],
-  },
-};
-
-const demoFrame = document.querySelector<HTMLIFrameElement>(".client-stage-scenarios iframe");
-const sceneTabs = [...document.querySelectorAll<HTMLButtonElement>(".scene-tab")];
-function selectScene(scene: string): void {
-  const data = sceneContent[scene];
-  if (!data) return;
-  sceneTabs.forEach((tab) => {
-    const active = tab.dataset.scene === scene;
-    tab.classList.toggle("is-active", active);
-    tab.setAttribute("aria-selected", String(active));
+function setDemoScene(element: HTMLElement, index: number) {
+  const scene = scenes[index]!;
+  const fields: Record<string, string> = {
+    role: scene.role,
+    ask: scene.ask,
+    reply: scene.reply,
+    work: scene.work,
+    result: scene.result,
+  };
+  Object.entries(fields).forEach(([name, value]) => {
+    const el = element.querySelector(`[data-demo-${name}]`);
+    if (el) el.textContent = value;
   });
-  const eyebrow = document.querySelector<HTMLElement>("[data-scene-eyebrow]");
-  const title = document.querySelector<HTMLElement>("[data-scene-title]");
-  const copy = document.querySelector<HTMLElement>("[data-scene-copy]");
-  const outcome = document.querySelector<HTMLElement>("[data-scene-outcome]");
-  if (eyebrow) eyebrow.textContent = data.eyebrow;
-  if (title) title.innerHTML = data.title;
-  if (copy) copy.textContent = data.copy;
-  if (outcome) outcome.textContent = data.outcome;
-  const steps = document.querySelector<HTMLElement>("[data-scene-steps]");
-  if (steps) steps.innerHTML = data.steps.map((item, index) => {
-    const [heading, description] = item.split("|");
-    return `<div class="scene-step ${index === 0 ? "is-active" : ""}"><span>0${index + 1}</span><div><strong>${heading}</strong><small>${description}</small></div></div>`;
-  }).join("");
-  if (demoFrame) demoFrame.src = `/client-demo/client-demo.html?scene=${scene}&skin=${themeSkin[currentTheme()]}`;
+  const files = element.querySelector("[data-demo-files]");
+  if (files)
+    files.innerHTML = scene.files
+      .map(
+        (file) =>
+          `<div class="file-row">${icon(file.endsWith("mp4") ? "play" : "file-text")}<span>${file}</span>${icon("check")}</div>`,
+      )
+      .join("");
+  element
+    .querySelectorAll("[data-bot-row]")
+    .forEach((row, i) => row.classList.toggle("active", i === index));
+  element.dataset.step = "0";
+  const [body, color] = botLooks[index]!;
+  element
+    .querySelectorAll<HTMLElement>(
+      ".demo-top [data-mascot], .work-state [data-mascot]",
+    )
+    .forEach((avatar) => {
+      avatar.dataset.body = body;
+      avatar.dataset.color = color;
+    });
+  void mascotRenderer?.then((module) => module.mountMascots(element));
 }
-sceneTabs.forEach((tab) => tab.addEventListener("click", () => {
-  const scene = tab.dataset.scene ?? "store";
-  selectScene(scene);
-  history.replaceState(null, "", `#${scene}`);
-}));
-const initialScene = location.hash.slice(1);
-selectScene(sceneContent[initialScene] ? initialScene : "store");
-
-const revealObserver = new IntersectionObserver((entries) => {
-  entries.forEach((entry) => {
-    if (entry.isIntersecting) {
-      entry.target.classList.add("is-visible");
-      revealObserver.unobserve(entry.target);
+let currentScene = 0;
+let heroScene = 0;
+let tick = 0;
+let scenarioTick = 0;
+function selectScene(index: number) {
+  currentScene = index;
+  scenarioTick = 0;
+  const scene = scenes[index]!;
+  document
+    .querySelectorAll<HTMLButtonElement>("[data-scene]")
+    .forEach((button, i) => {
+      button.setAttribute("aria-selected", String(i === index));
+      button.tabIndex = i === index ? 0 : -1;
+    });
+  document
+    .querySelector("#scene-panel")
+    ?.setAttribute("aria-labelledby", `scene-tab-${index}`);
+  const fields = {
+    headline: scene.headline,
+    description: scene.description,
+    benefit: scene.benefit,
+  };
+  Object.entries(fields).forEach(([name, value]) => {
+    const el = document.querySelector(`[data-scene-${name}]`);
+    if (el) el.textContent = value;
+  });
+  const tasks = document.querySelector("[data-scene-tasks]");
+  if (tasks)
+    tasks.innerHTML = scene.tasks
+      .map((task, i) => `<div><span>0${i + 1}</span><p>${task}</p></div>`)
+      .join("");
+  const element = document.querySelector<HTMLElement>('[data-demo="scenario"]');
+  if (element) setDemoScene(element, index);
+}
+if (!isDownload) {
+  selectScene(0);
+  document
+    .querySelectorAll<HTMLButtonElement>("[data-scene]")
+    .forEach((button) => {
+      button.addEventListener("click", () =>
+        selectScene(Number(button.dataset.scene)),
+      );
+      button.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+          return;
+        event.preventDefault();
+        selectScene(
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? scenes.length - 1
+              : (currentScene +
+                  (event.key === "ArrowRight" ? 1 : -1) +
+                  scenes.length) %
+                scenes.length,
+        );
+        document
+          .querySelector<HTMLButtonElement>(`[data-scene="${currentScene}"]`)
+          ?.focus();
+      });
+    });
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  const animate = () => {
+    if (document.hidden || reducedMotion.matches) return;
+    tick++;
+    scenarioTick++;
+    const phone = document.querySelector<HTMLElement>('[data-demo="scenario"]');
+    if (phone) {
+      const phoneStep = scenarioTick % 7;
+      phone.dataset.step = String(Math.min(3, phoneStep));
+      const phoneStatus = phone.querySelector("[data-demo-status]");
+      if (phoneStatus)
+        phoneStatus.textContent = phoneStep >= 3 ? "已完成" : "正在执行";
     }
+    const step = tick % 6;
+    const element = document.querySelector<HTMLElement>('[data-demo="hero"]')!;
+    if (step === 0) {
+      heroScene = (heroScene + 1) % scenes.length;
+      setDemoScene(element, heroScene);
+    }
+    element.dataset.step = String(Math.min(3, step));
+    const status = element.querySelector("[data-demo-status]");
+    if (status) status.textContent = step >= 3 ? "已完成" : "正在执行";
+    const word = document.querySelector("[data-rotating-word]");
+    if (word && step === 0)
+      word.textContent = ["电商运营", "内容创作", "日常工作"][heroScene]!;
+  };
+  if (reducedMotion.matches)
+    document.querySelectorAll<HTMLElement>("[data-demo]").forEach((el) => {
+      el.dataset.step = "3";
+    });
+  window.setInterval(animate, 2600);
+  reducedMotion.addEventListener("change", () => {
+    if (reducedMotion.matches)
+      document.querySelectorAll<HTMLElement>("[data-demo]").forEach((el) => {
+        el.dataset.step = "3";
+      });
   });
-}, { threshold: 0.12 });
-document.querySelectorAll(".reveal, [data-reveal-group] > *").forEach((node) => revealObserver.observe(node));
-
-const workflowObserver = new IntersectionObserver((entries) => {
-  entries.forEach((entry) => {
-    if (!entry.isIntersecting) return;
-    const steps = [...document.querySelectorAll<HTMLElement>(".workflow-step")];
-    let active = 0;
-    window.setInterval(() => {
-      steps.forEach((step, index) => step.classList.toggle("is-active", index === active));
-      active = (active + 1) % steps.length;
-    }, 2_100);
-    workflowObserver.disconnect();
-  });
-}, { threshold: 0.3 });
-const workflowRail = document.querySelector(".workflow-rail");
-if (workflowRail) workflowObserver.observe(workflowRail);
-
-function formatSize(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "";
-  return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
 }
-
-async function loadLatestRelease(): Promise<void> {
-  const status = document.querySelector<HTMLElement>("[data-release-status]");
+function downloadURL(value: unknown): string | null {
+  if (typeof value !== "string") return null;
   try {
-    const response = await fetch("/api/v1/client/releases/latest", { cache: "no-store", credentials: "omit" });
+    const url = new URL(value, location.origin);
+    return url.origin === location.origin &&
+      url.pathname.startsWith("/api/v1/client/releases/")
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+async function loadRelease() {
+  if (!isDownload) return;
+  const status = document.querySelector("[data-release-status]")!;
+  const retry = document.querySelector<HTMLButtonElement>(".retry-release")!;
+  retry.hidden = true;
+  status.textContent = "正在获取最新版本…";
+  try {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    let response: Response;
+    try {
+      response = await fetch("/api/v1/client/releases/latest", {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
     if (response.status === 404) {
-      document.querySelectorAll<HTMLElement>("[data-latest-version]").forEach((element) => { element.textContent = "暂未发布"; });
-      document.querySelectorAll<HTMLElement>("[data-artifact-windows], [data-artifact-mac]").forEach((element) => { element.textContent = "暂未发布"; });
-      if (status) status.textContent = "暂无已发布版本";
+      status.textContent = "新版本即将发布";
+      document
+        .querySelectorAll("[data-package-meta]")
+        .forEach((el) => (el.textContent = "安装包准备中"));
       return;
     }
-    if (!response.ok) throw new Error("release service unavailable");
-    const envelope = await response.json() as { data?: Release } & Release;
-    const release = envelope.data ?? envelope;
-    const version = release.version || "";
-    document.querySelectorAll<HTMLElement>("[data-latest-version]").forEach((element) => {
-      element.textContent = version ? `v${version}` : "暂未发布";
-    });
-    const date = document.querySelector<HTMLElement>("[data-release-date]");
-    if (date) date.textContent = release.published_at ? new Date(release.published_at).toLocaleDateString("zh-CN") : "";
-    const entries: Array<[Platform, string, string]> = [
-      ["windows-x64", "[data-artifact-windows]", ""],
-      ["macos-arm64-dmg", "[data-artifact-mac]", "DMG 安装镜像 · "],
-    ];
-    entries.forEach(([platform, selector, label]) => {
-      const artifact = release.platforms?.[platform];
-      const description = document.querySelector<HTMLElement>(selector);
-      const link = document.querySelector<HTMLAnchorElement>(`[data-download-platform="${platform}"]`);
-      if (description) description.textContent = artifact ? `${label}${version ? `v${version} · ` : ""}${formatSize(artifact.size_bytes)}` : "该平台安装包尚未发布";
-      if (link && artifact?.download_url) {
-        link.href = artifact.download_url;
+    if (!response.ok) throw new Error("release unavailable");
+    const envelope = await response.json();
+    const release = envelope.data as Release;
+    if (!release || typeof release.version !== "string" || !release.platforms)
+      throw new Error("invalid release");
+    status.textContent = `最新版本 v${release.version}`;
+    document
+      .querySelectorAll<HTMLAnchorElement>("[data-download-platform]")
+      .forEach((link) => {
+        const platform = link.dataset.downloadPlatform as Platform;
+        const artifact = release.platforms[platform];
+        const url = artifact && downloadURL(artifact.download_url);
+        const meta = document.querySelector(
+          `[data-package-meta="${platform}"]`,
+        )!;
+        if (!artifact || !url) {
+          meta.textContent = "此平台安装包暂未发布";
+          return;
+        }
+        link.href = url;
         link.classList.remove("is-disabled");
         link.removeAttribute("aria-disabled");
-      }
-    });
-    if (status) status.textContent = version ? `最新版 v${version} 已就绪` : "暂无已发布版本";
+        link.removeAttribute("tabindex");
+        meta.textContent = `v${release.version} · ${(artifact.size_bytes / 1024 / 1024).toFixed(1)} MB`;
+      });
   } catch {
-    if (status) status.textContent = "暂时无法获取版本信息，请稍后重试。";
-    document.querySelectorAll<HTMLElement>("[data-latest-version]").forEach((element) => { element.textContent = "暂不可用"; });
-    document.querySelectorAll<HTMLElement>("[data-artifact-windows], [data-artifact-mac]").forEach((element) => { element.textContent = "暂时无法连接发布服务"; });
+    status.textContent = "暂时无法获取版本，请稍后重试";
+    document
+      .querySelectorAll("[data-package-meta]")
+      .forEach((el) => (el.textContent = "暂不可用"));
+    retry.hidden = false;
   }
 }
-
-if (page === "home" || page === "download") void loadLatestRelease();
+document
+  .querySelector(".retry-release")
+  ?.addEventListener("click", () => void loadRelease());
+void loadRelease();
