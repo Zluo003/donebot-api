@@ -87,8 +87,9 @@ func testClientReleaseRecord(version, status string, platforms map[string]client
 
 func testClientReleasePlatforms() map[string]clientReleaseArtifactRecord {
 	return map[string]clientReleaseArtifactRecord{
-		ClientReleaseWindowsX64: {Filename: "DoneBot-Setup.exe", ObjectKey: "client-releases/windows.exe", SizeBytes: 100, SHA256: "windows-hash", SHA512: "windows-sha512"},
-		ClientReleaseMacOSArm64: {Filename: "DoneBot-mac-arm64.zip", ObjectKey: "client-releases/macos.zip", SizeBytes: 200, SHA256: "mac-hash", SHA512: "mac-sha512"},
+		ClientReleaseWindowsX64:    {Filename: "DoneBot-Setup.exe", ObjectKey: "client-releases/windows.exe", SizeBytes: 100, SHA256: "windows-hash", SHA512: "windows-sha512"},
+		ClientReleaseMacOSArm64:    {Filename: "DoneBot-mac-arm64.zip", ObjectKey: "client-releases/macos.zip", SizeBytes: 200, SHA256: "mac-hash", SHA512: "mac-sha512"},
+		ClientReleaseMacOSArm64DMG: {Filename: "DoneBot-mac-arm64.dmg", ObjectKey: "client-releases/macos.dmg", SizeBytes: 300, SHA256: "dmg-hash", SHA512: "dmg-sha512"},
 	}
 }
 
@@ -129,10 +130,13 @@ func TestClientReleaseUploadPublishAndDownload(t *testing.T) {
 	ctx := context.Background()
 
 	windows := []byte("windows installer")
-	macOS := []byte("macOS package")
+	macOSZip := []byte("macOS update package")
+	macOSDMG := []byte("macOS installer image")
 	_, err := service.Upload(ctx, "v1.0.0", ClientReleaseWindowsX64, "DoneBot-Setup.exe", "Release notes", bytes.NewReader(windows), int64(len(windows)))
 	require.NoError(t, err)
-	_, err = service.Upload(ctx, "1.0.0", ClientReleaseMacOSArm64, "DoneBot-mac-arm64.zip", "Release notes", bytes.NewReader(macOS), int64(len(macOS)))
+	_, err = service.Upload(ctx, "1.0.0", ClientReleaseMacOSArm64, "DoneBot-mac-arm64.zip", "Release notes", bytes.NewReader(macOSZip), int64(len(macOSZip)))
+	require.NoError(t, err)
+	_, err = service.Upload(ctx, "1.0.0", ClientReleaseMacOSArm64DMG, "DoneBot-mac-arm64.dmg", "Release notes", bytes.NewReader(macOSDMG), int64(len(macOSDMG)))
 	require.NoError(t, err)
 
 	published, err := service.Publish(ctx, "v1.0.0")
@@ -155,13 +159,24 @@ func TestClientReleaseUploadPublishAndDownload(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, windows, downloaded)
 
+	dmgArtifact, dmgReader, err := service.OpenArtifact(ctx, "1.0.0", ClientReleaseMacOSArm64DMG)
+	require.NoError(t, err)
+	defer func() { _ = dmgReader.Close() }()
+	require.Equal(t, "DoneBot-mac-arm64.dmg", dmgArtifact.Filename)
+	downloaded, err = io.ReadAll(dmgReader)
+	require.NoError(t, err)
+	require.Equal(t, macOSDMG, downloaded)
+
 	feed, err := service.UpdateFeed(ctx, ClientReleaseMacOSArm64)
 	require.NoError(t, err)
 	require.Contains(t, string(feed), "version: \"1.0.0\"")
 	require.Contains(t, string(feed), latest.Platforms[ClientReleaseMacOSArm64].DownloadURL)
+	require.NotContains(t, string(feed), latest.Platforms[ClientReleaseMacOSArm64DMG].DownloadURL)
+	_, err = service.UpdateFeed(ctx, ClientReleaseMacOSArm64DMG)
+	require.Error(t, err)
 }
 
-func TestClientReleasePublishRequiresBothPlatformsAndNewerVersion(t *testing.T) {
+func TestClientReleasePublishRequiresAllArtifactsAndNewerVersion(t *testing.T) {
 	platforms := testClientReleasePlatforms()
 	draft := testClientReleaseRecord("1.10.0", "draft", map[string]clientReleaseArtifactRecord{
 		ClientReleaseWindowsX64: platforms[ClientReleaseWindowsX64],
@@ -181,6 +196,16 @@ func TestClientReleasePublishRequiresBothPlatformsAndNewerVersion(t *testing.T) 
 	require.NoError(t, err)
 	repo.values[clientReleasesSettingKey] = string(raw)
 
+	_, err = service.Publish(context.Background(), "1.10.0")
+	require.Error(t, err)
+
+	draft.Platforms[ClientReleaseMacOSArm64DMG] = platforms[ClientReleaseMacOSArm64DMG]
+	raw, err = json.Marshal(clientReleaseStore{Releases: []clientReleaseRecord{
+		testClientReleaseRecord("1.9.0", "published", platforms), draft,
+	}})
+	require.NoError(t, err)
+	repo.values[clientReleasesSettingKey] = string(raw)
+
 	published, err := service.Publish(context.Background(), "1.10.0")
 	require.NoError(t, err)
 	require.Equal(t, "published", published.Status)
@@ -195,6 +220,37 @@ func TestClientReleasePublishRequiresBothPlatformsAndNewerVersion(t *testing.T) 
 
 	_, err = service.Publish(context.Background(), "1.9.5")
 	require.Error(t, err)
+}
+
+func TestClientReleaseFilenameRequiresPlatformPackageFormat(t *testing.T) {
+	tests := []struct {
+		platform string
+		filename string
+		valid    bool
+	}{
+		{ClientReleaseWindowsX64, "DoneBot.exe", true},
+		{ClientReleaseMacOSArm64, "DoneBot.zip", true},
+		{ClientReleaseMacOSArm64DMG, "DoneBot.dmg", true},
+		{ClientReleaseMacOSArm64, "DoneBot.dmg", false},
+		{ClientReleaseMacOSArm64DMG, "DoneBot.zip", false},
+	}
+	for _, test := range tests {
+		t.Run(test.platform+"/"+test.filename, func(t *testing.T) {
+			_, err := sanitizeClientReleaseFilename(test.filename, test.platform)
+			require.Equal(t, test.valid, err == nil)
+		})
+	}
+}
+
+func TestClientReleaseLegacyPublishedZipRemainsAvailable(t *testing.T) {
+	platforms := testClientReleasePlatforms()
+	delete(platforms, ClientReleaseMacOSArm64DMG)
+	service, _ := newClientReleaseTestService(t, testClientReleaseRecord("1.0.0", "published", platforms))
+
+	feed, err := service.UpdateFeed(context.Background(), ClientReleaseMacOSArm64)
+	require.NoError(t, err)
+	require.Contains(t, string(feed), "/macos-arm64/DoneBot-mac-arm64.zip")
+	require.NotContains(t, string(feed), ClientReleaseMacOSArm64DMG)
 }
 
 func TestCompareClientReleaseVersionsUsesSemverPrecedence(t *testing.T) {

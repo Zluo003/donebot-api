@@ -119,8 +119,11 @@ func (h *DoneBotHandler) DownloadClientRelease(c *gin.Context) {
 		return
 	}
 	contentType := "application/zip"
-	if c.Param("platform") == service.ClientReleaseWindowsX64 {
+	switch c.Param("platform") {
+	case service.ClientReleaseWindowsX64:
 		contentType = "application/vnd.microsoft.portable-executable"
+	case service.ClientReleaseMacOSArm64DMG:
+		contentType = "application/x-apple-diskimage"
 	}
 	filename := mime.FormatMediaType("attachment", map[string]string{"filename": artifact.Filename})
 	c.Header("Content-Disposition", filename)

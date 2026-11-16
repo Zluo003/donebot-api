@@ -56,7 +56,7 @@ interface PolicyDraft { policy: StoragePolicyInput; capacityGiB: number; maxFile
 const GiB = 1024 ** 3
 const MiB = 1024 ** 2
 const kinds: { id: StorageKind; title: string; description: string }[] = [
-  { id: 'upload', title: '上传存储', description: '保存用户上传的素材，使用独立容量与保留策略。' },
+  { id: 'upload', title: '上传存储', description: '保存用户上传素材和客户端发行包；发行包独立保留，不受素材清理策略影响。' },
   { id: 'generated', title: '生成产物存储', description: '视频、音乐和异步图片共用此存储策略。' }
 ]
 const app = useAppStore()

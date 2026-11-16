@@ -44,7 +44,7 @@ export interface StoragePolicyInput {
 export interface StoragePolicy extends StoragePolicyInput { secret_configured?: boolean; usage_bytes?: number; file_count?: number }
 export interface StorageSettingsInput { upload: StoragePolicyInput; generated: StoragePolicyInput }
 export interface StorageSettings { upload: StoragePolicy; generated: StoragePolicy }
-export type ClientReleasePlatform = 'windows-x64' | 'macos-arm64'
+export type ClientReleasePlatform = 'windows-x64' | 'macos-arm64' | 'macos-arm64-dmg'
 export interface ClientReleaseArtifact { filename: string; size_bytes: number; sha256: string; sha512: string; download_url: string }
 export interface ClientRelease { version: string; notes?: string; status: 'draft' | 'published'; created_at: string; published_at?: string; platforms: Partial<Record<ClientReleasePlatform, ClientReleaseArtifact>> }
 export interface WebToolsSettings { enabled: boolean; key_configured: boolean }

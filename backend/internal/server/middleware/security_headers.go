@@ -119,6 +119,10 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 
 	return func(c *gin.Context) {
 		finalPolicy := policy
+		clientDemo := isClientDemoDocument(c.Request.URL.Path)
+		if clientDemo {
+			finalPolicy = setCSPDirective(finalPolicy, "frame-ancestors", "'self'")
+		}
 		if getFrameSrcOrigins != nil {
 			for _, origin := range getFrameSrcOrigins() {
 				if origin != "" {
@@ -128,7 +132,11 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 		}
 
 		c.Header("X-Content-Type-Options", "nosniff")
-		c.Header("X-Frame-Options", "DENY")
+		if clientDemo {
+			c.Header("X-Frame-Options", "SAMEORIGIN")
+		} else {
+			c.Header("X-Frame-Options", "DENY")
+		}
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		if isAPIRoutePath(c) {
 			c.Next()
@@ -149,6 +157,34 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 		}
 		c.Next()
 	}
+}
+
+func isClientDemoDocument(path string) bool {
+	return path == "/client-demo/client-demo.html"
+}
+
+func setCSPDirective(policy, directive, value string) string {
+	parts := strings.Split(policy, ";")
+	updated := make([]string, 0, len(parts))
+	found := false
+	for _, part := range parts {
+		fields := strings.Fields(part)
+		if len(fields) > 0 && fields[0] == directive {
+			if found {
+				continue
+			}
+			updated = append(updated, directive+" "+value)
+			found = true
+			continue
+		}
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			updated = append(updated, trimmed)
+		}
+	}
+	if !found {
+		updated = append(updated, directive+" "+value)
+	}
+	return strings.Join(updated, "; ")
 }
 
 func isAPIRoutePath(c *gin.Context) bool {

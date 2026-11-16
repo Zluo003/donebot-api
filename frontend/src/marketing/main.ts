@@ -2,7 +2,7 @@ import "./site.css";
 
 type PageId = "home" | "product" | "scenarios" | "cloud" | "download";
 type Theme = "light" | "dark";
-type Platform = "windows-x64" | "macos-arm64";
+type Platform = "windows-x64" | "macos-arm64" | "macos-arm64-dmg";
 type Artifact = { filename: string; size_bytes: number; sha256: string; download_url: string };
 type Release = { version: string; notes?: string; published_at?: string; platforms: Partial<Record<Platform, Artifact>> };
 
@@ -143,7 +143,7 @@ function download(): string {
     <section class="download-hero section-dark"><p class="eyebrow reveal"><span class="eyebrow-rule"></span> 下载 DoneBot</p><h1 class="reveal">把机器人，<br /><span>带进你的工作。</span></h1><p class="download-intro reveal">选择适合你设备的最新版客户端。版本号会从 DoneBot 发布服务实时读取。</p><div class="release-status" data-release-status role="status">正在获取最新版本…</div>
       <div class="download-options" data-reveal-group>
         <article class="download-option"><div class="platform-icon platform-windows" aria-hidden="true"><img src="/marketing-icons/windows.svg" alt="" /></div><div class="platform-content"><span class="platform-label">WINDOWS</span><h2>Windows x64</h2><p data-artifact-windows>正在检查安装包</p></div><a class="download-link is-disabled" data-download-platform="windows-x64" href="#" aria-disabled="true">下载 <span aria-hidden="true">↓</span></a></article>
-        <article class="download-option"><div class="platform-icon platform-mac" aria-hidden="true"><img src="/marketing-icons/apple.svg" alt="" /></div><div class="platform-content"><span class="platform-label">MACOS</span><h2>Apple 芯片</h2><p data-artifact-mac>正在检查安装包</p></div><a class="download-link is-disabled" data-download-platform="macos-arm64" href="#" aria-disabled="true">下载 <span aria-hidden="true">↓</span></a></article>
+        <article class="download-option"><div class="platform-icon platform-mac" aria-hidden="true"><img src="/marketing-icons/apple.svg" alt="" /></div><div class="platform-content"><span class="platform-label">MACOS</span><h2>Apple 芯片</h2><p data-artifact-mac>正在检查 DMG 安装镜像</p></div><a class="download-link is-disabled" data-download-platform="macos-arm64-dmg" href="#" aria-disabled="true">下载 DMG <span aria-hidden="true">↓</span></a></article>
       </div>
       <div class="release-note"><span>最新版</span><strong data-latest-version>正在获取</strong><span data-release-date></span></div>
     </section>
@@ -284,12 +284,15 @@ async function loadLatestRelease(): Promise<void> {
     });
     const date = document.querySelector<HTMLElement>("[data-release-date]");
     if (date) date.textContent = release.published_at ? new Date(release.published_at).toLocaleDateString("zh-CN") : "";
-    const entries: Array<[Platform, string]> = [["windows-x64", "[data-artifact-windows]"], ["macos-arm64", "[data-artifact-mac]"]];
-    entries.forEach(([platform, selector]) => {
+    const entries: Array<[Platform, string, string]> = [
+      ["windows-x64", "[data-artifact-windows]", ""],
+      ["macos-arm64-dmg", "[data-artifact-mac]", "DMG 安装镜像 · "],
+    ];
+    entries.forEach(([platform, selector, label]) => {
       const artifact = release.platforms?.[platform];
       const description = document.querySelector<HTMLElement>(selector);
       const link = document.querySelector<HTMLAnchorElement>(`[data-download-platform="${platform}"]`);
-      if (description) description.textContent = artifact ? `${version ? `v${version} · ` : ""}${formatSize(artifact.size_bytes)}` : "该平台安装包尚未发布";
+      if (description) description.textContent = artifact ? `${label}${version ? `v${version} · ` : ""}${formatSize(artifact.size_bytes)}` : "该平台安装包尚未发布";
       if (link && artifact?.download_url) {
         link.href = artifact.download_url;
         link.classList.remove("is-disabled");

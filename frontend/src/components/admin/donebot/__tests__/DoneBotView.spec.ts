@@ -1,4 +1,5 @@
 import { mount, flushPromises } from '@vue/test-utils'
+import { nextTick, reactive } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import DoneBotView from '@/views/admin/DoneBotView.vue'
@@ -45,5 +46,15 @@ describe('DoneBot admin page', () => {
   expect(wrapper.findComponent({ name: 'WebToolsPanel' }).exists()).toBe(true)
   expect(wrapper.findAll('[role=tab]')[6].attributes('aria-selected')).toBe('true')
   route.query.tab = 'storage'
+ })
+ it('switches tabs when a storage settings link updates the current route query', async () => {
+  setActivePinia(createPinia())
+  route.query = reactive({ tab: 'releases' })
+  const wrapper = mount(DoneBotView, { global: { stubs } }); await flushPromises()
+  expect(wrapper.findComponent({ name: 'ClientReleasesPanel' }).exists()).toBe(true)
+  route.query.tab = 'storage'
+  await nextTick()
+  expect(wrapper.findComponent({ name: 'StoragePanel' }).exists()).toBe(true)
+  expect(wrapper.findAll('[role=tab]')[4].attributes('aria-selected')).toBe('true')
  })
 })

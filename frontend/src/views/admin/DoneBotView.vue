@@ -38,7 +38,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LlmModelsPanel from '@/components/admin/donebot/LlmModelsPanel.vue'
@@ -56,6 +56,9 @@ import { useAppStore } from '@/stores/app'
 const app = useAppStore()
 const route = useRoute()
 const active = ref<Modality | 'storage' | 'releases' | 'web-tools' | 'relay'>(route.query.tab === 'releases' ? 'releases' : route.query.tab === 'relay' ? 'relay' : route.query.tab === 'web-tools' ? 'web-tools' : route.query.tab === 'storage' ? 'storage' : 'llm')
+watch(() => route.query.tab, (tab) => {
+  active.value = tab === 'releases' || tab === 'relay' || tab === 'web-tools' || tab === 'storage' ? tab : 'llm'
+})
 const overview = ref<Overview | null>(null)
 const tabs = [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }, { id: 'audio' as const, label: '音频' }, { id: 'video' as const, label: '视频' }, { id: 'storage' as const, label: '存储' }, { id: 'releases' as const, label: '客户端版本' }, { id: 'web-tools' as const, label: '联网工具' }, { id: 'relay' as const, label: '手机连接' }]
 const metrics = computed(() => [

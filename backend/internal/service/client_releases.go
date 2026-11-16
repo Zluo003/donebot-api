@@ -21,10 +21,11 @@ import (
 )
 
 const (
-	clientReleasesSettingKey = "donebot_client_releases"
-	ClientReleaseWindowsX64  = "windows-x64"
-	ClientReleaseMacOSArm64  = "macos-arm64"
-	MaxClientReleaseBytes    = int64(1 << 30)
+	clientReleasesSettingKey   = "donebot_client_releases"
+	ClientReleaseWindowsX64    = "windows-x64"
+	ClientReleaseMacOSArm64    = "macos-arm64"
+	ClientReleaseMacOSArm64DMG = "macos-arm64-dmg"
+	MaxClientReleaseBytes      = int64(1 << 30)
 )
 
 var clientReleaseVersionPattern = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$`)
@@ -123,7 +124,7 @@ func (s *ClientReleaseService) Check(ctx context.Context, current, platform stri
 	if _, _, _, _, ok := parseClientReleaseVersion(current); !ok {
 		return ClientUpdateCheck{}, infraerrors.BadRequest("INVALID_CLIENT_VERSION", "A semantic client version is required")
 	}
-	if !validClientReleasePlatform(platform) {
+	if !validClientUpdatePlatform(platform) {
 		return ClientUpdateCheck{}, infraerrors.BadRequest("INVALID_CLIENT_PLATFORM", "Unsupported client platform")
 	}
 	result := ClientUpdateCheck{Current: current, Platform: platform}
@@ -190,8 +191,11 @@ func (s *ClientReleaseService) Upload(ctx context.Context, version, platform, fi
 	objectKey := "client-releases/" + version + "/" + platform + "/" + hex.EncodeToString(objectID) + "-" + filename
 	sha256Hash, sha512Hash := sha256.New(), sha512.New()
 	contentType := "application/zip"
-	if platform == ClientReleaseWindowsX64 {
+	switch platform {
+	case ClientReleaseWindowsX64:
 		contentType = "application/vnd.microsoft.portable-executable"
+	case ClientReleaseMacOSArm64DMG:
+		contentType = "application/x-apple-diskimage"
 	}
 	storageConfig, err := s.storage.SaveReleaseObject(ctx, objectKey, contentType, io.TeeReader(source, io.MultiWriter(sha256Hash, sha512Hash)), size)
 	if err != nil {
@@ -255,7 +259,10 @@ func (s *ClientReleaseService) Publish(ctx context.Context, version string) (*Cl
 		return nil, infraerrors.BadRequest("CLIENT_RELEASE_INCOMPLETE", "Upload the Windows x64 package before publishing")
 	}
 	if _, ok := record.Platforms[ClientReleaseMacOSArm64]; !ok {
-		return nil, infraerrors.BadRequest("CLIENT_RELEASE_INCOMPLETE", "Upload the macOS Apple silicon package before publishing")
+		return nil, infraerrors.BadRequest("CLIENT_RELEASE_INCOMPLETE", "Upload the macOS Apple silicon update ZIP before publishing")
+	}
+	if _, ok := record.Platforms[ClientReleaseMacOSArm64DMG]; !ok {
+		return nil, infraerrors.BadRequest("CLIENT_RELEASE_INCOMPLETE", "Upload the macOS Apple silicon DMG before publishing")
 	}
 	if latest := latestPublishedClientRelease(store.Releases); latest != nil && compareClientReleaseVersions(version, latest.Version) <= 0 {
 		return nil, infraerrors.Conflict("CLIENT_RELEASE_VERSION_NOT_NEWER", "A published release must have a higher version")
@@ -296,7 +303,7 @@ func (s *ClientReleaseService) OpenArtifact(ctx context.Context, version, platfo
 }
 
 func (s *ClientReleaseService) UpdateFeed(ctx context.Context, platform string) ([]byte, error) {
-	if !validClientReleasePlatform(platform) {
+	if !validClientUpdatePlatform(platform) {
 		return nil, infraerrors.NotFound("CLIENT_RELEASE_FEED_NOT_FOUND", "Client update feed was not found")
 	}
 	latest, err := s.Latest(ctx)
@@ -387,6 +394,10 @@ func findClientRelease(records []clientReleaseRecord, version string) *clientRel
 }
 
 func validClientReleasePlatform(platform string) bool {
+	return validClientUpdatePlatform(platform) || platform == ClientReleaseMacOSArm64DMG
+}
+
+func validClientUpdatePlatform(platform string) bool {
 	return platform == ClientReleaseWindowsX64 || platform == ClientReleaseMacOSArm64
 }
 
@@ -399,8 +410,11 @@ func sanitizeClientReleaseFilename(value, platform string) (string, error) {
 		filename = filename[len(filename)-160:]
 	}
 	ext := strings.ToLower(filepath.Ext(filename))
-	if filename == "" || platform == ClientReleaseWindowsX64 && ext != ".exe" || platform == ClientReleaseMacOSArm64 && ext != ".zip" {
-		return "", fmt.Errorf("Windows x64 packages must be .exe and macOS Apple silicon packages must be .zip")
+	validExtension := platform == ClientReleaseWindowsX64 && ext == ".exe" ||
+		platform == ClientReleaseMacOSArm64 && ext == ".zip" ||
+		platform == ClientReleaseMacOSArm64DMG && ext == ".dmg"
+	if filename == "" || !validExtension {
+		return "", fmt.Errorf("Windows x64 packages must be .exe, macOS update packages must be .zip, and macOS installers must be .dmg")
 	}
 	return filename, nil
 }
