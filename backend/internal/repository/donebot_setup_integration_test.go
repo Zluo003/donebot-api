@@ -155,15 +155,34 @@ func TestDoneBotSetupRejectsIncompatibleGroupAndHonorsAutoCreate(t *testing.T) {
 func TestDoneBotSetupConcurrentStartup(t *testing.T) {
 	ctx := context.Background()
 	name := fmt.Sprintf("donebot-concurrent-%d", time.Now().UnixNano())
-	previousGroupID, previousSettingErr := NewSettingRepository(integrationEntClient).GetValue(ctx, service.DoneBotGroupIDSettingKey)
-	require.True(t, previousSettingErr == nil || errors.Is(previousSettingErr, service.ErrSettingNotFound))
-	t.Cleanup(func() {
-		if previousSettingErr == nil {
-			_, _ = integrationDB.ExecContext(ctx, `INSERT INTO settings (key,value,updated_at) VALUES ($1,$2,NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at`, service.DoneBotGroupIDSettingKey, previousGroupID)
-		} else {
-			_, _ = integrationDB.ExecContext(ctx, "DELETE FROM settings WHERE key = $1", service.DoneBotGroupIDSettingKey)
+	settings := NewSettingRepository(integrationEntClient)
+	bindings := []string{service.DoneBotGroupIDSettingKey}
+	names := []string{name}
+	for _, engine := range []string{"codex", "claude"} {
+		binding, _, groupName := service.DoneBotCodingGroupSetting(engine)
+		bindings = append(bindings, binding)
+		names = append(names, groupName)
+	}
+	previousBindings := make(map[string]string)
+	for _, binding := range bindings {
+		value, err := settings.GetValue(ctx, binding)
+		require.True(t, err == nil || errors.Is(err, service.ErrSettingNotFound))
+		if err == nil {
+			previousBindings[binding] = value
 		}
-		_, _ = integrationDB.ExecContext(ctx, "DELETE FROM groups WHERE name = $1", name)
+	}
+	existingIDs, err := integrationEntClient.Group.Query().IDs(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		for _, binding := range bindings {
+			if value, ok := previousBindings[binding]; ok {
+				require.NoError(t, settings.Set(ctx, binding, value))
+			} else {
+				require.NoError(t, settings.Delete(ctx, binding))
+			}
+		}
+		_, err := integrationEntClient.Group.Delete().Where(group.NameIn(names...), group.IDNotIn(existingIDs...)).Exec(ctx)
+		require.NoError(t, err)
 	})
 	const workers = 4
 	var wg sync.WaitGroup
