@@ -414,7 +414,7 @@ func sanitizeClientReleaseFilename(value, platform string) (string, error) {
 		platform == ClientReleaseMacOSArm64 && ext == ".zip" ||
 		platform == ClientReleaseMacOSArm64DMG && ext == ".dmg"
 	if filename == "" || !validExtension {
-		return "", fmt.Errorf("Windows x64 packages must be .exe, macOS update packages must be .zip, and macOS installers must be .dmg")
+		return "", fmt.Errorf("invalid package extension: Windows x64 packages must be .exe, macOS update packages must be .zip, and macOS installers must be .dmg")
 	}
 	return filename, nil
 }

@@ -11,7 +11,7 @@ func (r *doneBotInstallRepository) CodingKeyID(ctx context.Context, userID int64
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return 0, rows.Err()
 	}

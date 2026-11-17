@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"mime/multipart"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -32,11 +32,50 @@ func (s *releaseHTTPSettings) Set(_ context.Context, key, value string) error {
 	return nil
 }
 
+type releaseHTTPStorage struct {
+	objects map[string][]byte
+}
+
+func (s *releaseHTTPStorage) Save(_ context.Context, key, _ string, data []byte) (string, error) {
+	s.objects[key] = append([]byte(nil), data...)
+	return key, nil
+}
+
+func (s *releaseHTTPStorage) SaveStream(ctx context.Context, key, contentType string, source io.Reader, size int64) (string, error) {
+	data, err := io.ReadAll(io.LimitReader(source, size+1))
+	if err != nil {
+		return "", err
+	}
+	if int64(len(data)) != size {
+		return "", io.ErrUnexpectedEOF
+	}
+	return s.Save(ctx, key, contentType, data)
+}
+
+func (s *releaseHTTPStorage) Delete(_ context.Context, key string) error {
+	delete(s.objects, key)
+	return nil
+}
+
+func (s *releaseHTTPStorage) Kind() string { return "local" }
+
+func (s *releaseHTTPStorage) Open(_ context.Context, key string) (io.ReadCloser, error) {
+	data, ok := s.objects[key]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
 func TestClientReleaseHTTPFixtureStoragePublishAndDownload(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	settings := &releaseHTTPSettings{values: map[string]string{"donebot_storage_policies": `{"upload":{"driver":"s3","s3":{"bucket":"media-only"}}}`}}
+	stores := map[string]*releaseHTTPStorage{}
 	storage := service.NewDoneBotStorageService(settings, nil, func(_ context.Context, p service.DoneBotStoragePolicy) (service.AssetStorage, error) {
-		return repository.NewLocalAssetStorage(p.LocalPath), nil
+		if stores[p.LocalPath] == nil {
+			stores[p.LocalPath] = &releaseHTTPStorage{objects: map[string][]byte{}}
+		}
+		return stores[p.LocalPath], nil
 	}, nil, nil)
 	h := &DoneBotHandler{releases: service.NewClientReleaseService(storage)}
 	r := gin.New()

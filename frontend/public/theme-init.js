@@ -4,6 +4,7 @@
     const stored = localStorage.getItem("donebot-site-theme");
     if (stored === "light" || stored === "dark") theme = stored;
   } catch {
+    // Use the system theme when browser storage is unavailable.
   }
   if (!theme) theme = window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   document.documentElement.dataset.theme = theme;

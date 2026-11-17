@@ -118,7 +118,7 @@ func TestClientReleaseLegacySnapshotRemainsReadable(t *testing.T) {
 	raw, _ := json.Marshal(DoneBotStoragePolicy{Driver: "s3", S3: DoneBotStorageS3{Bucket: "legacy-media", SecretAccessKey: secret}})
 	reader, err := storage.OpenReleaseObject(ctx, "client-releases/old.exe", raw)
 	require.NoError(t, err)
-	defer reader.Close()
+	defer func() { require.NoError(t, reader.Close()) }()
 	data, err := io.ReadAll(reader)
 	require.NoError(t, err)
 	require.Equal(t, "old-package", strings.TrimSpace(string(data)))

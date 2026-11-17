@@ -29,13 +29,6 @@ func DoneBotBoundGroupID(ctx context.Context, settings SettingRepository) (int64
 	return id, nil
 }
 
-func (s *adminServiceImpl) doneBotBoundGroupID(ctx context.Context) (int64, error) {
-	if s.settingService == nil || s.settingService.settingRepo == nil {
-		return 0, nil
-	}
-	return DoneBotBoundGroupID(ctx, s.settingService.settingRepo)
-}
-
 func (s *adminServiceImpl) markGroupDeletionProtection(ctx context.Context, groups []Group) error {
 	ids, err := s.doneBotBoundGroupIDs(ctx)
 	if err != nil {
