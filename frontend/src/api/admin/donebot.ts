@@ -1,4 +1,5 @@
 import { apiClient } from '../client'
+export interface CodingGroup { engine: "codex" | "claude"; id: number; name: string; platform: string; rate_multiplier: number; status: string }
 export type Modality = 'llm' | 'images' | 'audio' | 'video'
 export interface ModelToggle { model: string; enabled: boolean }
 export interface ModelSalePricing {
@@ -71,6 +72,7 @@ const donebot = {
  async clientReleases() { return (await apiClient.get<{ releases: ClientRelease[] }>('/admin/donebot/releases')).data },
  async uploadClientRelease(input: FormData) { return (await apiClient.post<ClientRelease>('/admin/donebot/releases/upload', input, { headers: { 'Content-Type': 'multipart/form-data' } })).data },
  async publishClientRelease(version: string) { return (await apiClient.post<ClientRelease>(`/admin/donebot/releases/${encodeURIComponent(version)}/publish`)).data },
+ async codingGroups() { return (await apiClient.get<CodingGroup[]>('/admin/donebot/coding')).data },
  async overview() { return (await apiClient.get<Overview>('/admin/donebot/overview')).data },
  async getModels(kind: Modality) { return (await apiClient.get<ModelsResult>(`/admin/donebot/${kind}/models`)).data },
  async models(kind: Modality, models: ModelToggle[]) { return (await apiClient.put<ModelsResult>(`/admin/donebot/${kind}/models`, { models })).data },

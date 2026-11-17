@@ -86,11 +86,11 @@ func (s *adminServiceImpl) GetGroup(ctx context.Context, id int64) (*Group, erro
 	if err := s.validateSimpleModeGroupAccess(group); err != nil {
 		return nil, err
 	}
-	boundID, err := s.doneBotBoundGroupID(ctx)
+	boundIDs, err := s.doneBotBoundGroupIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	group.DeletionProtected = boundID > 0 && group.ID == boundID
+	group.DeletionProtected = boundIDs[group.ID]
 	return group, nil
 }
 
@@ -1232,11 +1232,11 @@ func (s *adminServiceImpl) DeleteGroupIfEmpty(ctx context.Context, id int64) err
 }
 
 func (s *adminServiceImpl) deleteGroup(ctx context.Context, id int64, requireEmpty bool) error {
-	boundID, bindingErr := s.doneBotBoundGroupID(ctx)
+	boundIDs, bindingErr := s.doneBotBoundGroupIDs(ctx)
 	if bindingErr != nil {
 		return bindingErr
 	}
-	if boundID > 0 && id == boundID {
+	if boundIDs[id] {
 		return ErrDoneBotGroupProtected
 	}
 

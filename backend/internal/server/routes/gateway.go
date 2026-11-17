@@ -140,6 +140,9 @@ func RegisterGatewayRoutes(
 	gateway.Use(opsErrorLogger)
 	gateway.Use(endpointNorm)
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
+	if h.DoneBot != nil {
+		gateway.Use(h.DoneBot.CodingCredential(apiKeyAuth))
+	}
 	doneBotGateway := gateway.Group("")
 	if h.DoneBot != nil {
 		runtime := gateway.Group("/donebot/runtime", h.DoneBot.RuntimeInstallation())

@@ -37,12 +37,43 @@ func (s *adminServiceImpl) doneBotBoundGroupID(ctx context.Context) (int64, erro
 }
 
 func (s *adminServiceImpl) markGroupDeletionProtection(ctx context.Context, groups []Group) error {
-	id, err := s.doneBotBoundGroupID(ctx)
+	ids, err := s.doneBotBoundGroupIDs(ctx)
 	if err != nil {
 		return err
 	}
 	for i := range groups {
-		groups[i].DeletionProtected = id > 0 && groups[i].ID == id
+		groups[i].DeletionProtected = ids[groups[i].ID]
 	}
 	return nil
+}
+
+func (s *adminServiceImpl) doneBotBoundGroupIDs(ctx context.Context) (map[int64]bool, error) {
+	ids := make(map[int64]bool)
+	if s.settingService == nil || s.settingService.settingRepo == nil {
+		return ids, nil
+	}
+	settings := s.settingService.settingRepo
+	id, err := DoneBotBoundGroupID(ctx, settings)
+	if err != nil {
+		return nil, err
+	}
+	if id > 0 {
+		ids[id] = true
+	}
+	for _, engine := range []string{"codex", "claude"} {
+		setting, _, _ := DoneBotCodingGroupSetting(engine)
+		value, err := settings.GetValue(ctx, setting)
+		if errors.Is(err, ErrSettingNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		id, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("invalid %s setting", setting)
+		}
+		ids[id] = true
+	}
+	return ids, nil
 }

@@ -11,13 +11,18 @@ import (
 
 type doneBotSetupRepoStub struct {
 	want       *Group
+	groups     []*Group
 	autoCreate bool
 	calls      int
 	err        error
 }
 
 func (r *doneBotSetupRepoStub) EnsureGroup(_ context.Context, desired *Group, autoCreate bool) (int64, error) {
-	r.want, r.autoCreate = desired, autoCreate
+	r.groups = append(r.groups, desired)
+	if r.calls == 0 {
+		r.want = desired
+	}
+	r.autoCreate = autoCreate
 	r.calls++
 	return 42, r.err
 }
@@ -39,6 +44,9 @@ func TestEnsureDoneBotGroupDefaultsAndPreservesCreationPolicy(t *testing.T) {
 		id, err := NewDoneBotSetupService(cfg, repo).EnsureDoneBotGroup(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, int64(42), id)
+		require.Len(t, repo.groups, 3)
+		require.Equal(t, PlatformOpenAI, repo.groups[1].Platform)
+		require.Equal(t, PlatformAnthropic, repo.groups[2].Platform)
 		require.Equal(t, autoCreate, repo.autoCreate)
 		require.Equal(t, "DoneBot", repo.want.Name)
 		require.Equal(t, PlatformComposite, repo.want.Platform)

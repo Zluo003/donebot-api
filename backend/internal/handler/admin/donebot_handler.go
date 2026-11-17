@@ -152,3 +152,15 @@ func ProvideDoneBotHandler(installs *service.DoneBotService, catalog *service.Do
 	h.templates = templates
 	return h
 }
+
+func (h *DoneBotHandler) CodingGroups(c *gin.Context) {
+	if h.catalog == nil {
+		response.Error(c, 503, "Coding groups unavailable")
+		return
+	}
+	groups, err := h.catalog.CodingGroups(c.Request.Context())
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	response.Success(c, groups)
+}

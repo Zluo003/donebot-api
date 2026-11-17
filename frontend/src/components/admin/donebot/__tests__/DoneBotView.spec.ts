@@ -7,22 +7,22 @@ import donebot from '@/api/admin/donebot'
 const route = vi.hoisted(() => ({ query: { tab: 'storage' } }))
 vi.mock('vue-router', () => ({ useRoute: () => route }))
 vi.mock('@/api/admin/donebot', () => ({ default: { overview: vi.fn() } }))
-const stubs = { AppLayout: { template: '<div><slot/></div>' }, LlmModelsPanel: true, ImageModelsPanel: true, AudioModelsPanel: true, VideoModelsPanel: true, StoragePanel: true, ClientReleasesPanel: true, WebToolsPanel: true, RelayNodesPanel: true, InstallList: true }
+const stubs = { AppLayout: { template: '<div><slot/></div>' }, LlmModelsPanel: true, CodingGroupsPanel: true, ImageModelsPanel: true, AudioModelsPanel: true, VideoModelsPanel: true, StoragePanel: true, ClientReleasesPanel: true, WebToolsPanel: true, RelayNodesPanel: true, InstallList: true }
 describe('DoneBot admin page', () => {
  it('shows all model and storage tabs without a stale static storage warning', async () => {
   setActivePinia(createPinia())
   vi.mocked(donebot.overview).mockResolvedValue({ group: { id: 1, name: 'DoneBot', platform: 'composite' }, user_count: 1, model_count: 2, install_count: 1, today_usage: { total_requests: 0, total_actual_cost: 0 }, asset_storage: { driver: 'local', public_base_url_configured: false } })
   const wrapper = mount(DoneBotView, { global: { stubs } }); await flushPromises()
   const tabs = wrapper.findAll('[role=tab]')
-  expect(tabs.map(t => t.text())).toEqual(['LLM', '图片', '音频', '视频', '存储', '客户端版本', '联网工具', '手机连接'])
+  expect(tabs.map(t => t.text())).toEqual(['LLM', '编程', '图片', '音频', '视频', '存储', '客户端版本', '联网工具', '手机连接'])
   expect(wrapper.findComponent({ name: 'StoragePanel' }).exists()).toBe(true)
-  await tabs[6].trigger('click')
-  expect(wrapper.findComponent({ name: 'WebToolsPanel' }).exists()).toBe(true)
   await tabs[7].trigger('click')
+  expect(wrapper.findComponent({ name: 'WebToolsPanel' }).exists()).toBe(true)
+  await tabs[8].trigger('click')
   expect(wrapper.findComponent({ name: 'RelayNodesPanel' }).exists()).toBe(true)
-  await tabs[1].trigger('click')
+  await tabs[2].trigger('click')
   expect(wrapper.find('[role=alert]').exists()).toBe(false)
-  await tabs[4].trigger('click')
+  await tabs[5].trigger('click')
   expect(wrapper.findComponent({ name: 'StoragePanel' }).exists()).toBe(true)
  })
  it.each([undefined, { audio: false, video: false }, { audio: true, video: true }])('shows media configuration without a separate runtime state (%j)', async features => {
@@ -31,11 +31,11 @@ describe('DoneBot admin page', () => {
   vi.mocked(donebot.overview).mockResolvedValue(overview)
   const wrapper = mount(DoneBotView, { global: { stubs } }); await flushPromises()
   const tabs = wrapper.findAll('[role=tab]')
-  expect(tabs.map(t => t.text())).toEqual(['LLM', '图片', '音频', '视频', '存储', '客户端版本', '联网工具', '手机连接'])
-  await tabs[2].trigger('click')
+  expect(tabs.map(t => t.text())).toEqual(['LLM', '编程', '图片', '音频', '视频', '存储', '客户端版本', '联网工具', '手机连接'])
+  await tabs[3].trigger('click')
   expect(wrapper.findComponent({ name: 'AudioModelsPanel' }).exists()).toBe(true)
   expect(wrapper.text()).not.toContain('调用未启用')
-  await tabs[3].trigger('click')
+  await tabs[4].trigger('click')
   expect(wrapper.findComponent({ name: 'VideoModelsPanel' }).exists()).toBe(true)
   expect(wrapper.text()).not.toContain('调用未启用')
  })
@@ -44,7 +44,7 @@ describe('DoneBot admin page', () => {
   route.query.tab = 'web-tools'
   const wrapper = mount(DoneBotView, { global: { stubs } }); await flushPromises()
   expect(wrapper.findComponent({ name: 'WebToolsPanel' }).exists()).toBe(true)
-  expect(wrapper.findAll('[role=tab]')[6].attributes('aria-selected')).toBe('true')
+  expect(wrapper.findAll('[role=tab]')[7].attributes('aria-selected')).toBe('true')
   route.query.tab = 'storage'
  })
  it('switches tabs when a storage settings link updates the current route query', async () => {
@@ -55,6 +55,6 @@ describe('DoneBot admin page', () => {
   route.query.tab = 'storage'
   await nextTick()
   expect(wrapper.findComponent({ name: 'StoragePanel' }).exists()).toBe(true)
-  expect(wrapper.findAll('[role=tab]')[4].attributes('aria-selected')).toBe('true')
+  expect(wrapper.findAll('[role=tab]')[5].attributes('aria-selected')).toBe('true')
  })
 })

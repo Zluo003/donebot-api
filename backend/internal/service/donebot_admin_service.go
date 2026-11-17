@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -766,4 +767,25 @@ func doneBotCatalogAccountsSupport(accounts []Account, platform, model, endpoint
 		}
 	}
 	return false
+}
+
+func (s *DoneBotAdminService) CodingGroups(ctx context.Context) ([]map[string]any, error) {
+	groups := make([]map[string]any, 0, 2)
+	for _, engine := range []string{"codex", "claude"} {
+		setting, _, _ := DoneBotCodingGroupSetting(engine)
+		value, err := s.settings.GetValue(ctx, setting)
+		if err != nil {
+			return nil, err
+		}
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		g, err := s.admin.GetGroup(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		groups = append(groups, map[string]any{"engine": engine, "id": g.ID, "name": g.Name, "platform": g.Platform, "rate_multiplier": g.RateMultiplier, "status": g.Status})
+	}
+	return groups, nil
 }

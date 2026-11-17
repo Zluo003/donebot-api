@@ -37,8 +37,12 @@ func (r *doneBotSetupRepository) EnsureGroup(ctx context.Context, desired *servi
 	if err := lockDoneBotGroupBinding(ctx, client); err != nil {
 		return 0, fmt.Errorf("lock DoneBot setup: %w", err)
 	}
+	binding := service.DoneBotGroupBinding(desired.Platform)
+	if binding == "" {
+		return 0, fmt.Errorf("unsupported DoneBot group platform %q", desired.Platform)
+	}
 	settings := NewSettingRepository(client)
-	storedID, err := settings.GetValue(ctx, service.DoneBotGroupIDSettingKey)
+	storedID, err := settings.GetValue(ctx, binding)
 	if err != nil && !errors.Is(err, service.ErrSettingNotFound) {
 		return 0, err
 	}
@@ -46,7 +50,7 @@ func (r *doneBotSetupRepository) EnsureGroup(ctx context.Context, desired *servi
 	if storedID != "" {
 		id, parseErr := strconv.ParseInt(storedID, 10, 64)
 		if parseErr != nil || id <= 0 {
-			return 0, fmt.Errorf("invalid %s setting", service.DoneBotGroupIDSettingKey)
+			return 0, fmt.Errorf("invalid %s setting", binding)
 		}
 		existing, err = client.Group.Query().Where(group.IDEQ(id), group.DeletedAtIsNil()).Only(ctx)
 		if err != nil && !dbent.IsNotFound(err) {
@@ -60,8 +64,8 @@ func (r *doneBotSetupRepository) EnsureGroup(ctx context.Context, desired *servi
 		}
 	}
 	if existing != nil {
-		if existing.Platform != service.PlatformComposite || existing.Status != service.StatusActive || existing.SubscriptionType != service.SubscriptionTypeStandard {
-			return 0, fmt.Errorf("DoneBot group %d must be active with platform=composite and subscription_type=standard", existing.ID)
+		if existing.Platform != desired.Platform || (desired.Platform == service.PlatformComposite && existing.Status != service.StatusActive) || existing.SubscriptionType != service.SubscriptionTypeStandard {
+			return 0, fmt.Errorf("DoneBot group %d must have platform=%s and subscription_type=standard (the aggregate group must be active)", existing.ID, desired.Platform)
 		}
 		desired.ID = existing.ID
 	} else {
@@ -75,7 +79,7 @@ func (r *doneBotSetupRepository) EnsureGroup(ctx context.Context, desired *servi
 			return 0, err
 		}
 	}
-	if err := settings.Set(ctx, service.DoneBotGroupIDSettingKey, strconv.FormatInt(desired.ID, 10)); err != nil {
+	if err := settings.Set(ctx, binding, strconv.FormatInt(desired.ID, 10)); err != nil {
 		return 0, err
 	}
 	if tx != nil {

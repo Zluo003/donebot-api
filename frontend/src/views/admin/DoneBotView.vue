@@ -24,6 +24,7 @@
           >{{ tab.label }}</button>
         </div>
         <LlmModelsPanel v-if="active === 'llm'" />
+        <CodingGroupsPanel v-else-if="active === 'coding'" />
         <ImageModelsPanel v-else-if="active === 'images'" />
         <AudioModelsPanel v-else-if="active === 'audio'" />
         <VideoModelsPanel v-else-if="active === 'video'" />
@@ -49,18 +50,19 @@ import StoragePanel from '@/components/admin/donebot/StoragePanel.vue'
 import ClientReleasesPanel from '@/components/admin/donebot/ClientReleasesPanel.vue'
 import WebToolsPanel from '@/components/admin/donebot/WebToolsPanel.vue'
 import RelayNodesPanel from '@/components/admin/donebot/RelayNodesPanel.vue'
+import CodingGroupsPanel from '@/components/admin/donebot/CodingGroupsPanel.vue'
 import InstallList from '@/components/admin/donebot/InstallList.vue'
 import donebot, { type Overview, type Modality } from '@/api/admin/donebot'
 import { useAppStore } from '@/stores/app'
 
 const app = useAppStore()
 const route = useRoute()
-const active = ref<Modality | 'storage' | 'releases' | 'web-tools' | 'relay'>(route.query.tab === 'releases' ? 'releases' : route.query.tab === 'relay' ? 'relay' : route.query.tab === 'web-tools' ? 'web-tools' : route.query.tab === 'storage' ? 'storage' : 'llm')
+const active = ref<Modality | 'storage' | 'releases' | 'web-tools' | 'relay' | 'coding'>(route.query.tab === 'coding' ? 'coding' : route.query.tab === 'releases' ? 'releases' : route.query.tab === 'relay' ? 'relay' : route.query.tab === 'web-tools' ? 'web-tools' : route.query.tab === 'storage' ? 'storage' : 'llm')
 watch(() => route.query.tab, (tab) => {
-  active.value = tab === 'releases' || tab === 'relay' || tab === 'web-tools' || tab === 'storage' ? tab : 'llm'
+  active.value = tab === 'coding' || tab === 'releases' || tab === 'relay' || tab === 'web-tools' || tab === 'storage' ? tab : 'llm'
 })
 const overview = ref<Overview | null>(null)
-const tabs = [{ id: 'llm' as const, label: 'LLM' }, { id: 'images' as const, label: '图片' }, { id: 'audio' as const, label: '音频' }, { id: 'video' as const, label: '视频' }, { id: 'storage' as const, label: '存储' }, { id: 'releases' as const, label: '客户端版本' }, { id: 'web-tools' as const, label: '联网工具' }, { id: 'relay' as const, label: '手机连接' }]
+const tabs = [{ id: 'llm' as const, label: 'LLM' }, { id: 'coding' as const, label: '编程' }, { id: 'images' as const, label: '图片' }, { id: 'audio' as const, label: '音频' }, { id: 'video' as const, label: '视频' }, { id: 'storage' as const, label: '存储' }, { id: 'releases' as const, label: '客户端版本' }, { id: 'web-tools' as const, label: '联网工具' }, { id: 'relay' as const, label: '手机连接' }]
 const metrics = computed(() => [
   { label: '已绑定用户', value: overview.value?.user_count },
   { label: '启用模型', value: overview.value?.model_count },

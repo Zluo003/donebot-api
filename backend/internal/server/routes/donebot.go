@@ -70,6 +70,7 @@ func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, ste
 		donebot.GET("/releases", h.Admin.DoneBot.ClientReleases)
 		donebot.POST("/releases/upload", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UploadClientRelease)
 		donebot.POST("/releases/:version/publish", gin.HandlerFunc(stepUp), h.Admin.DoneBot.PublishClientRelease)
+		donebot.GET("/coding", h.Admin.DoneBot.CodingGroups)
 		donebot.GET("/overview", h.Admin.DoneBot.Overview)
 		donebot.GET("/llm/models", h.Admin.DoneBot.LlmModels)
 		donebot.PUT("/llm/models", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateLlmModels)

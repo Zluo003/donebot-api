@@ -9,6 +9,30 @@ import (
 
 const DoneBotGroupIDSettingKey = "donebot.group_id"
 
+func DoneBotCodingGroupSetting(engine string) (setting, platform, name string) {
+	switch engine {
+	case "codex":
+		return "donebot.codex_group_id", PlatformOpenAI, "DoneBot Codex"
+	case "claude":
+		return "donebot.claude_group_id", PlatformAnthropic, "DoneBot Claude Code"
+	default:
+		return "", "", ""
+	}
+}
+
+func DoneBotGroupBinding(platform string) string {
+	switch platform {
+	case PlatformOpenAI:
+		return "donebot.codex_group_id"
+	case PlatformAnthropic:
+		return "donebot.claude_group_id"
+	case PlatformComposite:
+		return DoneBotGroupIDSettingKey
+	default:
+		return ""
+	}
+}
+
 // DoneBotSetupRepository atomically ensures a compatible group and persists its ID.
 // Implementations serialize concurrent initializations across gateway instances.
 type DoneBotSetupRepository interface {
@@ -52,6 +76,17 @@ func (s *DoneBotSetupService) EnsureDoneBotGroup(ctx context.Context) (int64, er
 	id, err := s.repo.EnsureGroup(ctx, desired, s.cfg.DoneBot.AutoCreateGroup)
 	if err != nil {
 		return 0, fmt.Errorf("ensure DoneBot group: %w", err)
+	}
+	for _, engine := range []string{"codex", "claude"} {
+		_, platform, name := DoneBotCodingGroupSetting(engine)
+		coding := *desired
+		coding.ID = 0
+		coding.Name, coding.Platform = name, platform
+		coding.Description = "DoneBot native coding gateway"
+		coding.AllowImageGeneration = false
+		if _, err := s.repo.EnsureGroup(ctx, &coding, s.cfg.DoneBot.AutoCreateGroup); err != nil {
+			return 0, fmt.Errorf("ensure DoneBot %s group: %w", engine, err)
+		}
 	}
 	return id, nil
 }
