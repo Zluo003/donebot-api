@@ -1,5 +1,7 @@
 # Seedance 接入说明
 
+> 新客户端使用 [donebot.media.v1 统一异步协议](media-protocol.md)，不再自行拼 Seedance content。以下原生字段说明用于网关内部适配与旧请求兼容。
+
 核对日期：2026-11-03。本次按 NewToken 的 Seedance 官方格式接入，视频需求取代早期方案中“视频仅留开关”的范围限制；本页的参考音频属于视频请求中的素材，独立音频生成另见 [APIMart 接入说明](APIMart-接入说明.md)。
 
 ## 来源与差异

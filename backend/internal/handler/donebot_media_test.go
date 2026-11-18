@@ -4,6 +4,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -136,4 +137,48 @@ func doneBotVideoContext(method, path, taskID string) (*gin.Context, *httptest.R
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Params = gin.Params{{Key: "request_id", Value: taskID}}
 	return c, w
+}
+
+func TestUnifiedMuseCreateUsesConfiguredAliasAndNativeBody(t *testing.T) {
+	h, slots, _, upstream := newGrokMediaSlotHandler(t, false, false, service.PlatformOpenAI, "muse")
+	upstream.call = func(req *http.Request, _ int64) (*http.Response, error) {
+		if req.Method == http.MethodGet {
+			require.Equal(t, "/v1/videos/unified-task", req.URL.Path)
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"unified-task","status":"processing"}`))}, nil
+		}
+		body, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
+		require.Contains(t, string(body), `"prompt":"Keep exact words"`)
+		require.Contains(t, string(body), `"model":"muse-video"`)
+		require.NotContains(t, string(body), `"protocol"`)
+		require.NotContains(t, string(body), `"content"`)
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"unified-task","status":"queued"}`))}, nil
+	}
+	c, w := museHandlerContext(http.MethodPost, "")
+	body := `{"protocol":"donebot.media.v1","model":"public-muse","mode":"text","prompt":"Keep exact words","duration":6,"resolution":"720p","aspect_ratio":"16:9"}`
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.DoneBotVideoGeneration(c)
+	require.Equal(t, 202, w.Code, w.Body.String())
+	require.Equal(t, 1, upstream.calls)
+	var accepted map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &accepted))
+	id := accepted["id"].(string)
+	require.True(t, strings.HasPrefix(id, unifiedVideoTaskPrefix))
+	require.Equal(t, "processing", accepted["status"])
+	c, w = museHandlerContext(http.MethodGet, id)
+	h.DoneBotVideoStatus(c)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"id":"`+id+`"`)
+	c, w = museHandlerContext(http.MethodGet, id)
+	h.DoneBotVideoContent(c)
+	require.Equal(t, 409, w.Code, w.Body.String())
+	c, w = museHandlerContext(http.MethodGet, id)
+	key, _ := middleware.GetAPIKeyFromContext(c)
+	key.ID++
+	before := upstream.calls
+	h.DoneBotVideoStatus(c)
+	require.Equal(t, 404, w.Code, w.Body.String())
+	require.Equal(t, before, upstream.calls)
+	slots.assertReleased(t)
 }

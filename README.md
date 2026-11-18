@@ -93,6 +93,8 @@ pnpm test:run
 
 - [Deployment guide](deploy/README.md)
 - [Independent mobile relay nodes](deploy/MOBILE_RELAY.md)
+- [Unified image/video async protocol](docs/donebot/media-protocol.md)
+- [Media model adapter checklist](docs/donebot/media-model-adapter-guide.md)
 - [Storage management](docs/donebot/存储管理说明.md)
 - [DoneBot gateway documentation](docs/donebot/README.md)
 - [Model pricing](docs/donebot/模型定价说明.md)

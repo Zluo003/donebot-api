@@ -56,6 +56,7 @@ type DoneBotMediaArtifact struct {
 }
 
 type DoneBotDispatch struct {
+	UnifiedProtocol bool                          `json:"unified_protocol,omitempty"`
 	ReceiptID       string                        `json:"receipt_id"`
 	TaskID          string                        `json:"task_id"`
 	UserID          int64                         `json:"user_id"`
@@ -124,6 +125,7 @@ func (s *OpenAIGatewayService) SubmitDoneBotDispatch(ctx context.Context, key *A
 	if repo == nil || receipt == "" {
 		return nil, ErrDoneBotMediaPrepaidUnavailable
 	}
+	task.UnifiedProtocol, _ = ctx.Value(unifiedMediaContextKey{}).(bool)
 	task.ReceiptID = receipt
 	task.TaskID = "dbtask_" + strings.ReplaceAll(receipt, "-", "")
 	if task.Protocol == DoneBotDispatchImages {
@@ -211,7 +213,7 @@ func (s *OpenAIGatewayService) SubmitDoneBotDispatch(ctx context.Context, key *A
 
 func (task *DoneBotDispatch) AcceptedBody() []byte {
 	var value any = map[string]any{"id": task.TaskID, "task_id": task.TaskID, "status": "processing", "receipt_id": task.ReceiptID}
-	if task.Protocol == DoneBotDispatchAPIMartImages || task.Protocol == DoneBotDispatchAPIMartMusic {
+	if !task.UnifiedProtocol && (task.Protocol == DoneBotDispatchAPIMartImages || task.Protocol == DoneBotDispatchAPIMartMusic) {
 		value = map[string]any{"code": 200, "data": []any{map[string]any{"task_id": task.TaskID, "status": "processing"}}}
 	}
 	body, _ := json.Marshal(value)
@@ -219,6 +221,9 @@ func (task *DoneBotDispatch) AcceptedBody() []byte {
 }
 
 func (task *DoneBotDispatch) PublicBody() []byte {
+	if task.UnifiedProtocol {
+		return task.unifiedPublicBody()
+	}
 	status := "processing"
 	generationStatus := ""
 	switch task.State {

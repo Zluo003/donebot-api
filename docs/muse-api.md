@@ -1,5 +1,7 @@
 # Muse 视频 API 对接
 
+> 新下游客户端使用 [donebot.media.v1 统一异步协议](donebot/media-protocol.md)。本文中的供应商字段用于原生兼容与网关内部适配，不要求新客户端按供应商切换请求格式。
+
 依据 [Token API Muse 视频文档](https://token.secure-skill.com/docs#muse-video) 接入。
 本文描述本仓库实现，线上是否可用以部署版本和分组配置为准。
 

@@ -40,7 +40,29 @@ func (h *OpenAIGatewayHandler) doneBotVideoCreate(c *gin.Context, grok gin.Handl
 		}
 		return
 	}
+	if gjson.GetBytes(body, "protocol").Exists() {
+		native, resolveErr := h.gatewayService.UnifiedMediaNativeModel(c.Request.Context(), key, gjson.GetBytes(body, "model").String(), "video")
+		if resolveErr != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", resolveErr.Error())
+			return
+		}
+		c.Request = c.Request.WithContext(service.WithUnifiedMediaProtocol(c.Request.Context()))
+		body, _, err = service.ConvertUnifiedMedia(body, "video", native)
+		if err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+			return
+		}
+	}
 	requestmodel.ResetRequestBody(c.Request, body)
+	if service.IsUnifiedMediaProtocol(c.Request.Context()) && service.DoneBotMediaReceiptID(c.Request.Context()) == "" {
+		serveUnifiedVideoResponse(c, func(c *gin.Context) { h.dispatchDoneBotVideo(c, grok, body) }, "")
+		return
+	}
+	h.dispatchDoneBotVideo(c, grok, body)
+}
+
+func (h *OpenAIGatewayHandler) dispatchDoneBotVideo(c *gin.Context, grok gin.HandlerFunc, body []byte) {
+	key, _ := middleware.GetAPIKeyFromContext(c)
 	muse, err := h.gatewayService.IsMuseVideoRequest(c.Request.Context(), key, gjson.GetBytes(body, "model").String())
 	if err != nil {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video routing is unavailable")
@@ -71,6 +93,9 @@ func (h *OpenAIGatewayHandler) doneBotVideoCreate(c *gin.Context, grok gin.Handl
 }
 
 func (h *OpenAIGatewayHandler) DoneBotVideoStatus(c *gin.Context) {
+	if serveUnifiedVideoTask(c, h.DoneBotVideoStatus, false) {
+		return
+	}
 	if h.serveDoneBotDispatch(c, c.Param("request_id")) {
 		return
 	}
@@ -90,6 +115,9 @@ func (h *OpenAIGatewayHandler) DoneBotVideoStatus(c *gin.Context) {
 }
 
 func (h *OpenAIGatewayHandler) DoneBotVideoContent(c *gin.Context) {
+	if serveUnifiedVideoTask(c, h.DoneBotVideoContent, true) {
+		return
+	}
 	if h.serveDoneBotDispatchVideoContent(c) {
 		return
 	}

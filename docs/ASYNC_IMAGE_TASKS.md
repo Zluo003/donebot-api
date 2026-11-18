@@ -1,5 +1,7 @@
 # Asynchronous Image Tasks
 
+> 新下游客户端使用 [donebot.media.v1 统一异步协议](donebot/media-protocol.md)。本文中的供应商字段用于原生兼容与网关内部适配，不要求新客户端按供应商切换请求格式。
+
 Asynchronous image tasks let clients submit long-running OpenAI-compatible image requests without keeping one HTTP connection open. This avoids proxy/CDN response timeouts such as Cloudflare 524 while preserving the existing image routing, billing, moderation, concurrency, and failover behavior.
 
 ## Endpoints

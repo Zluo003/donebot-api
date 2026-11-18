@@ -16,9 +16,11 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requestmodel"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -103,6 +105,36 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 	if len(body) == 0 {
 		imageTaskJSONError(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
 		return
+	}
+	if gjson.GetBytes(body, "protocol").Exists() {
+		if h.openAI == nil || h.openAI.gatewayService == nil {
+			imageTaskError(c, service.ErrImageTaskUnavailable)
+			return
+		}
+		native, resolveErr := h.openAI.gatewayService.UnifiedMediaNativeModel(c.Request.Context(), apiKey, gjson.GetBytes(body, "model").String(), "image")
+		if resolveErr != nil {
+			imageTaskJSONError(c, http.StatusBadRequest, "invalid_request_error", resolveErr.Error())
+			return
+		}
+		var path string
+		c.Request = c.Request.WithContext(service.WithUnifiedMediaProtocol(c.Request.Context()))
+		body, path, err = service.ConvertUnifiedMedia(body, "image", native)
+		if err != nil {
+			imageTaskJSONError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+			return
+		}
+		if path != "" {
+			c.Request.URL.Path = path
+		}
+		requestmodel.ResetRequestBody(c.Request, body)
+		if service.IsAPIMartImageModel(native) {
+			if service.DoneBotMediaReceiptID(c.Request.Context()) == "" {
+				h.serveUnifiedAPIMartImage(c, false)
+				return
+			}
+			h.openAI.APIMartImages(c)
+			return
+		}
 	}
 	if asyncImageRequestStreams(c.GetHeader("Content-Type"), body) {
 		imageTaskJSONError(c, http.StatusBadRequest, "invalid_request_error", "streaming image requests cannot be submitted as asynchronous tasks")
@@ -213,6 +245,10 @@ func (h *AsyncImageHandler) checkSecurityAuditBeforeSubmit(c *gin.Context, apiKe
 }
 
 func (h *AsyncImageHandler) Get(c *gin.Context) {
+	if strings.HasPrefix(c.Param("task_id"), "apimart_") && h.openAI != nil {
+		h.serveUnifiedAPIMartImage(c, true)
+		return
+	}
 	// Polling deliberately does not require the feature to be enabled, only that
 	// the task store is reachable. Turning the switch off in the admin UI must not
 	// strand tasks that were already accepted — their results are still in Redis
