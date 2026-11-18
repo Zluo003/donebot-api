@@ -190,6 +190,32 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamPreservesBodyAnd
 	require.Empty(t, rec.Header().Get("Set-Cookie"), "响应头应经过安全过滤")
 }
 
+func TestGatewayService_AnthropicAPIKeyPassthrough_PreservesFable52SignedPrefix(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("Authorization", "Bearer fixture-installation-key")
+	const model = "claude-fable-5-2"
+	body := []byte(`{"model":"claude-fable-5-2","max_tokens":8192,"stream":true,"system":"Use tools when appropriate.","tools":[{"name":"lookup","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"text","text":"Look up the record."}]},{"role":"assistant","content":[{"type":"thinking","thinking":"","signature":"fixture-signature"},{"type":"tool_use","id":"toolu_fixture","name":"lookup","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_fixture","content":"found"}]}]}`)
+	upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"message_stop\"}\n\n")),
+	}}
+	cfg := &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}
+	svc := &GatewayService{cfg: cfg, responseHeaderFilter: compileResponseHeaderFilter(cfg), httpUpstream: upstream}
+	account := newAnthropicAPIKeyAccountForTest()
+	account.Extra = map[string]any{"anthropic_passthrough": true}
+	account.Credentials["model_mapping"] = map[string]any{model: model}
+	parsed := &ParsedRequest{Body: NewRequestBodyRef(body), Model: model, Stream: true}
+	_, err := svc.Forward(context.Background(), c, account, parsed)
+	require.NoError(t, err)
+	require.Equal(t, body, upstream.lastBody)
+	require.Equal(t, account.GetCredential("api_key"), getHeaderRaw(upstream.lastReq.Header, "x-api-key"))
+	require.Empty(t, getHeaderRaw(upstream.lastReq.Header, "authorization"))
+}
+
 func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardCountTokensPreservesBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -9,7 +9,7 @@ vi.mock('@/components/layout/AppLayout.vue', () => ({ default: { template: '<mai
 vi.mock('@/components/common/BaseDialog.vue', () => ({ default: { props: ['title'], template: '<section role="dialog"><h2>{{ title }}</h2><slot /><slot name="footer" /></section>' } }))
 let wrapper: VueWrapper | undefined
 const click = (text: string) => wrapper!.findAll('button').find(button => button.text() === text)!.trigger('click')
-const instance: CloudInstance = { id: 'f7bf1b5b-24c8-4d0b-a2cd-fc76b64ad319', desired: 'running', actual: 'running', error: '', paid_until: new Date(Date.now() + 86400000).toISOString(), subscription_state: 'active', purge_locked: false }
+const instance: CloudInstance = { id: 'f7bf1b5b-24c8-4d0b-a2cd-fc76b64ad319', desired: 'running', actual: 'running', error: '', paid_until: new Date(Date.now() + 86400000).toISOString(), subscription_state: 'active', purge_locked: false, auto_renew: true }
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(cloudAPI.plan).mockResolvedValue({ plan: { enabled: true, monthly_price: '19.123456', retention_days: 7 }, browser_available: true })
@@ -21,7 +21,7 @@ afterEach(() => { wrapper?.unmount() })
 describe('user Cloud console', () => {
   it('shows a refused payment and offers a newly confirmed retry without claiming success', async () => {
     wrapper = mount(CloudView); await flushPromises()
-    await click('开通 Cloud')
+    await click('购买 Cloud 云主机')
     const failed = { id: 'op-failed', action: 'start', state: 'failed', error: 'billing_insufficient_balance' }
     vi.mocked(cloudAPI.mutate).mockResolvedValueOnce({ instance, operation: failed })
     vi.mocked(cloudAPI.instances).mockResolvedValue([{ ...instance, actual: 'error', error: failed.error, paid_until: null, subscription_state: '' }])
@@ -37,22 +37,23 @@ describe('user Cloud console', () => {
     await click('确认'); await flushPromises()
     expect(vi.mocked(cloudAPI.mutate).mock.calls[1][2]).not.toBe(oldKey)
   })
-  it('recognizes a cancelled subscription and confirms a fresh monthly charge before reopening', async () => {
-    vi.mocked(cloudAPI.instances).mockResolvedValue([{ ...instance, desired: 'stopped', actual: 'stopped', subscription_state: 'cancelled' }])
+  it('enables automatic renewal in a paid period without a new purchase', async () => {
+    vi.mocked(cloudAPI.instances).mockResolvedValue([{ ...instance, auto_renew: false }])
     wrapper = mount(CloudView); await flushPromises()
-    expect(wrapper.text()).toContain('已取消续费')
+    expect(wrapper.text()).toContain('自动续费已关闭')
     expect(wrapper.findAll('button').some(button => button.text() === '取消自动续费')).toBe(false)
-    await click('重新开通')
-    expect(wrapper.get('[role="dialog"]').text()).toContain('开始新的一个月')
+    expect(wrapper.findAll('button').some(button => button.text() === '停机并保留数据')).toBe(false)
+    await click('自动续费')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('本次不扣款，不改变当前到期时间')
     expect(cloudAPI.mutate).not.toHaveBeenCalled()
     await click('确认'); await flushPromises()
-    expect(cloudAPI.mutate).toHaveBeenCalledWith(instance.id, 'start', expect.any(String))
+    expect(cloudAPI.mutate).toHaveBeenCalledWith(instance.id, 'keep', expect.any(String))
   })
   it('shows exact prepaid price and deletion terms, and charges only after confirmation', async () => {
     wrapper = mount(CloudView); await flushPromises()
     expect(wrapper.text()).toContain('19.123456')
     expect(wrapper.text()).toContain('永久删除实例与数据')
-    await click('开通 Cloud')
+    await click('购买 Cloud 云主机')
     expect(cloudAPI.mutate).not.toHaveBeenCalled()
     await click('确认'); await flushPromises()
     expect(cloudAPI.mutate).toHaveBeenCalledWith(undefined, 'start', expect.any(String))
@@ -60,16 +61,16 @@ describe('user Cloud console', () => {
   })
   it('keeps the same purchase key on a retry after a lost response', async () => {
     vi.mocked(cloudAPI.mutate).mockRejectedValueOnce(new Error('连接中断，请重试'))
-    wrapper = mount(CloudView); await flushPromises(); await click('开通 Cloud'); await click('确认'); await flushPromises()
+    wrapper = mount(CloudView); await flushPromises(); await click('购买 Cloud 云主机'); await click('确认'); await flushPromises()
     expect(wrapper.get('[role="dialog"]').text()).toContain('连接中断')
     const key = vi.mocked(cloudAPI.mutate).mock.calls[0][2]
     await click('确认'); await flushPromises()
     expect(cloudAPI.mutate).toHaveBeenLastCalledWith(undefined, 'start', key)
   })
-  it('requires confirmation before cancellation and describes immediate stop and data retention', async () => {
+  it('requires confirmation before cancellation and preserves the paid service period', async () => {
     vi.mocked(cloudAPI.instances).mockResolvedValue([instance])
     wrapper = mount(CloudView); await flushPromises(); await click('取消自动续费')
-    expect(wrapper.get('[role="dialog"]').text()).toContain('立即停机')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Cloud 继续运行至')
     expect(cloudAPI.mutate).not.toHaveBeenCalled()
     await click('确认'); await flushPromises()
     expect(cloudAPI.mutate).toHaveBeenCalledWith(instance.id, 'cancel', expect.any(String))
@@ -78,6 +79,8 @@ describe('user Cloud console', () => {
     vi.mocked(cloudAPI.instances).mockResolvedValue([{ ...instance, paid_until: new Date(Date.now() - 1000).toISOString() }])
     wrapper = mount(CloudView); await flushPromises()
     expect(wrapper.findAll('button').find(button => button.text() === '打开云实例')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('button').some(button => button.text() === '购买 Cloud 云主机')).toBe(true)
+    expect(wrapper.findAll('button').some(button => button.text() === '自动续费')).toBe(false)
     wrapper.unmount()
     vi.mocked(cloudAPI.plan).mockRejectedValue(new Error('套餐暂不可用'))
     wrapper = mount(CloudView); await flushPromises()

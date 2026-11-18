@@ -42,17 +42,17 @@ func ProvideDoneBotUserHandler(installs *service.DoneBotService, settings servic
 	return h
 }
 
-func (h *DoneBotHandler) ValidateReasoning(ctx context.Context, groupID int64, modelID, iface string, body []byte) error {
+func (h *DoneBotHandler) PrepareReasoning(ctx context.Context, groupID int64, modelID, iface string, body []byte) ([]byte, context.Context, error) {
 	if h == nil {
-		return service.ErrDoneBotGroupUnavailable
+		return body, ctx, service.ErrDoneBotGroupUnavailable
 	}
 	validator, ok := h.catalog.(interface {
-		ValidateReasoning(context.Context, int64, string, string, []byte) error
+		PrepareReasoning(context.Context, int64, string, string, []byte) ([]byte, context.Context, error)
 	})
 	if !ok {
-		return service.ErrDoneBotGroupUnavailable
+		return body, ctx, service.ErrDoneBotGroupUnavailable
 	}
-	return validator.ValidateReasoning(ctx, groupID, modelID, iface, body)
+	return validator.PrepareReasoning(ctx, groupID, modelID, iface, body)
 }
 
 func (h *DoneBotHandler) Models(c *gin.Context) {

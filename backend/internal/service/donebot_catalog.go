@@ -18,6 +18,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 const doneBotCapabilitiesSetting = "donebot.model_capabilities.v4"
@@ -47,6 +48,8 @@ type DoneBotCatalogModel struct {
 	Pricing               DoneBotCatalogPricing          `json:"pricing"`
 	MediaParameters       *DoneBotCatalogMediaParameters `json:"media_parameters,omitempty"`
 	MediaFallbackPriority int                            `json:"-"`
+	nativeLLMIDs          map[string]string
+	reasoningDefaults     map[string]string
 }
 
 type DoneBotCatalogCapabilities struct {
@@ -221,14 +224,32 @@ func (s *DoneBotCatalogService) loadCatalog(ctx context.Context, groupID int64) 
 // authenticated DoneBot installation key. Callers provide its bound group and
 // the actual inbound interface; Gemini model IDs come from the request URL.
 func (s *DoneBotCatalogService) ValidateReasoning(ctx context.Context, groupID int64, modelID, iface string, body []byte) error {
+	_, _, err := s.PrepareReasoning(ctx, groupID, modelID, iface, body)
+	return err
+}
+
+func (s *DoneBotCatalogService) PrepareReasoning(ctx context.Context, groupID int64, modelID, iface string, body []byte) ([]byte, context.Context, error) {
+	prepared, request, requested, err := s.prepareReasoning(ctx, groupID, modelID, iface, body)
+	if err != nil {
+		return body, ctx, err
+	}
+	if requested != "" {
+		ctx = WithRequestedReasoningEffort(ctx, strings.ToLower(requested))
+	}
+	return prepared, context.WithValue(ctx, doneBotLLMRequestKey{}, request), nil
+}
+
+func (s *DoneBotCatalogService) prepareReasoning(ctx context.Context, groupID int64, modelID, iface string, body []byte) ([]byte, doneBotLLMRequest, string, error) {
+	request := doneBotLLMRequest{iface: iface}
+	reject := func(err error) ([]byte, doneBotLLMRequest, string, error) { return body, request, "", err }
 	if err := validateDoneBotNativeJSON(body, true); err != nil {
-		return ErrDoneBotReasoningUnsupported
+		return reject(ErrDoneBotReasoningUnsupported)
 	}
 	var document map[string]json.RawMessage
 	if err := json.Unmarshal(body, &document); err != nil || document == nil {
-		return ErrDoneBotReasoningUnsupported
+		return reject(ErrDoneBotReasoningUnsupported)
 	}
-	paths := []string{"reasoning.effort", "reasoning_effort", "output_config.effort", "thinking.budget_tokens", "generationConfig.thinkingConfig.thinkingBudget", "thinkingConfig.thinkingBudget", "effort", "reasoning.budget_tokens", "thinking.budgetTokens", "thinkingConfig.thinkingLevel", "generationConfig.thinkingConfig.thinkingLevel", "generation_config.thinking_config.thinking_budget", "generation_config.thinking_config.thinking_level"}
+	paths := []string{"reasoning.effort", "reasoning_effort", "output_config.effort", "thinking.budget_tokens", "effort", "reasoning.budget_tokens", "thinking.budgetTokens", "generationConfig.thinkingConfig.thinkingBudget", "generationConfig.thinkingConfig.thinkingLevel"}
 	var selectedPath string
 	var selectedValue gjson.Result
 	for _, path := range paths {
@@ -237,65 +258,125 @@ func (s *DoneBotCatalogService) ValidateReasoning(ctx context.Context, groupID i
 			continue
 		}
 		if selectedPath != "" {
-			return ErrDoneBotReasoningUnsupported
+			return reject(ErrDoneBotReasoningUnsupported)
 		}
 		selectedPath, selectedValue = path, value
-	}
-	if selectedPath == "" {
-		return nil
 	}
 	if modelID == "" {
 		value, _ := doneBotNativeValue(document, "model")
 		modelID = value.String()
 	}
+	if public, ok := RequestedPublicModelFromContext(ctx); ok {
+		modelID = public
+	}
+	if modelID == "" && selectedPath == "" {
+		return body, request, "", nil
+	}
 	inputs, err := s.loadCatalog(ctx, groupID)
 	if err != nil {
-		return err
+		return reject(err)
 	}
 	catalog, err := buildDoneBotPublicCatalog(inputs.group, 0, "", inputs.rows, inputs.accounts, inputs.routes, inputs.capabilities)
 	if err != nil {
-		return err
+		return reject(err)
 	}
 	for _, model := range catalog.Models {
-		if model.ID != modelID || !slices.Contains(model.Interfaces, iface) {
+		if model.ID != modelID {
 			continue
 		}
-		reasoning := model.Capabilities.Reasoning
-		if perInterface, ok := model.Capabilities.ByInterface[iface]; ok {
-			reasoning = perInterface
+		request.model = model.nativeLLMIDs[iface]
+		if !slices.Contains(model.Interfaces, iface) {
+			break
+		}
+		reasoning := doneBotCatalogReasoningFor(model.Capabilities, iface)
+		if isGPT62DoneBotModel(request.model) && iface == doneBotChat &&
+			(doneBotChatUsesTools(body) || gjson.GetBytes(body, "input").Exists() && !gjson.GetBytes(body, "messages").Exists()) {
+			return reject(ErrDoneBotReasoningUnsupported)
+		}
+		mode, modeOK := doneBotThinkingMode(document, request.model, iface)
+		if !modeOK {
+			return reject(ErrDoneBotReasoningUnsupported)
+		}
+		defaultLevel := model.reasoningDefaults[iface]
+		useDefault := selectedPath == "" && defaultLevel != "" && !doneBotThinkingOverridesDefault(document, iface, mode)
+		if selectedPath == "" && !useDefault {
+			return body, request, "", nil
 		}
 		if !reasoning.Supported || reasoning.NativeField == nil {
-			return ErrDoneBotReasoningUnsupported
+			return reject(ErrDoneBotReasoningUnsupported)
 		}
 		nativePath := *reasoning.NativeField
 		if iface == "gemini.generate_content" && nativePath == "thinkingConfig.thinkingBudget" {
 			nativePath = "generationConfig." + nativePath
 		}
-		if selectedPath != nativePath {
-			return ErrDoneBotReasoningUnsupported
+		if selectedPath != "" && selectedPath != nativePath {
+			return reject(ErrDoneBotReasoningUnsupported)
 		}
 		switch reasoning.Control {
 		case "effort":
-			if selectedValue.Type == gjson.String && slices.Contains(reasoning.Levels, selectedValue.String()) {
-				return nil
+			level, requested := "", ""
+			if selectedPath != "" {
+				if selectedValue.Type != gjson.String || !slices.Contains(reasoning.Levels, selectedValue.String()) {
+					return reject(ErrDoneBotReasoningUnsupported)
+				}
+				level, requested = selectedValue.String(), selectedValue.String()
+			} else if useDefault {
+				if !slices.Contains(reasoning.Levels, defaultLevel) {
+					return reject(ErrDoneBotReasoningUnsupported)
+				}
+				level = defaultLevel
 			}
+			if level == "" {
+				return body, request, "", nil
+			}
+			effective := level
+			if mapped, ok := reasoning.Mapping[level].(string); ok {
+				effective = mapped
+			}
+			if (mode == "disabled" && iface == doneBotMessages || mode == "between_tools") &&
+				(effective == "xhigh" || effective == "max" || requested == "xhigh" || requested == "max") {
+				return reject(ErrDoneBotReasoningUnsupported)
+			}
+			if request.model == "deepseek-flash" && mode == "disabled" && requested != "" {
+				return reject(ErrDoneBotReasoningUnsupported)
+			}
+			request.level, request.policyApplied = effective, true
+			if requested == effective {
+				return body, request, requested, nil
+			}
+			updated, err := sjson.SetBytes(body, nativePath, effective)
+			if err != nil || validateDoneBotNativeJSON(updated, true) != nil {
+				return reject(ErrDoneBotReasoningUnsupported)
+			}
+			return updated, request, requested, nil
 		case "budget":
+			if selectedPath == "" {
+				return body, request, "", nil
+			}
 			if selectedValue.Type != gjson.Number {
-				return ErrDoneBotReasoningUnsupported
+				return reject(ErrDoneBotReasoningUnsupported)
 			}
 			budget := selectedValue.Float()
 			if budget <= 0 || math.Trunc(budget) != budget {
-				return ErrDoneBotReasoningUnsupported
+				return reject(ErrDoneBotReasoningUnsupported)
 			}
 			for _, level := range reasoning.Levels {
 				if reasoning.Mapping[level] == budget {
-					return nil
+					return body, request, "", nil
 				}
 			}
 		}
-		return ErrDoneBotReasoningUnsupported
+		return reject(ErrDoneBotReasoningUnsupported)
 	}
-	return ErrDoneBotReasoningUnsupported
+	if selectedPath == "" {
+		if upstream, ok := ResolvedUpstreamModelFromContext(ctx); ok {
+			modelID = upstream
+		}
+		if _, known := doneBotNativeLLMs[doneBotNativeLLMID(modelID)]; !known {
+			return body, request, "", nil
+		}
+	}
+	return reject(ErrDoneBotReasoningUnsupported)
 }
 
 func doneBotNativeValue(document map[string]json.RawMessage, path string) (gjson.Result, bool) {
@@ -379,6 +460,9 @@ func doneBotNativeKeyCaseAllowed(path []string, key string) bool {
 	switch strings.Join(path, ".") {
 	case "":
 		sensitive = []string{"model", "reasoning", "reasoning_effort", "output_config", "thinking", "thinkingConfig", "generationConfig", "generation_config", "effort"}
+		if strings.EqualFold(key, "thinkingConfig") || strings.EqualFold(key, "thinking_config") {
+			return false
+		}
 	case "reasoning":
 		sensitive = []string{"effort", "budget_tokens"}
 	case "output_config":
@@ -387,12 +471,18 @@ func doneBotNativeKeyCaseAllowed(path []string, key string) bool {
 		sensitive = []string{"budget_tokens", "budgetTokens"}
 	case "generationConfig":
 		sensitive = []string{"thinkingConfig"}
-	case "thinkingConfig", "generationConfig.thinkingConfig":
-		sensitive = []string{"thinkingBudget", "thinkingLevel"}
+		if strings.EqualFold(key, "thinking_config") {
+			return false
+		}
 	case "generation_config":
-		sensitive = []string{"thinking_config"}
-	case "generation_config.thinking_config":
-		sensitive = []string{"thinking_budget", "thinking_level"}
+		if strings.EqualFold(key, "thinkingConfig") || strings.EqualFold(key, "thinking_config") {
+			return false
+		}
+	case "generationConfig.thinkingConfig":
+		sensitive = []string{"thinkingBudget", "thinkingLevel"}
+		if strings.EqualFold(key, "thinking_budget") || strings.EqualFold(key, "thinking_level") {
+			return false
+		}
 	}
 	for _, canonical := range sensitive {
 		if strings.EqualFold(key, canonical) && key != canonical {
@@ -475,10 +565,14 @@ func validateDoneBotCatalogReasoning(reasoning DoneBotCatalogReasoning, iface st
 	if len(reasoning.Levels) == 0 || len(reasoning.Levels) > 16 {
 		return fmt.Errorf("reasoning must declare levels")
 	}
-	previousRank := 0
+	previousRank := -1
 	for i, level := range reasoning.Levels {
-		rank, known := reasoningEffortRank(level)
-		if !known || level != NormalizeMaxReasoningEffort(level) || rank <= previousRank || slices.Contains(reasoning.Levels[:i], level) {
+		canonical := doneBotCanonicalEffort(level)
+		if reasoning.NativeField != nil && *reasoning.NativeField == "generationConfig.thinkingConfig.thinkingLevel" {
+			canonical = strings.ToUpper(canonical)
+		}
+		rank, known := doneBotEffortRank(level)
+		if !known || level != canonical || reasoning.Control == "budget" && level == "none" || rank <= previousRank || slices.Contains(reasoning.Levels[:i], level) {
 			return fmt.Errorf("reasoning levels must be canonical and ordered")
 		}
 		previousRank = rank
@@ -515,7 +609,7 @@ func doneBotReasoningFieldAllowed(iface, control, field string) bool {
 		"anthropic.messages":      {"effort": {"output_config.effort"}, "budget": {"thinking.budget_tokens"}},
 		"openai.responses":        {"effort": {"reasoning.effort"}},
 		"openai.chat_completions": {"effort": {"reasoning_effort"}},
-		"gemini.generate_content": {"budget": {"thinkingConfig.thinkingBudget", "generationConfig.thinkingConfig.thinkingBudget"}},
+		"gemini.generate_content": {"budget": {"thinkingConfig.thinkingBudget", "generationConfig.thinkingConfig.thinkingBudget"}, "effort": {"generationConfig.thinkingConfig.thinkingLevel"}},
 	}
 	if iface == "" {
 		for candidate := range allowed {
@@ -537,11 +631,11 @@ func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, 
 		if !row.Enabled || !row.Available || !row.PricingConfigured {
 			continue
 		}
-		interfaces := doneBotPublicInterfaces(group.ID, row, accounts, routes)
+		interfaces, nativeIDs := doneBotPublicInterfaces(group.ID, row, accounts, routes)
 		if len(interfaces) == 0 {
 			continue
 		}
-		capability := doneBotPublicCapabilities(group, row.Model, interfaces, configured[row.Model].DoneBotCatalogCapabilities)
+		capability, reasoningDefaults := doneBotPublicCapabilities(group, row.Model, interfaces, configured[row.Model].DoneBotCatalogCapabilities, nativeIDs)
 		mediaType := map[string]string{"llm": "text", "images": "image", "video": "video", "audio": "audio"}[row.Kind]
 		if mediaType == "" {
 			continue
@@ -571,7 +665,8 @@ func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, 
 				}
 			}
 		}
-		model := DoneBotCatalogModel{ID: row.Model, DisplayName: row.Model, MediaTypes: []string{mediaType}, Platforms: []string{row.Platform}, Interfaces: interfaces, Capabilities: capability, Pricing: pricing, MediaFallbackPriority: configured[row.Model].MediaFallbackPriority}
+		model := DoneBotCatalogModel{ID: row.Model, DisplayName: row.Model, MediaTypes: []string{mediaType}, Platforms: []string{row.Platform}, Interfaces: interfaces, Capabilities: capability, Pricing: pricing, MediaFallbackPriority: configured[row.Model].MediaFallbackPriority, nativeLLMIDs: nativeIDs}
+		model.reasoningDefaults = reasoningDefaults
 		media, err := doneBotPublicMediaParameters(group.ID, row, accounts, routes, configured[row.Model].MediaParameters)
 		if err != nil {
 			return nil, ErrDoneBotCatalogCapabilities
@@ -640,13 +735,14 @@ func doneBotCatalogPrices(values map[string]*float64) map[string]float64 {
 	return result
 }
 
-func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account, routes []CompositeModelRoute) []string {
+func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account, routes []CompositeModelRoute) ([]string, map[string]string) {
 	interfaces := []string{}
+	nativeIDs := map[string]string{}
 	activeAccounts := []Account{}
 	activeRoutes := []CompositeModelRoute{}
 	for i := range accounts {
 		account := &accounts[i]
-		if account.Status == StatusActive && account.Schedulable && slices.Contains(account.GroupIDs, groupID) {
+		if account.Status == StatusActive && account.Schedulable && slices.Contains(account.GroupIDs, groupID) && (row.Kind != "llm" || doneBotLLMAPIAccount(account)) {
 			activeAccounts = append(activeAccounts, *account)
 		}
 	}
@@ -701,6 +797,7 @@ func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account
 		}
 		candidates := 0
 		allNative := true
+		modelID := ""
 		for i := range activeAccounts {
 			account := &activeAccounts[i]
 			if account.Platform != row.Platform || !doneBotCatalogRawMappingSupports(account, upstream) {
@@ -713,6 +810,22 @@ func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account
 			if !doneBotCatalogAccountSupports(account, upstream, capabilityEndpoint) {
 				continue
 			}
+			candidateID := ""
+			if row.Kind == "llm" {
+				mapped := doneBotNativeLLMID(account.GetMappedModel(upstream))
+				if native, known := doneBotNativeLLMs[mapped]; known {
+					if _, supported := native.ByInterface[iface]; !supported {
+						continue
+					}
+					candidateID = mapped
+				}
+			}
+			if candidates == 0 {
+				modelID = candidateID
+			} else if modelID != candidateID {
+				allNative = false
+				break
+			}
 			candidates++
 			if !doneBotAccountUsesNativeInterface(account, upstream, row.Kind, iface) {
 				allNative = false
@@ -721,10 +834,13 @@ func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account
 		}
 		if candidates > 0 && allNative {
 			interfaces = append(interfaces, iface)
+			if modelID != "" {
+				nativeIDs[iface] = modelID
+			}
 		}
 	}
 	sort.Strings(interfaces)
-	return interfaces
+	return interfaces, nativeIDs
 }
 
 func doneBotAccountUsesNativeInterface(account *Account, model, kind, iface string) bool {
@@ -775,22 +891,45 @@ func doneBotAccountUsesNativeInterface(account *Account, model, kind, iface stri
 	}
 }
 
-func doneBotPublicCapabilities(group *Group, model string, interfaces []string, configured DoneBotCatalogCapabilities) DoneBotCatalogCapabilities {
+func doneBotPublicCapabilities(group *Group, model string, interfaces []string, configured DoneBotCatalogCapabilities, nativeIDs map[string]string) (DoneBotCatalogCapabilities, map[string]string) {
 	if !slices.ContainsFunc(interfaces, doneBotTextInterface) {
-		return DoneBotCatalogCapabilities{InputModalities: slices.Clone(configured.InputModalities), Reasoning: doneBotUnsupportedReasoning()}
+		return DoneBotCatalogCapabilities{InputModalities: slices.Clone(configured.InputModalities), Reasoning: doneBotUnsupportedReasoning()}, nil
 	}
 	capability := DoneBotCatalogCapabilities{ContextWindowTokens: configured.ContextWindowTokens, MaxOutputTokens: configured.MaxOutputTokens, ToolCalling: true, InputModalities: slices.Clone(configured.InputModalities), Reasoning: doneBotUnsupportedReasoning()}
+	for _, iface := range interfaces {
+		if native, ok := doneBotNativeLLMs[nativeIDs[iface]]; ok {
+			capability.ContextWindowTokens = native.ContextWindowTokens
+			capability.MaxOutputTokens = native.MaxOutputTokens
+			capability.InputModalities = slices.Clone(native.InputModalities)
+			break
+		}
+	}
 	byInterface := map[string]DoneBotCatalogReasoning{}
+	defaults := map[string]string{}
+	if isGPT62DoneBotModel(nativeIDs[doneBotChat]) && !slices.Contains(interfaces, doneBotResponses) {
+		capability.ToolCalling = false
+	}
 	for _, iface := range interfaces {
 		if !doneBotTextInterface(iface) {
 			continue
 		}
-		reasoning, explicit := configured.ByInterface[iface]
-		if !explicit {
-			reasoning = configured.Reasoning
+		reasoning := doneBotCatalogReasoningFor(configured, iface)
+		if native, ok := doneBotNativeLLMs[nativeIDs[iface]]; ok {
+			reasoning = native.ByInterface[iface]
+		} else if reasoning.Control == "effort" {
+			defaultLevel := "high"
+			if reasoning.NativeField != nil && *reasoning.NativeField == "generationConfig.thinkingConfig.thinkingLevel" {
+				defaultLevel = "HIGH"
+			}
+			if slices.Contains(reasoning.Levels, defaultLevel) {
+				reasoning.Default = &defaultLevel
+			}
 		}
 		if !reasoning.Supported || reasoning.NativeField == nil || !doneBotReasoningFieldAllowed(iface, reasoning.Control, *reasoning.NativeField) {
 			continue
+		}
+		if reasoning.Control == "effort" && reasoning.Default != nil {
+			defaults[iface] = *reasoning.Default
 		}
 		filtered := doneBotPublicReasoning(group, model, reasoning)
 		if filtered.Supported {
@@ -798,14 +937,14 @@ func doneBotPublicCapabilities(group *Group, model string, interfaces []string, 
 		}
 	}
 	if len(byInterface) == 0 {
-		return capability
+		return capability, defaults
 	}
 	capability.ByInterface = byInterface
 	var common *DoneBotCatalogReasoning
 	for _, iface := range interfaces {
 		reasoning, exists := byInterface[iface]
 		if !exists {
-			return capability
+			return capability, defaults
 		}
 		if common == nil {
 			copy := reasoning
@@ -815,13 +954,13 @@ func doneBotPublicCapabilities(group *Group, model string, interfaces []string, 
 		left, _ := json.Marshal(common)
 		right, _ := json.Marshal(reasoning)
 		if !bytes.Equal(left, right) {
-			return capability
+			return capability, defaults
 		}
 	}
 	if common != nil {
 		capability.Reasoning = *common
 	}
-	return capability
+	return capability, defaults
 }
 
 func doneBotPublicReasoning(group *Group, model string, source DoneBotCatalogReasoning) DoneBotCatalogReasoning {
@@ -837,13 +976,22 @@ func doneBotPublicReasoning(group *Group, model string, source DoneBotCatalogRea
 		result.Default = source.Default
 		return result
 	}
-	maxRank, hasMax := reasoningEffortRank(group.MaxReasoningEffort)
+	ceiling := group.MaxReasoningEffort
+	claude := source.NativeField != nil && *source.NativeField == "output_config.effort"
+	gemini := source.NativeField != nil && *source.NativeField == "generationConfig.thinkingConfig.thinkingLevel"
+	if claude && ceiling == "minimal" {
+		ceiling = "low"
+	}
+	maxRank, hasMax := reasoningEffortRank(ceiling)
 	for _, requested := range source.Levels {
 		effective, _ := mapReasoningEffort(requested, group.ReasoningEffortMappings, model)
 		if isReasoningEffortMappingDeny(effective) {
 			continue
 		}
-		rank, known := reasoningEffortRank(effective)
+		if claude && effective == "minimal" {
+			effective = "low"
+		}
+		rank, known := doneBotEffortRank(effective)
 		if !known {
 			continue
 		}
@@ -851,7 +999,10 @@ func doneBotPublicReasoning(group *Group, model string, source DoneBotCatalogRea
 			if NormalizeMaxReasoningEffortOverLimit(group.MaxReasoningEffortOverLimit) == ReasoningEffortOverLimitDeny {
 				continue
 			}
-			effective = NormalizeMaxReasoningEffort(group.MaxReasoningEffort)
+			effective = NormalizeMaxReasoningEffort(ceiling)
+		}
+		if gemini {
+			effective = strings.ToUpper(effective)
 		}
 		if !slices.Contains(source.Levels, effective) {
 			continue

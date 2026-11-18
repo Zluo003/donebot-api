@@ -16,18 +16,18 @@
           <div><p class="text-sm text-gray-500 dark:text-dark-400">月费（账户余额单位）</p><p class="mt-2 text-2xl font-semibold">{{ info.plan.monthly_price }}<span class="ml-1 text-sm font-normal">/ 月</span></p></div>
           <div><p class="text-sm text-gray-500 dark:text-dark-400">可用余额</p><p class="mt-2 text-2xl font-semibold">{{ auth.user?.balance ?? '—' }}</p></div>
           <div><p class="text-sm text-gray-500 dark:text-dark-400">到期停机后保留</p><p class="mt-2 text-2xl font-semibold">{{ info.plan.retention_days }}<span class="ml-1 text-sm font-normal">天</span></p></div>
-          <p class="text-sm leading-6 text-gray-500 sm:col-span-3 dark:text-dark-400">按月预付，到期从账户余额自动续费。余额不足不开通、不续期；到期停机后，保留期结束将永久删除实例与数据。保留期内补足余额后会尝试续费恢复。</p>
+          <p class="text-sm leading-6 text-gray-500 sm:col-span-3 dark:text-dark-400">按月预付，启用自动续费后到期从账户余额扣款。取消自动续费后可继续使用至已付费期限结束。余额不足不开通、不续期；到期停机后，保留期结束将永久删除实例与数据。</p>
         </section>
         <section v-if="!instance" class="card space-y-4 p-8 text-center">
           <h2 class="text-xl font-semibold">你的专属 DoneBot</h2>
           <p class="text-sm text-gray-500 dark:text-dark-400">聊天、文件、记忆和配置保存在你的独立实例中。</p>
-          <button class="btn btn-primary" :disabled="busy || !info.plan.enabled" @click="confirm('start')">开通 Cloud</button>
+          <button class="btn btn-primary" :disabled="busy || !info.plan.enabled" @click="confirm('start')">购买 Cloud 云主机</button>
           <p v-if="!info.plan.enabled" class="text-sm text-gray-500">Cloud 暂未开放开通。</p>
         </section>
         <section v-else class="card space-y-5 p-6" aria-label="我的 Cloud 实例">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div><h2 class="text-lg font-semibold">我的 Cloud</h2><p class="mt-1 text-sm text-gray-500 dark:text-dark-400" role="status">{{ status }}</p></div>
-            <span class="rounded-full bg-gray-100 px-3 py-1 text-sm dark:bg-dark-700">{{ instance.subscription_state === 'active' ? '已预付' : instance.subscription_state === 'cancelled' ? '已取消续费' : '等待开通' }}</span>
+            <span class="rounded-full bg-gray-100 px-3 py-1 text-sm dark:bg-dark-700">{{ !paid ? '服务已到期' : autoRenew ? '自动续费已开启' : '自动续费已关闭' }}</span>
           </div>
           <p class="text-sm text-gray-500 dark:text-dark-400">已付费至：{{ date(instance.paid_until) }}</p>
           <p v-if="instance.purge_locked" class="text-sm text-red-600">保留期已结束，实例正在永久删除，不能再续费恢复。</p>
@@ -35,18 +35,17 @@
           <div class="flex flex-wrap gap-3">
             <button class="btn btn-primary" :disabled="busy || !canOpen || !info.browser_available" @click="open">打开云实例</button>
             <button class="btn btn-secondary" :disabled="busy || !canOpen || !info.browser_available" @click="desktop">在 DoneBot 客户端打开</button>
-            <button v-if="(instance.desired !== 'running' || failedStart) && !instance.purge_locked" class="btn btn-secondary" :disabled="busy" @click="confirm('start')">{{ failedStart ? '重试开通' : instance.subscription_state === 'cancelled' ? '重新开通' : '启动' }}</button>
-            <button v-if="instance.desired === 'running'" class="btn btn-secondary" :disabled="busy" @click="confirm('stop')">停机并保留数据</button>
-            <button v-if="instance.subscription_state !== 'cancelled' && !instance.purge_locked" class="btn btn-secondary" :disabled="busy" @click="confirm('cancel')">取消自动续费</button>
+            <button v-if="(!paid || instance.desired !== 'running' || failedStart) && !instance.purge_locked" class="btn btn-secondary" :disabled="busy || !renewable && !info.plan.enabled" @click="confirm('start')">{{ failedStart ? '重试开通' : !renewable ? '购买 Cloud 云主机' : '启动 Cloud' }}</button>
+            <button v-if="renewable && !instance.purge_locked" class="btn btn-secondary" :disabled="busy" @click="confirm(autoRenew ? 'cancel' : 'keep')">{{ autoRenew ? '取消自动续费' : '自动续费' }}</button>
           </div>
           <p v-if="!info.browser_available" class="text-sm text-gray-500">网页连接入口尚未配置，请联系管理员。</p>
-          <p class="text-sm text-gray-500 dark:text-dark-400">停机仍保留已付周期及自动续费；取消自动续费会立即停机，本月已激活费用不退还。</p>
+          <p class="text-sm text-gray-500 dark:text-dark-400">取消或恢复自动续费不影响当前已付费期限，恢复时不重复扣款。</p>
         </section>
         <CloudStorage v-if="instance && canOpen" :key="instance.id" :id="instance.id" @busy="busy = $event" />
         <button class="text-sm text-gray-500 underline dark:text-dark-400" :disabled="busy" @click="revoke">断开所有 Cloud 网页会话</button>
       </template>
-      <BaseDialog v-if="pending" :show="true" :title="pending.action === 'cancel' ? '取消自动续费？' : pending.action === 'stop' ? '停机并保留数据？' : instance ? '启动 Cloud？' : '开通 Cloud？'" width="narrow" :close-on-escape="!busy" :show-close-button="!busy" @close="!busy && (pending = null)">
-          <p class="text-sm leading-6 text-gray-500 dark:text-dark-400">{{ pending.action === 'cancel' ? '实例将立即停机并关闭自动续费。本月已激活费用不退还；到期及保留期结束后，实例与数据将永久删除。' : pending.action === 'stop' ? '关闭当前连接并停止实例，保留独立数据卷。已付周期及自动续费继续生效。' : instance?.subscription_state === 'cancelled' ? `重新开通将从余额扣除月费 ${info?.plan.monthly_price}，开始新的一个月，并恢复自动续费。余额不足时不能开通。` : `月费 ${info?.plan.monthly_price}，从当前账号余额预付扣款。已付周期内启动不重复收取月费；余额不足时无法开通或续期。` }}</p>
+      <BaseDialog v-if="pending" :show="true" :title="pending.action === 'cancel' ? '取消自动续费？' : pending.action === 'keep' ? '开启自动续费？' : renewable ? '启动 Cloud？' : '购买 Cloud 云主机？'" width="narrow" :close-on-escape="!busy" :show-close-button="!busy" @close="!busy && (pending = null)">
+          <p class="text-sm leading-6 text-gray-500 dark:text-dark-400">{{ pending.action === 'cancel' ? `仅关闭到期自动续费，Cloud 继续运行至 ${date(instance?.paid_until ?? null)}。到期停机后保留 ${info?.plan.retention_days} 天，之后永久删除实例与数据。` : pending.action === 'keep' ? `将在已付费期限结束时按届时月费从余额扣款（当前 ${info?.plan.monthly_price} / 月）。本次不扣款，不改变当前到期时间。` : renewable ? '当前已付费期限内启动不重复收费，也不改变自动续费设置。' : `月费 ${info?.plan.monthly_price}，确认后从当前账号余额扣款，购买一个月 Cloud 服务并开启自动续费。余额不足无法购买或续期。` }}</p>
           <p v-if="error" role="alert" class="mt-3 text-sm text-red-600">{{ error }}</p>
           <template #footer><div class="flex justify-end gap-3"><button class="btn btn-secondary" :disabled="busy" @click="pending = null">返回</button><button class="btn btn-primary" :disabled="busy" @click="submit">{{ busy ? '正在处理…' : '确认' }}</button></div></template>
       </BaseDialog>
@@ -67,6 +66,9 @@ const loading = ref(false), busy = ref(false), error = ref(''), notice = ref('')
 const pending = ref<{ action: CloudAction; key: string } | null>(null)
 let alive = true, timer: ReturnType<typeof setInterval> | undefined
 const describe = (e: unknown) => (e as { message?: string })?.message || '请求失败，请刷新后重试。'
+const paid = computed(() => !!instance.value?.paid_until && Date.parse(instance.value.paid_until) > Date.now())
+const renewable = computed(() => paid.value && ['active', 'pending'].includes(instance.value?.subscription_state ?? ''))
+const autoRenew = computed(() => instance.value?.auto_renew ?? instance.value?.subscription_state !== 'cancelled')
 const canOpen = computed(() => !!instance.value && instance.value.actual === 'running' && instance.value.desired === 'running' && instance.value.subscription_state === 'active' && !instance.value.purge_locked && Date.parse(instance.value.paid_until || '') > Date.now())
 const failedStart = computed(() => instance.value?.actual === 'error' && operations.value[0]?.action === 'start' && operations.value[0]?.state === 'failed')
 const operationFailure = computed(() => {
@@ -82,7 +84,7 @@ const status = computed(() => {
   if (!value) return ''
   if (value.purge_locked) return '正在删除'
   if (Date.parse(value.paid_until || '') <= Date.now()) return '已到期，等待续费或回收'
-  if (value.desired === 'stopped' && value.actual === 'stopped') return '已停机，数据保留中'
+  if (value.desired === 'stopped' && value.actual === 'stopped') return '已停机'
   if (canOpen.value) return '运行中'
   return value.actual === 'error' ? '需要恢复' : '正在准备，请稍候'
 })

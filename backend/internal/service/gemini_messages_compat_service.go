@@ -267,6 +267,9 @@ func (s *GeminiMessagesCompatService) isAccountUsableForRequestWithPrecheck(
 	useMixedScheduling bool,
 	precheckResult map[int64]bool,
 ) bool {
+	if !doneBotLLMAccountAllowed(ctx, account, requestedModel) {
+		return false
+	}
 	// 检查模型调度能力
 	// Check model scheduling capability
 	if !account.IsSchedulableForModelWithContext(ctx, requestedModel) {
@@ -1093,6 +1096,9 @@ func isGeminiSignatureRelatedError(respBody []byte) bool {
 }
 
 func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.Context, account *Account, originalModel string, action string, stream bool, body []byte) (*ForwardResult, error) {
+	if !doneBotLLMAccountAllowed(ctx, account, originalModel) {
+		return nil, s.writeGoogleError(c, http.StatusServiceUnavailable, ErrDoneBotLLMAccountUnavailable.Error())
+	}
 	beginUpstreamResponseModelObservation(c)
 	beginGeminiImageOutputObservation(c)
 	startTime := time.Now()
@@ -1611,6 +1617,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
 		Stream:                        stream,
 		ReasoningEffort:               extractGeminiReasoningEffortFromBody(body),
+		RequestedReasoningEffort:      RequestedReasoningEffortFromContext(ctx),
 		Duration:                      time.Since(startTime),
 		FirstTokenMs:                  firstTokenMs,
 		ClientDisconnect:              clientDisconnect,

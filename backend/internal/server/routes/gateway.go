@@ -50,6 +50,7 @@ func RegisterGatewayRoutes(
 	// 保证校验发生在合成路由改写与调度之前，且只看客户端书写的模型名。
 	groupModelAllowlist := middleware.GroupModelAllowlist()
 	doneBotReasoning := middleware.DoneBotReasoningValidation(h.DoneBot)
+	doneBotLLMRouting := middleware.DoneBotLLMRouting()
 	doneBotReceipt := middleware.DoneBotReceiptCorrelation()
 
 	isOpenAIResponsesCompatibleGatewayPlatform := func(c *gin.Context) bool {
@@ -163,6 +164,7 @@ func RegisterGatewayRoutes(
 	}
 
 	gateway.Use(groupModelAllowlist)
+	gateway.Use(doneBotLLMRouting)
 	gateway.Use(compositeTarget)
 	gateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot))
 	gateway.Use(requireGroupAnthropic)
@@ -324,9 +326,10 @@ func RegisterGatewayRoutes(
 	gemini.Use(opsErrorLogger)
 	gemini.Use(endpointNorm)
 	gemini.Use(middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg))
-	gemini.Use(doneBotReasoning, doneBotReceipt)
 	gemini.Use(groupModelAllowlist)
+	gemini.Use(doneBotLLMRouting)
 	gemini.Use(compositeGeminiTarget)
+	gemini.Use(doneBotReasoning, doneBotReceipt)
 	gemini.Use(requireGroupGoogle)
 	{
 		gemini.GET("/models", h.Gateway.GeminiV1BetaListModels)
@@ -352,7 +355,7 @@ func RegisterGatewayRoutes(
 	// 根路径别名共用中间件链：白名单准入在 apiKeyAuth 之后、compositeTarget
 	// 之前，避免逐条路由手工维护链导致漏挂。
 	rootRoute := func(method, path string, limit gin.HandlerFunc, handler gin.HandlerFunc) {
-		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot), groupModelAllowlist, compositeTarget, requireGroupAnthropic, handler)
+		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot), groupModelAllowlist, doneBotLLMRouting, compositeTarget, doneBotReasoning, requireGroupAnthropic, handler)
 	}
 	for _, prefix := range []string{"/api/v3", "/v3", "/v1", ""} {
 		rootRoute(http.MethodPost, prefix+"/contents/generations/tasks", bodyLimit, h.OpenAIGateway.SeedanceTasks)
@@ -369,7 +372,7 @@ func RegisterGatewayRoutes(
 	rootRoute(http.MethodGet, "/models/:model", bodyLimit, h.Gateway.Models)
 	rootRoute(http.MethodPost, "/messages/count_tokens", bodyLimit, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
-	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic)
+	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, doneBotLLMRouting, compositeTarget, doneBotReasoning, requireGroupAnthropic)
 	{
 		codexDirect.POST("/realtime/calls", h.OpenAIGateway.Live)
 		codexDirect.GET("/:call_id", h.OpenAIGateway.LiveSideband)

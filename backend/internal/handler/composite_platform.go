@@ -109,6 +109,9 @@ func bindRequestedReasoningEffort(c *gin.Context, body []byte, model string) {
 	if c == nil || c.Request == nil {
 		return
 	}
+	if service.DoneBotReasoningPolicyApplied(c.Request.Context()) {
+		return
+	}
 	effort := service.CanonicalRequestedReasoningEffort(body, model)
 	if effort == nil {
 		return
@@ -133,7 +136,17 @@ func stampForwardRequestedReasoningEffort(result *service.ForwardResult, request
 	result.RequestedReasoningEffort = requested
 }
 
+func requestedClaudeReasoningEffort(c *gin.Context, effort string) *string {
+	if service.DoneBotReasoningPolicyApplied(c.Request.Context()) {
+		return service.RequestedReasoningEffortFromContext(c.Request.Context())
+	}
+	return service.NormalizeClaudeOutputEffort(effort)
+}
+
 func applyOpenAIReasoningEffortPolicyForRequest(c *gin.Context, apiKey *service.APIKey, body []byte) ([]byte, bool, error) {
+	if c != nil && c.Request != nil && service.DoneBotReasoningPolicyApplied(c.Request.Context()) {
+		return body, false, nil
+	}
 	bindRequestedReasoningEffort(c, body, strings.TrimSpace(gjson.GetBytes(body, "model").String()))
 	maxEffort, mappings, overLimit, ok := openAIReasoningEffortPolicyForRequest(c, apiKey)
 	if !ok {
@@ -151,6 +164,9 @@ func respondOpenAIReasoningEffortPolicyError(c *gin.Context, err error, write fu
 }
 
 func applyAnthropicReasoningEffortPolicyForRequest(c *gin.Context, apiKey *service.APIKey, body []byte) ([]byte, bool, error) {
+	if c != nil && c.Request != nil && service.DoneBotReasoningPolicyApplied(c.Request.Context()) {
+		return body, false, nil
+	}
 	maxEffort, mappings, overLimit, ok := anthropicReasoningEffortPolicyForRequest(c, apiKey)
 	if !ok {
 		return body, false, nil

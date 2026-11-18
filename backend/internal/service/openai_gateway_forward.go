@@ -24,11 +24,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
 		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
 	}
-	filteredBody, filterErr := filterOpenAIResponsesNoneReasoningEffortForAccount(account, body)
-	if filterErr != nil {
-		return nil, filterErr
+	if !doneBotLLMAccountAllowed(ctx, account, gjson.GetBytes(body, "model").String()) {
+		return nil, ErrDoneBotLLMAccountUnavailable
 	}
-	body = filteredBody
+	if !DoneBotReasoningPolicyApplied(ctx) {
+		filteredBody, filterErr := filterOpenAIResponsesNoneReasoningEffortForAccount(account, body)
+		if filterErr != nil {
+			return nil, filterErr
+		}
+		body = filteredBody
+	}
 	clearGrokResponsesClientToolMapping(c)
 	clearOpenAIResponsesClientToolMapping(c)
 	clearOpenAIResponsesNamespaceNames(c)

@@ -1511,6 +1511,10 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 	}
 
 	cacheKey := compositeModelOwnershipCacheKey(groupID, model)
+	_, apiOnly := ctx.Value(doneBotLLMRequestKey{}).(doneBotLLMRequest)
+	if apiOnly {
+		cacheKey += ":donebot-api-only"
+	}
 	if s.modelsListCache != nil {
 		if cached, found := s.modelsListCache.Get(cacheKey); found {
 			if ownership, ok := cached.(CompositeModelOwnership); ok {
@@ -1529,6 +1533,9 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 	platforms := make(map[string]struct{})
 	ownership := CompositeModelOwnership{}
 	for _, account := range accounts {
+		if apiOnly && !doneBotLLMAPIAccount(&account) {
+			continue
+		}
 		if explicitModelMappingClaims(account, model) {
 			platforms[account.Platform] = struct{}{}
 			ownership.OpenAIGatewayOAuthClaimed = ownership.OpenAIGatewayOAuthClaimed ||

@@ -12,12 +12,29 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/requestmodel"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
 
 type DoneBotReasoningValidator interface {
-	ValidateReasoning(ctx context.Context, groupID int64, modelID, iface string, body []byte) error
+	PrepareReasoning(ctx context.Context, groupID int64, modelID, iface string, body []byte) ([]byte, context.Context, error)
+}
+
+func DoneBotLLMRouting() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		key, ok := GetAPIKeyFromContext(c)
+		if ok && key != nil && strings.HasPrefix(key.Key, "sk-donebot-") && c.Request.Method == http.MethodPost {
+			iface, model := doneBotReasoningRequestInterface(c.Request.URL.Path)
+			if c.Request.URL.Path == "/v1/messages/count_tokens" {
+				iface = "anthropic.messages"
+			}
+			if iface != "" && (iface != "gemini.generate_content" || service.IsDoneBotGeminiTextModel(model)) {
+				c.Request = c.Request.WithContext(service.WithDoneBotLLMRequest(c.Request.Context(), iface))
+			}
+		}
+		c.Next()
+	}
 }
 
 func DoneBotReasoningValidation(validator DoneBotReasoningValidator) gin.HandlerFunc {
@@ -54,6 +71,13 @@ func DoneBotReasoningValidation(validator DoneBotReasoningValidator) gin.Handler
 			return
 		}
 		requestmodel.ResetRequestBody(c.Request, body)
+		if iface == "gemini.generate_content" && !service.IsDoneBotGeminiTextModel(pathModel) && !doneBotExplicitReasoning(body) {
+			upstream, _ := service.ResolvedUpstreamModelFromContext(c.Request.Context())
+			if !service.IsDoneBotGeminiTextModel(upstream) {
+				c.Next()
+				return
+			}
+		}
 		if !json.Valid(body) {
 			response.ErrorFrom(c, infraerrors.BadRequest("DONEBOT_REQUEST_JSON_INVALID", "Request body must be valid JSON"))
 			c.Abort()
@@ -68,10 +92,13 @@ func DoneBotReasoningValidation(validator DoneBotReasoningValidator) gin.Handler
 			c.Next()
 			return
 		}
-		if response.ErrorFrom(c, validator.ValidateReasoning(c.Request.Context(), *key.GroupID, pathModel, iface, body)) {
+		prepared, ctx, err := validator.PrepareReasoning(c.Request.Context(), *key.GroupID, pathModel, iface, body)
+		if response.ErrorFrom(c, err) {
 			c.Abort()
 			return
 		}
+		c.Request = c.Request.WithContext(ctx)
+		requestmodel.ResetRequestBody(c.Request, prepared)
 		c.Next()
 	}
 }
@@ -80,9 +107,9 @@ func doneBotReasoningRequestInterface(path string) (iface, model string) {
 	switch path {
 	case "/v1/messages":
 		return "anthropic.messages", ""
-	case "/v1/responses":
+	case "/v1/responses", "/responses", "/backend-api/codex/responses":
 		return "openai.responses", ""
-	case "/v1/chat/completions":
+	case "/v1/chat/completions", "/chat/completions":
 		return "openai.chat_completions", ""
 	}
 	if strings.HasPrefix(path, "/v1beta/models/") {

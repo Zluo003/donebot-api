@@ -61,6 +61,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	if !doneBotLLMAccountAllowed(ctx, account, gjson.GetBytes(body, "model").String()) {
+		return nil, ErrDoneBotLLMAccountUnavailable
+	}
 	return s.forwardAsChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, false)
 }
 

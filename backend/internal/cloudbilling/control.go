@@ -47,6 +47,7 @@ type Instance struct {
 	PaidUntil         *time.Time `json:"paid_until"`
 	SubscriptionState string     `json:"subscription_state"`
 	PurgeLocked       bool       `json:"purge_locked"`
+	AutoRenew         bool       `json:"auto_renew"`
 }
 type Operation struct {
 	ID         string `json:"id"`
@@ -159,14 +160,14 @@ func (s *Service) Nodes(ctx context.Context) ([]Node, error) {
 	return out, rows.Err()
 }
 
-const instanceColumns = `i.id::text,i.user_id,COALESCE(i.node_id::text,''),i.desired,i.actual,i.generation,i.bound,i.error,s.paid_until,COALESCE(s.state,'unpaid'),COALESCE(s.purge_locked,FALSE)`
+const instanceColumns = `i.id::text,i.user_id,COALESCE(i.node_id::text,''),i.desired,i.actual,i.generation,i.bound,i.error,s.paid_until,COALESCE(s.state,'unpaid'),COALESCE(s.purge_locked,FALSE),COALESCE(s.auto_renew,FALSE)`
 const instanceJoin = ` FROM donebot_cloud_instances i LEFT JOIN donebot_cloud_subscriptions s ON s.instance_id=i.id `
 
 type scanner interface{ Scan(...any) error }
 
 func scanInstance(row scanner) (*Instance, error) {
 	v := &Instance{}
-	err := row.Scan(&v.ID, &v.UserID, &v.NodeID, &v.Desired, &v.Actual, &v.Generation, &v.Bound, &v.Error, &v.PaidUntil, &v.SubscriptionState, &v.PurgeLocked)
+	err := row.Scan(&v.ID, &v.UserID, &v.NodeID, &v.Desired, &v.Actual, &v.Generation, &v.Bound, &v.Error, &v.PaidUntil, &v.SubscriptionState, &v.PurgeLocked, &v.AutoRenew)
 	return v, err
 }
 func (s *Service) Instances(ctx context.Context, owner int64) ([]Instance, error) {
@@ -208,7 +209,7 @@ func (s *Service) Mutate(ctx context.Context, owner int64, id, action, key strin
 	if err := s.enabled(); err != nil {
 		return nil, nil, err
 	}
-	if owner <= 0 || !requestKey.MatchString(key) || action != "start" && action != "stop" && action != "cancel" {
+	if owner <= 0 || !requestKey.MatchString(key) || action != "start" && action != "stop" && action != "cancel" && action != "keep" || action == "keep" && id == "" {
 		return nil, nil, infraerrors.BadRequest("CLOUD_OPERATION_INVALID", "A valid action and Idempotency-Key are required")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -257,6 +258,26 @@ func (s *Service) Mutate(ctx context.Context, owner int64, id, action, key strin
 	}
 	if purgeLocked || v.Desired == "deleted" {
 		return nil, nil, infraerrors.Conflict("CLOUD_DELETING", "Data deletion has started")
+	}
+	if action == "cancel" || action == "keep" {
+		if action == "keep" {
+			var valid bool
+			if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM donebot_cloud_subscriptions WHERE instance_id=$1::uuid AND state IN ('pending','active') AND paid_until>clock_timestamp())`, id).Scan(&valid); err != nil {
+				return nil, nil, err
+			}
+			if !valid {
+				return nil, nil, infraerrors.Conflict("CLOUD_EXPIRED", "Purchase Cloud service before enabling automatic renewal")
+			}
+		}
+		v.AutoRenew = action == "keep"
+		if _, err = tx.ExecContext(ctx, `UPDATE donebot_cloud_subscriptions SET auto_renew=$2,updated_at=NOW() WHERE instance_id=$1::uuid`, id, v.AutoRenew); err != nil {
+			return nil, nil, err
+		}
+		op = &Operation{ID: uuid.NewString(), InstanceID: id, Action: action, Generation: v.Generation, State: "succeeded"}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO donebot_cloud_operations(id,instance_id,request_key,action,generation,state) VALUES($1::uuid,$2::uuid,$3,$4,$5,'succeeded')`, op.ID, id, key, action, v.Generation); err != nil {
+			return nil, nil, err
+		}
+		return v, op, tx.Commit()
 	}
 	desired, state := "stopped", "pending"
 	if action == "start" {
@@ -614,7 +635,7 @@ func (s *Service) systemOperation(ctx context.Context, id, action, key string) e
 	if err = tx.QueryRowContext(ctx, `SELECT paid_until,state FROM donebot_cloud_subscriptions WHERE instance_id=$1::uuid FOR UPDATE`, id).Scan(&until, &state); err != nil {
 		return err
 	}
-	if action != "start" && until.After(time.Now()) && state != "cancelled" {
+	if action != "start" && until.After(time.Now()) {
 		return nil
 	}
 	if action == "start" && (desired != "running" || !until.After(time.Now()) || state != "active" && state != "pending") {
@@ -702,14 +723,14 @@ func (s *Service) Sweep(ctx context.Context) error {
 		if _, err = s.db.ExecContext(ctx, `UPDATE donebot_cloud_instances SET reconciled_at=clock_timestamp() WHERE id=$1::uuid`, v.ID); err != nil {
 			return err
 		}
-		if !v.PurgeLocked && v.PaidUntil != nil && !v.PaidUntil.After(time.Now()) && time.Now().Before(v.PaidUntil.Add(time.Duration(plan.RetentionDays)*24*time.Hour)) && (v.SubscriptionState == "active" || v.SubscriptionState == "past_due") {
+		if v.AutoRenew && !v.PurgeLocked && v.PaidUntil != nil && !v.PaidUntil.After(time.Now()) && time.Now().Before(v.PaidUntil.Add(time.Duration(plan.RetentionDays)*24*time.Hour)) && (v.SubscriptionState == "active" || v.SubscriptionState == "past_due") {
 			_, _ = s.Action(ctx, v.ID, "renew", 0)
 		}
 		sub, e := s.Action(ctx, v.ID, "status", 0)
 		if e != nil {
 			continue
 		}
-		if !sub.PaidUntil.After(time.Now()) || sub.State == "cancelled" {
+		if !sub.PaidUntil.After(time.Now()) {
 			if time.Now().After(sub.PaidUntil.Add(time.Duration(plan.RetentionDays) * 24 * time.Hour)) {
 				_ = s.systemOperation(ctx, v.ID, "purge", "purge-"+sub.PaidUntil.UTC().Format("20060102T150405"))
 			} else {

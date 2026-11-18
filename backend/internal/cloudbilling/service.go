@@ -32,6 +32,7 @@ type Subscription struct {
 	PaidUntil  time.Time `json:"paid_until"`
 	Cycle      int       `json:"cycle"`
 	CyclePrice string    `json:"cycle_price"`
+	AutoRenew  bool      `json:"auto_renew"`
 }
 type Service struct {
 	db           *sql.DB
@@ -116,11 +117,11 @@ func nextMonth(t time.Time) time.Time {
 }
 func scanSubscription(row *sql.Row) (*Subscription, error) {
 	v := &Subscription{}
-	err := row.Scan(&v.InstanceID, &v.UserID, &v.State, &v.PaidUntil, &v.Cycle, &v.CyclePrice)
+	err := row.Scan(&v.InstanceID, &v.UserID, &v.State, &v.PaidUntil, &v.Cycle, &v.CyclePrice, &v.AutoRenew)
 	return v, err
 }
 
-const columns = `instance_id::text,user_id,state,paid_until,cycle,cycle_price::text`
+const columns = `instance_id::text,user_id,state,paid_until,cycle,cycle_price::text,auto_renew`
 
 // Action is private to the Cloud service. Only purchase also accepts the JWT middleware's verified owner.
 func (s *Service) Action(ctx context.Context, id, action string, owner int64) (*Subscription, error) {
@@ -190,6 +191,9 @@ func (s *Service) Action(ctx context.Context, id, action string, owner int64) (*
 	changedBalance := false
 	switch action {
 	case "purchase", "renew":
+		if action == "renew" && !v.AutoRenew {
+			break
+		}
 		if !missing && v.State != "cancelled" && v.PaidUntil.After(now) {
 			break
 		}
@@ -244,14 +248,14 @@ func (s *Service) Action(ctx context.Context, id, action string, owner int64) (*
 			cycle = v.Cycle + 1
 		}
 		until := nextMonth(now)
-		_, err = tx.ExecContext(ctx, `INSERT INTO donebot_cloud_subscriptions(instance_id,user_id,state,paid_until,cycle,cycle_price) VALUES($1::uuid,$2,$3,$4,$5,$6::numeric) ON CONFLICT(instance_id) DO UPDATE SET state=EXCLUDED.state,paid_until=EXCLUDED.paid_until,cycle=EXCLUDED.cycle,cycle_price=EXCLUDED.cycle_price,updated_at=NOW()`, id, uid, state, until, cycle, plan.MonthlyPrice)
+		_, err = tx.ExecContext(ctx, `INSERT INTO donebot_cloud_subscriptions(instance_id,user_id,state,paid_until,cycle,cycle_price) VALUES($1::uuid,$2,$3,$4,$5,$6::numeric) ON CONFLICT(instance_id) DO UPDATE SET state=EXCLUDED.state,paid_until=EXCLUDED.paid_until,cycle=EXCLUDED.cycle,cycle_price=EXCLUDED.cycle_price,auto_renew=TRUE,updated_at=NOW()`, id, uid, state, until, cycle, plan.MonthlyPrice)
 		if err != nil {
 			return nil, err
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO donebot_cloud_money_events(instance_id,user_id,cycle,event,amount,balance_after,paid_until) VALUES($1::uuid,$2,$3,'charge',$4::numeric,$5::numeric,$6)`, id, uid, cycle, plan.MonthlyPrice, balance, until); err != nil {
 			return nil, err
 		}
-		v = &Subscription{InstanceID: id, UserID: uid, State: state, PaidUntil: until, Cycle: cycle, CyclePrice: plan.MonthlyPrice}
+		v = &Subscription{InstanceID: id, UserID: uid, State: state, PaidUntil: until, Cycle: cycle, CyclePrice: plan.MonthlyPrice, AutoRenew: true}
 		changedBalance = true
 	case "activate":
 		if v.State == "pending" && v.PaidUntil.After(now) {
@@ -272,7 +276,8 @@ func (s *Service) Action(ctx context.Context, id, action string, owner int64) (*
 			changedBalance = true
 		}
 		v.State = "cancelled"
-		if _, err = tx.ExecContext(ctx, `UPDATE donebot_cloud_subscriptions SET state='cancelled',updated_at=NOW() WHERE instance_id=$1::uuid`, id); err != nil {
+		v.AutoRenew = false
+		if _, err = tx.ExecContext(ctx, `UPDATE donebot_cloud_subscriptions SET state='cancelled',auto_renew=FALSE,updated_at=NOW() WHERE instance_id=$1::uuid`, id); err != nil {
 			return nil, err
 		}
 	}

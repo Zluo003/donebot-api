@@ -7,12 +7,13 @@ export interface CloudInstance {
   error: string
   paid_until: string | null
   subscription_state: string
+  auto_renew?: boolean
   purge_locked: boolean
 }
 export interface CloudOperation { id: string; action: string; state: string; error: string }
 export interface CloudMutation { instance: CloudInstance; operation: CloudOperation }
 export interface CloudPlanInfo { plan: { enabled: boolean; monthly_price: string; retention_days: number }; browser_available: boolean }
-export type CloudAction = 'start' | 'stop' | 'cancel'
+export type CloudAction = 'start' | 'stop' | 'cancel' | 'keep'
 export interface CloudResources { cpu_cores: number; memory_bytes: number; pids: number; storage: { enforced: boolean; limit_bytes: number | null; available_bytes?: number; total_bytes?: number; available_inodes?: number }; desktop?: { enabled: boolean; cpu_cores: number; memory_bytes: number; storage: { enforced: boolean; limit_bytes: number; available_bytes?: number }; idle_timeout_seconds: number }; backups?: { automatic_interval_hours: number } }
 export interface CloudBackup { id: string; state: string; created_at: string; bytes: number }
 export const cloudAPI = {

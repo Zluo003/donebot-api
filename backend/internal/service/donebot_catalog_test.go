@@ -117,7 +117,7 @@ func TestDoneBotPublicCatalogInputModalitiesRequireExactMetadata(t *testing.T) {
 	require.NotContains(t, string(encoded), "input_modalities")
 	require.NotEqual(t, registeredVersion, catalog.CatalogVersion)
 	for _, id := range []string{"gpt-test", "vision-video-audio-model"} {
-		capability := doneBotPublicCapabilities(g, id, []string{"openai.responses"}, DoneBotCatalogCapabilities{})
+		capability, _ := doneBotPublicCapabilities(g, id, []string{"openai.responses"}, DoneBotCatalogCapabilities{}, nil)
 		require.Nil(t, capability.InputModalities)
 	}
 }
@@ -235,6 +235,7 @@ func TestDoneBotPublicCatalogFollowsRoutePrecedence(t *testing.T) {
 func TestDoneBotPublicCatalogOmitsAmbiguousPlatformOwnership(t *testing.T) {
 	g, rows, accounts := doneBotPublicCatalogFixture(t)
 	other := doneBotEnabledCatalogAccount(PlatformAnthropic, map[string]any{"gpt-test": "gpt-test"})
+	other.Type = AccountTypeAPIKey
 	result, err := buildDoneBotPublicCatalog(g, 42, "one", rows, append(accounts, other), nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, result.Models)
@@ -294,7 +295,7 @@ func TestDoneBotPublicCatalogReasoningUsesConfigAndGroupPolicy(t *testing.T) {
 	require.Equal(t, "low", r.Mapping["high"])
 	require.Equal(t, "medium", r.Mapping["max"])
 	require.NotNil(t, r.Default)
-	require.Equal(t, "medium", *r.Default)
+	require.Equal(t, "high", *r.Default)
 	g.MaxReasoningEffortOverLimit = "deny"
 	result, err = buildDoneBotPublicCatalog(g, 42, "one", rows, accounts, nil, capabilities)
 	require.NoError(t, err)

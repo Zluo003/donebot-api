@@ -29,9 +29,9 @@ type doneBotReasoningValidatorStub struct {
 	err   error
 }
 
-func (s *doneBotReasoningValidatorStub) ValidateReasoning(_ context.Context, groupID int64, modelID, iface string, body []byte) error {
+func (s *doneBotReasoningValidatorStub) PrepareReasoning(ctx context.Context, groupID int64, modelID, iface string, body []byte) ([]byte, context.Context, error) {
 	s.calls = append(s.calls, doneBotReasoningCall{groupID: groupID, model: modelID, iface: iface, body: append([]byte(nil), body...)})
-	return s.err
+	return body, ctx, s.err
 }
 
 func doneBotTestAuth(key *service.APIKey) gin.HandlerFunc {

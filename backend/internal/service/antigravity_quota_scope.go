@@ -35,7 +35,7 @@ func (a *Account) IsSchedulableForModel(requestedModel string) bool {
 }
 
 func (a *Account) IsSchedulableForModelWithContext(ctx context.Context, requestedModel string) bool {
-	if a == nil {
+	if a == nil || !doneBotLLMAccountAllowed(ctx, a, requestedModel) {
 		return false
 	}
 	if !a.IsSchedulable() {
