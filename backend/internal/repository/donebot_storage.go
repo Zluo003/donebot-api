@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"fmt"
+
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -10,6 +12,12 @@ func ProvideDoneBotStorageFactory() service.DoneBotStorageFactory {
 	return func(ctx context.Context, p service.DoneBotStoragePolicy) (service.AssetStorage, error) {
 		if p.Driver == "local" {
 			return NewLocalAssetStorage(p.LocalPath), nil
+		}
+		if p.Driver == "oss" {
+			return NewOSSAssetStorage(p), nil
+		}
+		if p.Driver != "s3" {
+			return nil, fmt.Errorf("unsupported storage driver")
 		}
 		expiry := p.TTLHours
 		if expiry > 168 {

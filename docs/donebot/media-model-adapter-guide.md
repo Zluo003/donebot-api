@@ -31,6 +31,7 @@ Seedance 当前新增上游工作仅针对 NewToken，不增加本地订阅转 A
 4. 独有控制在 `options` 白名单中增加，并交由原生解析器验证类型、范围和计费影响。
 5. 图片编辑内部可以路由到原生 edits，但下游仍调用同一个异步图片创建入口。
 6. 不接收语义工作计划、不选择备用、不询问 LLM、不向客户端下发能力表。
+7. 转换必须在 DoneBot 中间件的原始请求幂等处理之后、原生校验/估价之前执行；同时返回原生内部路径，保留统一协议标志及可重读的 body。不能只在最终 handler 转换。
 
 ### C. 任务与结果
 
@@ -46,7 +47,8 @@ Seedance 当前新增上游工作仅针对 NewToken，不增加本地订阅转 A
 ```sh
 cd backend
 go test -tags unit ./internal/service ./internal/handler \
-  -run 'TestUnified|TestDoneBotDispatch|TestDoneBotVideo|TestMuse|TestSeedance|TestAsyncImage' -count=1
+  ./internal/server/middleware ./internal/server/routes \
+  -run 'TestUnified|TestDoneBotUnified|TestDoneBotMedia|TestDoneBotDispatch|TestDoneBotVideo|TestMuse|TestSeedance|TestAsyncImage' -count=1
 ```
 
 新增型号测试至少包含：
@@ -98,3 +100,5 @@ pnpm exec vitest run server/donebot/unified-media.test.ts \
 - [ ] 先部署网关和必要迁移，启用账号映射、分组权限与价格，再发布客户端／Cloud 运行服务。
 - [ ] 明确区分隔离验证、生产部署和真实供应商验收；不能用 mock 通过声称线上已成功。
 - [ ] 网关代码由项目负责人自行推送时，只交付改动与测试记录，不代为推送。
+
+适配回归须覆盖完整中间件顺序（原始请求指纹 → 转换 → 原生路径校验 → 原生参数计价 → 单派发 → 重放）、中间件已转换请求进入实际异步 handler，以及真实目录配置的校验与计价。仅验证转换器输出或只挂假 handler 不能证明统一入口可用。隔离假上游测试不等同于生产收费任务验收。

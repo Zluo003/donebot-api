@@ -123,3 +123,42 @@ func TestClientReleaseLegacySnapshotRemainsReadable(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "old-package", strings.TrimSpace(string(data)))
 }
+
+func TestClientReleaseOSSUsesConfiguredPrefixAndKeepsOldPackageReadable(t *testing.T) {
+	ctx := context.Background()
+	repo := &clientReleaseSettingsStub{values: map[string]string{}}
+	stores := map[string]*clientReleaseStorageStub{}
+	storage := NewDoneBotStorageService(repo, releaseStorageEncryptor{}, func(_ context.Context, p DoneBotStoragePolicy) (AssetStorage, error) {
+		require.Equal(t, "oss", p.Driver)
+		require.Equal(t, "fixture-oss-secret", p.OSS.SecretAccessKey)
+		if stores[p.OSS.Bucket] == nil {
+			stores[p.OSS.Bucket] = &clientReleaseStorageStub{files: map[string][]byte{}}
+		}
+		return stores[p.OSS.Bucket], nil
+	}, nil, nil)
+	svc := NewClientReleaseService(storage)
+	in := ClientReleaseStorageSettings{Driver: "oss", OSS: DoneBotStorageS3{Endpoint: "https://oss-accelerate.aliyuncs.com", DownloadEndpoint: "https://oss-cn-hangzhou.aliyuncs.com", Region: "cn-hangzhou", Bucket: "fixture-bucket", AccessKeyID: "fixture-key", SecretAccessKey: "fixture-oss-secret"}}
+	in.OSS.Prefix = "installers/"
+	out, err := svc.UpdateStorageSettings(ctx, in)
+	require.NoError(t, err)
+	data := []byte("synthetic installer")
+	_, err = svc.Upload(ctx, "1.0.0", ClientReleaseMacOSArm64DMG, "DoneBot.dmg", "", bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, err)
+	require.Len(t, stores["fixture-bucket"].files, 1)
+	for key := range stores["fixture-bucket"].files {
+		require.True(t, strings.HasPrefix(key, "installers/client-releases/"), key)
+	}
+	out.OSS.Bucket = "another-bucket"
+	_, err = svc.UpdateStorageSettings(ctx, *out)
+	require.NoError(t, err)
+	records, err := svc.load(ctx)
+	require.NoError(t, err)
+	artifact := findClientRelease(records.Releases, "1.0.0").Platforms[ClientReleaseMacOSArm64DMG]
+	reader, err := storage.OpenReleaseObject(ctx, artifact.ObjectKey, artifact.StorageConfig)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reader.Close()) })
+	actual, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.Equal(t, data, actual)
+	require.Nil(t, stores["another-bucket"])
+}

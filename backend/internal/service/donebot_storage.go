@@ -20,14 +20,16 @@ const AssetPurposeGenerated = "generated"
 const AssetPurposeDoneBotOutput = "donebot_output"
 
 type DoneBotStorageS3 struct {
-	Endpoint        string  `json:"endpoint"`
-	Region          string  `json:"region"`
-	Bucket          string  `json:"bucket"`
-	Prefix          string  `json:"prefix"`
-	AccessKeyID     string  `json:"access_key_id"`
-	SecretAccessKey string  `json:"secret_access_key"`
-	ForcePathStyle  bool    `json:"force_path_style"`
-	PublicBaseURL   *string `json:"public_base_url,omitempty"`
+	Endpoint         string  `json:"endpoint"`
+	DownloadEndpoint string  `json:"download_endpoint,omitempty"`
+	SecretConfigured bool    `json:"secret_configured"`
+	Region           string  `json:"region"`
+	Bucket           string  `json:"bucket"`
+	Prefix           string  `json:"prefix"`
+	AccessKeyID      string  `json:"access_key_id"`
+	SecretAccessKey  string  `json:"secret_access_key"`
+	ForcePathStyle   bool    `json:"force_path_style"`
+	PublicBaseURL    *string `json:"public_base_url,omitempty"`
 }
 type DoneBotStoragePolicy struct {
 	Enabled                 bool             `json:"enabled"`
@@ -40,6 +42,7 @@ type DoneBotStoragePolicy struct {
 	CleanupThresholdPercent int              `json:"cleanup_threshold_percent"`
 	MaxFileBytes            int64            `json:"max_file_bytes"`
 	S3                      DoneBotStorageS3 `json:"s3"`
+	OSS                     DoneBotStorageS3 `json:"oss"`
 	SecretConfigured        bool             `json:"secret_configured"`
 	UsageBytes              int64            `json:"usage_bytes"`
 	FileCount               int64            `json:"file_count"`
@@ -49,9 +52,23 @@ type DoneBotStoragePolicies struct {
 	Generated DoneBotStoragePolicy `json:"generated"`
 }
 
+func (p *DoneBotStoragePolicy) objectStorage() *DoneBotStorageS3 {
+	if p.Driver == "oss" {
+		return &p.OSS
+	}
+	return &p.S3
+}
+
 // EffectivePublicBaseURL resolves driver-specific addresses while retaining the
 // public_base_url contract for policies and asset snapshots written by older clients.
 func (p DoneBotStoragePolicy) EffectivePublicBaseURL() string {
+	if p.Driver == "oss" {
+		if p.OSS.PublicBaseURL != nil {
+			return *p.OSS.PublicBaseURL
+		}
+		return ""
+	}
+
 	if p.Driver == "s3" && p.S3.PublicBaseURL != nil {
 		return *p.S3.PublicBaseURL
 	}
@@ -78,6 +95,9 @@ func resolveDoneBotStoragePublicBaseURL(p *DoneBotStoragePolicy) {
 		}
 		p.S3.PublicBaseURL = doneBotStorageURL(value)
 	}
+	if p.OSS.PublicBaseURL == nil {
+		p.OSS.PublicBaseURL = doneBotStorageURL("")
+	}
 	p.PublicBaseURL = p.EffectivePublicBaseURL()
 }
 
@@ -88,6 +108,9 @@ func mergeDoneBotStoragePublicBaseURL(p *DoneBotStoragePolicy, previous DoneBotS
 	}
 	if p.S3.PublicBaseURL == nil && p.Driver != "s3" {
 		p.S3.PublicBaseURL = previous.S3.PublicBaseURL
+	}
+	if p.OSS.PublicBaseURL == nil && p.Driver != "oss" {
+		p.OSS.PublicBaseURL = previous.OSS.PublicBaseURL
 	}
 	resolveDoneBotStoragePublicBaseURL(p)
 }
@@ -190,9 +213,10 @@ func (s *DoneBotStorageService) Policy(ctx context.Context, purpose string) (Don
 	} else if purpose != AssetPurposeUpload {
 		return out, fmt.Errorf("invalid storage purpose")
 	}
-	if out.Driver == "s3" && out.S3.SecretAccessKey != "" && s.encryptor != nil {
-		if v, e := s.decryptSecret(out.S3.SecretAccessKey); e == nil {
-			out.S3.SecretAccessKey = v
+	remote := out.objectStorage()
+	if (out.Driver == "s3" || out.Driver == "oss") && remote.SecretAccessKey != "" && s.encryptor != nil {
+		if v, e := s.decryptSecret(remote.SecretAccessKey); e == nil {
+			remote.SecretAccessKey = v
 		} else {
 			return out, e
 		}
@@ -205,8 +229,11 @@ func (s *DoneBotStorageService) Get(ctx context.Context) (*DoneBotStoragePolicie
 		return nil, err
 	}
 	for purpose, policy := range map[string]*DoneBotStoragePolicy{AssetPurposeUpload: &p.Upload, AssetPurposeGenerated: &p.Generated} {
-		policy.SecretConfigured = policy.S3.SecretAccessKey != ""
-		policy.S3.SecretAccessKey = ""
+		policy.SecretConfigured = policy.objectStorage().SecretAccessKey != ""
+		for _, remote := range []*DoneBotStorageS3{&policy.S3, &policy.OSS} {
+			remote.SecretConfigured = remote.SecretAccessKey != ""
+			remote.SecretAccessKey = ""
+		}
 		if repo, ok := s.assets.(AssetRetentionRepository); ok {
 			policy.UsageBytes, policy.FileCount, err = repo.StorageUsage(ctx, purpose)
 			if err != nil {
@@ -224,19 +251,11 @@ func normalizeDoneBotStoragePolicy(p *DoneBotStoragePolicy, purpose string) erro
 	p.LocalPublicBaseURL = doneBotStorageURL(strings.TrimRight(strings.TrimSpace(*p.LocalPublicBaseURL), "/"))
 	p.S3.PublicBaseURL = doneBotStorageURL(strings.TrimRight(strings.TrimSpace(*p.S3.PublicBaseURL), "/"))
 	p.PublicBaseURL = p.EffectivePublicBaseURL()
-	p.S3.Bucket = strings.TrimSpace(p.S3.Bucket)
-	p.S3.Endpoint = strings.TrimSpace(p.S3.Endpoint)
-	p.S3.Region = strings.TrimSpace(p.S3.Region)
-	p.S3.Prefix = strings.Trim(strings.TrimSpace(p.S3.Prefix), "/")
-	if p.S3.Region == "" {
-		p.S3.Region = "auto"
-	}
-	if p.S3.Prefix == "" {
-		p.S3.Prefix = purpose
-	}
-	p.S3.Prefix += "/"
-	if p.Driver != "local" && p.Driver != "s3" {
-		return fmt.Errorf("driver must be local or s3")
+	normalizeObjectStorageSettings(&p.S3, purpose, "s3")
+	normalizeObjectStorageSettings(&p.OSS, purpose, "oss")
+	p.PublicBaseURL = p.EffectivePublicBaseURL()
+	if p.Driver != "local" && p.Driver != "s3" && p.Driver != "oss" {
+		return fmt.Errorf("driver must be local, s3 or oss")
 	}
 	if p.MaxStorageBytes <= 0 || p.MaxFileBytes <= 0 || p.MaxFileBytes > int64(^uint64(0)>>1)-(1<<20) {
 		return fmt.Errorf("capacity and max_file_bytes must be positive")
@@ -250,7 +269,7 @@ func normalizeDoneBotStoragePolicy(p *DoneBotStoragePolicy, purpose string) erro
 	if p.Driver == "local" && p.LocalPath == "" {
 		return fmt.Errorf("local_path is required")
 	}
-	for name, baseURL := range map[string]string{"local_public_base_url": *p.LocalPublicBaseURL, "s3.public_base_url": *p.S3.PublicBaseURL} {
+	for name, baseURL := range map[string]string{"local_public_base_url": *p.LocalPublicBaseURL, "s3.public_base_url": *p.S3.PublicBaseURL, "oss.public_base_url": *p.OSS.PublicBaseURL} {
 		if baseURL == "" {
 			continue
 		}
@@ -262,12 +281,18 @@ func normalizeDoneBotStoragePolicy(p *DoneBotStoragePolicy, purpose string) erro
 	if p.Enabled && p.Driver == "local" && purpose == AssetPurposeGenerated && p.PublicBaseURL == "" {
 		return fmt.Errorf("generated local storage requires public_base_url")
 	}
-	if p.Enabled && p.Driver == "s3" && p.TTLHours > 168 && p.PublicBaseURL == "" {
+	if p.Enabled && (p.Driver == "s3" || p.Driver == "oss") && p.TTLHours > 168 && p.PublicBaseURL == "" {
+		if p.Driver == "oss" {
+			return fmt.Errorf("OSS 私有桶存储时长不能超过 168 小时，签名地址最长有效七天")
+		}
 		return fmt.Errorf("S3 ttl_hours cannot exceed 168 without public_base_url")
 	}
-	if p.Enabled && p.Driver == "s3" && (p.S3.Bucket == "" || p.S3.AccessKeyID == "" || p.S3.SecretAccessKey == "") {
-		return fmt.Errorf("S3 bucket, access key, and secret are required")
+	if p.Enabled && (p.Driver == "s3" || p.Driver == "oss") {
+		if err := validateObjectStorageSettings(p.Driver, *p.objectStorage()); err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 func (s *DoneBotStorageService) Update(ctx context.Context, in DoneBotStoragePolicies) (*DoneBotStoragePolicies, error) {
@@ -283,18 +308,22 @@ func (s *DoneBotStorageService) Update(ctx context.Context, in DoneBotStoragePol
 			prev = old.Generated
 		}
 		mergeDoneBotStoragePublicBaseURL(pol, prev)
-		suppliedSecret := pol.S3.SecretAccessKey != "" && strings.Trim(pol.S3.SecretAccessKey, "*") != ""
-		if !suppliedSecret {
-			pol.S3.SecretAccessKey = prev.S3.SecretAccessKey
-		}
-		if pol.S3.SecretAccessKey != "" && (suppliedSecret || !strings.HasPrefix(pol.S3.SecretAccessKey, "sealed:")) {
-			if s.encryptor == nil || s.cfg != nil && !s.cfg.Totp.EncryptionKeyConfigured {
-				return nil, ErrSecretEncryptionKeyNotConfigured
+		for _, pair := range [][2]*DoneBotStorageS3{{&pol.S3, &prev.S3}, {&pol.OSS, &prev.OSS}} {
+			remote, saved := pair[0], pair[1]
+			suppliedSecret := remote.SecretAccessKey != "" && strings.Trim(remote.SecretAccessKey, "*") != ""
+			if !suppliedSecret {
+				remote.SecretAccessKey = saved.SecretAccessKey
 			}
-			pol.S3.SecretAccessKey, err = s.encryptSecret(pol.S3.SecretAccessKey)
-			if err != nil {
-				return nil, err
+			if remote.SecretAccessKey != "" && (suppliedSecret || !strings.HasPrefix(remote.SecretAccessKey, "sealed:")) {
+				if s.encryptor == nil || s.cfg != nil && !s.cfg.Totp.EncryptionKeyConfigured {
+					return nil, ErrSecretEncryptionKeyNotConfigured
+				}
+				remote.SecretAccessKey, err = s.encryptSecret(remote.SecretAccessKey)
+				if err != nil {
+					return nil, err
+				}
 			}
+			remote.SecretConfigured = false
 		}
 		if err = normalizeDoneBotStoragePolicy(pol, purpose); err != nil {
 			return nil, infraerrors.BadRequest("INVALID_STORAGE_POLICY", purpose+": "+err.Error())
@@ -325,21 +354,28 @@ func (s *DoneBotStorageService) Update(ctx context.Context, in DoneBotStoragePol
 }
 func (s *DoneBotStorageService) snapshot(p DoneBotStoragePolicy) (json.RawMessage, error) {
 	resolveDoneBotStoragePublicBaseURL(&p)
-	if p.Driver == "local" {
+	switch p.Driver {
+	case "local":
+		p.S3, p.OSS = DoneBotStorageS3{}, DoneBotStorageS3{}
+	case "s3":
+		p.OSS = DoneBotStorageS3{}
+		p.LocalPath = ""
+		p.LocalPublicBaseURL = nil
+	case "oss":
 		p.S3 = DoneBotStorageS3{}
-	} else {
 		p.LocalPath = ""
 		p.LocalPublicBaseURL = nil
 	}
-	if p.S3.SecretAccessKey != "" {
+	remote := p.objectStorage()
+	if remote.SecretAccessKey != "" {
 		if s.encryptor == nil {
 			return nil, ErrSecretEncryptionKeyNotConfigured
 		}
-		v, err := s.encryptSecret(p.S3.SecretAccessKey)
+		v, err := s.encryptSecret(remote.SecretAccessKey)
 		if err != nil {
 			return nil, err
 		}
-		p.S3.SecretAccessKey = v
+		remote.SecretAccessKey = v
 	}
 	return json.Marshal(p)
 }
@@ -350,20 +386,60 @@ func (s *DoneBotStorageService) storage(ctx context.Context, p DoneBotStoragePol
 	p.PublicBaseURL = p.EffectivePublicBaseURL()
 	return s.factory(ctx, p)
 }
+
+func (s *DoneBotStorageService) TestConnection(ctx context.Context, purpose string, input DoneBotStoragePolicy) error {
+	if purpose != AssetPurposeUpload && purpose != AssetPurposeGenerated || (input.Driver != "s3" && input.Driver != "oss") {
+		return infraerrors.BadRequest("INVALID_STORAGE_POLICY", "请选择上传或生成产物的对象存储配置")
+	}
+	remote := input.objectStorage()
+	if remote.SecretAccessKey == "" {
+		policies, err := s.load(ctx)
+		if err != nil {
+			return fmt.Errorf("无法读取已保存的存储密钥，请重新填写密钥")
+		}
+		current := policies.Upload
+		if purpose == AssetPurposeGenerated {
+			current = policies.Generated
+		}
+		current.Driver = input.Driver
+		saved := current.objectStorage()
+		if !sameObjectStorageCredentialTarget(*remote, *saved) {
+			return fmt.Errorf("存储 Endpoint 或 Access Key ID 已更改，请重新填写 Secret Access Key 后测试")
+		}
+		remote.SecretAccessKey, err = s.decryptSecret(saved.SecretAccessKey)
+		if err != nil {
+			return fmt.Errorf("无法读取已保存的存储密钥，请重新填写密钥")
+		}
+	}
+	input.Enabled = true
+	if err := normalizeDoneBotStoragePolicy(&input, purpose); err != nil {
+		return infraerrors.BadRequest("INVALID_STORAGE_POLICY", purpose+": "+err.Error())
+	}
+	storage, err := s.storage(ctx, input)
+	if err != nil {
+		return storageConnectionError("初始化存储连接", err)
+	}
+	tester, ok := storage.(StorageConnectivityTester)
+	if !ok {
+		return fmt.Errorf("storage driver does not support connectivity testing")
+	}
+	return tester.TestConnection(ctx, input.objectStorage().Prefix)
+}
 func (s *DoneBotStorageService) originalStorage(ctx context.Context, a *GatewayAsset) (AssetStorage, error) {
 	var p DoneBotStoragePolicy
 	if err := json.Unmarshal(a.StorageConfig, &p); err != nil {
 		return nil, err
 	}
-	if p.Driver == "s3" && p.S3.SecretAccessKey != "" {
+	remote := p.objectStorage()
+	if (p.Driver == "s3" || p.Driver == "oss") && remote.SecretAccessKey != "" {
 		if s.encryptor == nil {
 			return nil, ErrSecretEncryptionKeyNotConfigured
 		}
-		v, e := s.decryptSecret(p.S3.SecretAccessKey)
+		v, e := s.decryptSecret(remote.SecretAccessKey)
 		if e != nil {
 			return nil, e
 		}
-		p.S3.SecretAccessKey = v
+		remote.SecretAccessKey = v
 	}
 	return s.storage(ctx, p)
 }
@@ -374,6 +450,9 @@ func (s *DoneBotStorageService) encryptSecret(v string) (string, error) {
 }
 func (s *DoneBotStorageService) decryptSecret(v string) (string, error) {
 	if raw, ok := strings.CutPrefix(v, "sealed:"); ok {
+		if s.encryptor == nil {
+			return "", ErrSecretEncryptionKeyNotConfigured
+		}
 		return s.encryptor.Decrypt(raw)
 	}
 	return v, nil

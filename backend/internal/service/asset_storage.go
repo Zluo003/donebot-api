@@ -11,6 +11,10 @@ type AssetStorage interface {
 	Kind() string
 }
 
+type StorageConnectivityTester interface {
+	TestConnection(context.Context, string) error
+}
+
 type StreamingAssetStorage interface {
 	SaveStream(context.Context, string, string, io.Reader, int64) (string, error)
 }

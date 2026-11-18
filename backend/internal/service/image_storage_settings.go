@@ -201,13 +201,14 @@ func (s *ImageStorageSettingService) Update(ctx context.Context, in ImageStorage
 	return &in, nil
 }
 
-// TestConnection 用给定设置试建一次客户端，用于后台的"测试连接"按钮。
-// 与 Update 一样支持留空 SecretAccessKey 表示沿用已保存的值。
 func (s *ImageStorageSettingService) TestConnection(ctx context.Context, in ImageStorageSettings) error {
 	normalizeImageStorageSettings(&in)
 	if !in.ReuseBackupS3 && in.SecretAccessKey == "" {
 		old, err := s.load(ctx)
 		if err == nil && old != nil {
+			if !sameStorageCredentialTarget(in.Endpoint, in.AccessKeyID, old.Endpoint, old.AccessKeyID) {
+				return fmt.Errorf("存储 Endpoint 或 Access Key ID 已更改，请重新填写 Secret Access Key 后测试")
+			}
 			in.SecretAccessKey = old.SecretAccessKey
 		}
 	}
@@ -218,10 +219,15 @@ func (s *ImageStorageSettingService) TestConnection(ctx context.Context, in Imag
 	if !cfg.IsConfigured() {
 		return ErrImageStorageIncomplete
 	}
-	if _, err := s.factory(ctx, cfg); err != nil {
-		return err
+	storage, err := s.factory(ctx, cfg)
+	if err != nil {
+		return storageConnectionError("初始化图片存储", err)
 	}
-	return nil
+	tester, ok := storage.(StorageConnectivityTester)
+	if !ok {
+		return fmt.Errorf("storage driver does not support connectivity testing")
+	}
+	return tester.TestConnection(ctx, cfg.Prefix)
 }
 
 // effectiveConfig 把后台设置（或 config.yaml 回落）解析成运行时配置。

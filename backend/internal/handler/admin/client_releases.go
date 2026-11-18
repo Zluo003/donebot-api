@@ -161,3 +161,21 @@ func (h *DoneBotHandler) UpdateClientReleaseStorage(c *gin.Context) {
 		response.Success(c, out)
 	}
 }
+
+func (h *DoneBotHandler) TestClientReleaseStorage(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if h.releases == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Client release service is unavailable")
+		return
+	}
+	var input service.ClientReleaseStorageSettings
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "Invalid client release storage settings")
+		return
+	}
+	if err := h.releases.TestStorageConnection(c.Request.Context(), input); err != nil {
+		response.Success(c, gin.H{"ok": false, "message": err.Error()})
+		return
+	}
+	response.Success(c, gin.H{"ok": true, "message": "存储桶写入、读取、下载链接和删除测试通过，测试文件已清理。配置未保存。"})
+}

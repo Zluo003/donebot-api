@@ -51,6 +51,21 @@ func NewS3ImageStorage(ctx context.Context, cfg *config.ImageStorageConfig) (*S3
 	}, nil
 }
 
+func (s *S3ImageStorage) TestConnection(ctx context.Context, prefix string) error {
+	return service.ProbeObjectStorage(ctx, prefix, func(ctx context.Context, key string, data []byte) (string, error) {
+		return s.Save(ctx, key, "text/plain", data)
+	}, func(ctx context.Context, key string) (io.ReadCloser, error) {
+		out, err := s.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &s.bucket, Key: &key})
+		if err != nil {
+			return nil, err
+		}
+		return out.Body, nil
+	}, func(ctx context.Context, key string) error {
+		_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &s.bucket, Key: &key})
+		return err
+	})
+}
+
 // Save 上传图片字节，返回可访问 URL：配了 public_base_url 则返回公开直链，否则返回 presigned 临时链接。
 func (s *S3ImageStorage) Save(ctx context.Context, key, contentType string, data []byte) (string, error) {
 	return s.SaveStream(ctx, key, contentType, bytes.NewReader(data), int64(len(data)))

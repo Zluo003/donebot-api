@@ -3,6 +3,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,6 +17,28 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
+
+func TestUnifiedAPIMartImageAcceptsMiddlewareNormalizedBody(t *testing.T) {
+	h, slots, _, upstream := newGrokMediaSlotHandler(t, false, false, service.PlatformOpenAI, "apimart")
+	upstream.call = func(req *http.Request, _ int64) (*http.Response, error) {
+		body, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
+		require.Equal(t, "/v1/images/generations", req.URL.Path)
+		require.NotContains(t, string(body), `"protocol"`)
+		require.Equal(t, "waves", gjson.GetBytes(body, "prompt").String())
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"code":200,"data":[{"task_id":"task-mart"}]}`))}, nil
+	}
+	tasks := service.NewImageTaskServiceWithUploader(&asyncImageMemoryStore{tasks: map[string]*service.ImageTaskRecord{}}, nil, time.Hour, time.Minute)
+	async := &AsyncImageHandler{openAI: h, tasks: tasks, execute: func(string, *gin.Context) { t.Fatal("unexpected synchronous dispatch") }}
+	c, w := apimartHandlerContext(`{"model":"seedream-5-0-flash","prompt":"waves","size":"2K"}`, false)
+	c.Request.URL.Path = "/v1/images/generations"
+	c.Request = c.Request.WithContext(service.WithUnifiedMediaProtocol(context.Background()))
+	async.Submit(c)
+	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
+	require.True(t, strings.HasPrefix(gjson.GetBytes(w.Body.Bytes(), "id").String(), "apimart_"))
+	require.Equal(t, 1, upstream.calls)
+	slots.assertReleased(t)
+}
 
 func TestUnifiedAPIMartImageLifecycleAndOwnership(t *testing.T) {
 	h, slots, _, upstream := newGrokMediaSlotHandler(t, false, false, service.PlatformOpenAI, "apimart")

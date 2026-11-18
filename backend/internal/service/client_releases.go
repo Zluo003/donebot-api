@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -197,7 +198,7 @@ func (s *ClientReleaseService) Upload(ctx context.Context, version, platform, fi
 	case ClientReleaseMacOSArm64DMG:
 		contentType = "application/x-apple-diskimage"
 	}
-	storageConfig, err := s.saveReleaseObject(ctx, objectKey, contentType, io.TeeReader(source, io.MultiWriter(sha256Hash, sha512Hash)), size)
+	storageConfig, objectKey, err := s.saveReleaseObject(ctx, objectKey, contentType, io.TeeReader(source, io.MultiWriter(sha256Hash, sha512Hash)), size)
 	if err != nil {
 		return nil, err
 	}
@@ -521,23 +522,27 @@ func yamlString(value string) string {
 	return string(quoted)
 }
 
-func (s *ClientReleaseService) saveReleaseObject(ctx context.Context, key, contentType string, source io.Reader, size int64) (json.RawMessage, error) {
+func (s *ClientReleaseService) saveReleaseObject(ctx context.Context, key, contentType string, source io.Reader, size int64) (json.RawMessage, string, error) {
 	policy, err := s.releaseStoragePolicy(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	if policy.Driver == "s3" || policy.Driver == "oss" {
+		key = path.Join(policy.objectStorage().Prefix, key)
 	}
 	storage, err := s.storage.storage(ctx, policy)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	writer, ok := storage.(StreamingAssetStorage)
 	if !ok {
-		return nil, infraerrors.ServiceUnavailable("CLIENT_RELEASE_STORAGE_UNAVAILABLE", "Configured storage does not support streamed package uploads")
+		return nil, "", infraerrors.ServiceUnavailable("CLIENT_RELEASE_STORAGE_UNAVAILABLE", "Configured storage does not support streamed package uploads")
 	}
 	if _, err = writer.SaveStream(ctx, key, contentType, source, size); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return s.storage.snapshot(policy)
+	snapshot, err := s.storage.snapshot(policy)
+	return snapshot, key, err
 }
 
 func (s *DoneBotStorageService) OpenReleaseObject(ctx context.Context, key string, storageConfig json.RawMessage) (io.ReadCloser, error) {
@@ -545,15 +550,16 @@ func (s *DoneBotStorageService) OpenReleaseObject(ctx context.Context, key strin
 	if err := json.Unmarshal(storageConfig, &policy); err != nil {
 		return nil, err
 	}
-	if policy.Driver == "s3" && policy.S3.SecretAccessKey != "" {
+	remote := policy.objectStorage()
+	if (policy.Driver == "s3" || policy.Driver == "oss") && remote.SecretAccessKey != "" {
 		if s.encryptor == nil {
 			return nil, ErrSecretEncryptionKeyNotConfigured
 		}
-		secret, err := s.decryptSecret(policy.S3.SecretAccessKey)
+		secret, err := s.decryptSecret(remote.SecretAccessKey)
 		if err != nil {
 			return nil, err
 		}
-		policy.S3.SecretAccessKey = secret
+		remote.SecretAccessKey = secret
 	}
 	storage, err := s.storage(ctx, policy)
 	if err != nil {

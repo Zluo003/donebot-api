@@ -18,9 +18,9 @@
           <div class="mt-2 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700" role="progressbar" :aria-label="`${kind.title}容量使用率`" :aria-valuenow="Number(usagePercent(drafts[kind.id]))" aria-valuemin="0" aria-valuemax="100"><div class="h-full rounded-full bg-primary-500" :style="{ width: `${Math.min(100, Number(usagePercent(drafts[kind.id])))}%` }" /></div>
         </div>
         <div class="grid gap-4 sm:grid-cols-2">
-          <label class="block text-sm"><span class="mb-1 block">存储方式</span><select v-model="drafts[kind.id].policy.driver" class="input" :data-testid="`${kind.id}-driver`" :disabled="busy"><option value="local">本地存储</option><option value="s3">S3 兼容存储</option></select></label>
+          <label class="block text-sm"><span class="mb-1 block">存储方式</span><select v-model="drafts[kind.id].policy.driver" class="input" :data-testid="`${kind.id}-driver`" :disabled="busy"><option value="local">本地存储</option><option value="s3">S3 / R2 兼容存储</option><option value="oss">阿里云 OSS</option></select></label>
           <label v-if="drafts[kind.id].policy.driver === 'local'" class="block text-sm"><span class="mb-1 block">本地网关地址</span><input v-model.trim="drafts[kind.id].policy.local_public_base_url" type="url" class="input" placeholder="https://donebot.cn" :data-testid="`${kind.id}-public-url`" :disabled="busy"><span class="mt-1 block text-xs text-gray-500">{{ kind.id === 'upload' ? '可留空，使用上传请求的网关地址。' : '填写可公开访问的网关地址。' }}与 S3 / R2 的公网地址分别保存。</span></label>
-          <label v-else class="block text-sm"><span class="mb-1 block">S3 / R2 公网地址</span><input v-model.trim="drafts[kind.id].policy.s3.public_base_url" type="url" class="input" placeholder="https://media.example.com" :data-testid="`${kind.id}-public-url`" :disabled="busy"><span class="mt-1 block text-xs text-gray-500">填写存储桶的公网域名，留空使用预签名链接。与本地网关地址分别保存。</span></label>
+          <label v-else-if="drafts[kind.id].policy.driver === 's3'" class="block text-sm"><span class="mb-1 block">S3 / R2 公网地址</span><input v-model.trim="drafts[kind.id].policy.s3.public_base_url" type="url" class="input" placeholder="https://media.example.com" :data-testid="`${kind.id}-public-url`" :disabled="busy"><span class="mt-1 block text-xs text-gray-500">填写存储桶的公网域名，留空使用预签名链接。与本地网关地址分别保存。</span></label>
           <label v-if="drafts[kind.id].policy.driver === 'local'" class="block text-sm sm:col-span-2"><span class="mb-1 block">本地根目录</span><input v-model.trim="drafts[kind.id].policy.local_path" class="input" :data-testid="`${kind.id}-local-path`" :disabled="busy" placeholder="data/media"><span class="mt-1 block text-xs text-gray-500">文件保存在此根目录的 {{ kind.id }} 子目录中；此目录与 S3 / R2 对象前缀分别保存。</span></label>
         </div>
         <div v-if="drafts[kind.id].policy.driver === 's3'" class="grid gap-4 sm:grid-cols-2">
@@ -29,8 +29,14 @@
           <label class="block text-sm"><span class="mb-1 block">Bucket</span><input v-model.trim="drafts[kind.id].policy.s3.bucket" class="input" :data-testid="`${kind.id}-bucket`" :disabled="busy"></label>
           <label class="block text-sm"><span class="mb-1 block">对象前缀</span><input v-model.trim="drafts[kind.id].policy.s3.prefix" class="input" placeholder="media/" :data-testid="`${kind.id}-s3-prefix`" :disabled="busy"></label>
           <label class="block text-sm"><span class="mb-1 block">Access Key ID</span><input v-model.trim="drafts[kind.id].policy.s3.access_key_id" class="input" autocomplete="off" :disabled="busy"></label>
-          <label class="block text-sm"><span class="mb-1 block">Secret Access Key</span><input v-model="drafts[kind.id].policy.s3.secret_access_key" type="password" class="input" autocomplete="new-password" :data-testid="`${kind.id}-secret`" :placeholder="drafts[kind.id].secretConfigured ? '已配置，留空保留原值' : '填写 S3 Secret Access Key'" :disabled="busy"></label>
+          <label class="block text-sm"><span class="mb-1 block">Secret Access Key</span><input v-model="drafts[kind.id].policy.s3.secret_access_key" type="password" class="input" autocomplete="new-password" :data-testid="`${kind.id}-secret`" :placeholder="drafts[kind.id].policy.s3.secret_configured ? '已配置，留空保留原值' : '填写 S3 Secret Access Key'" :disabled="busy"></label>
           <label class="flex items-center gap-2 text-sm sm:col-span-2"><input v-model="drafts[kind.id].policy.s3.force_path_style" type="checkbox" :disabled="busy">使用 Path Style（MinIO 等）</label>
+        </div>
+        <OSSStorageFields v-if="drafts[kind.id].policy.driver === 'oss'" v-model="drafts[kind.id].policy.oss" :scope="kind.id" :disabled="busy" />
+        <div v-if="drafts[kind.id].policy.driver !== 'local'" class="space-y-2">
+          <button type="button" class="btn btn-secondary" :data-testid="`test-storage-${kind.id}`" :disabled="busy" @click="testConnection(kind.id)">{{ testing === kind.id ? '测试中…' : '测试连通性' }}</button>
+          <p class="text-xs text-gray-500">使用当前表单配置测试写入、读取、下载链接和删除，不保存配置；仅创建并清理唯一的临时测试文件。修改 Endpoint 或 Access Key ID 后测试需重新填写密钥。</p>
+          <p v-if="testResults[kind.id]" :role="testResults[kind.id]!.ok ? 'status' : 'alert'" :class="testResults[kind.id]!.ok ? 'text-sm text-green-600' : 'text-sm text-red-600'" :data-testid="`storage-test-result-${kind.id}`">{{ testResults[kind.id]!.message }}</p>
         </div>
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <label class="block text-sm"><span class="mb-1 block">最大总容量（GiB）</span><input v-model.number="drafts[kind.id].capacityGiB" type="number" min="0.000001" step="any" class="input" :data-testid="`${kind.id}-capacity`" :disabled="busy"></label>
@@ -45,14 +51,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import donebot, { type StoragePolicy, type StoragePolicyInput, type StorageSettings } from '@/api/admin/donebot'
+import { computed, onMounted, ref, watch } from 'vue'
+import donebot, { type StoragePolicy, type StoragePolicyInput, type StorageSettings, type ObjectStorageSettings, ossStorageDraft } from '@/api/admin/donebot'
 import { useAppStore } from '@/stores/app'
 import { isStepUpCancelled, useStepUp } from '@/composables/useStepUp'
+import OSSStorageFields from './OSSStorageFields.vue'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 
 type StorageKind = 'upload' | 'generated'
-interface PolicyDraft { policy: StoragePolicyInput; capacityGiB: number; maxFileMiB: number; usage: number; fileCount: number; secretConfigured: boolean }
+interface PolicyDraft { policy: StoragePolicyInput & { oss: ObjectStorageSettings }; capacityGiB: number; maxFileMiB: number; usage: number; fileCount: number }
 const GiB = 1024 ** 3
 const MiB = 1024 ** 2
 const kinds: { id: StorageKind; title: string; description: string }[] = [
@@ -64,6 +71,9 @@ const stepUp = useStepUp()
 const drafts = ref<Record<StorageKind, PolicyDraft> | null>(null)
 const busy = ref(false)
 const error = ref('')
+const testing = ref<StorageKind | null>(null)
+const testResults = ref<Partial<Record<StorageKind, { ok: boolean; message: string }>>>({})
+for (const { id } of kinds) watch(() => drafts.value && toInput(drafts.value[id]), () => { delete testResults.value[id] }, { deep: true })
 
 function toDraft(value: StoragePolicy): PolicyDraft {
   return {
@@ -71,15 +81,16 @@ function toDraft(value: StoragePolicy): PolicyDraft {
       enabled: value.enabled, driver: value.driver, local_path: value.local_path, public_base_url: value.public_base_url,
       local_public_base_url: value.local_public_base_url ?? (value.driver === 'local' ? value.public_base_url : ''),
       max_storage_bytes: value.max_storage_bytes, ttl_hours: value.ttl_hours, cleanup_threshold_percent: value.cleanup_threshold_percent, max_file_bytes: value.max_file_bytes,
-      s3: { ...value.s3, public_base_url: value.s3.public_base_url ?? (value.driver === 's3' ? value.public_base_url : ''), secret_access_key: '' }
+      oss: ossStorageDraft(value.oss),
+      s3: { ...value.s3, secret_configured: value.s3.secret_configured ?? value.secret_configured, public_base_url: value.s3.public_base_url ?? (value.driver === 's3' ? value.public_base_url : ''), secret_access_key: '' }
     },
     capacityGiB: value.max_storage_bytes / GiB, maxFileMiB: value.max_file_bytes / MiB,
-    usage: value.usage_bytes ?? 0, fileCount: value.file_count ?? 0, secretConfigured: value.secret_configured ?? false
+    usage: value.usage_bytes ?? 0, fileCount: value.file_count ?? 0
   }
 }
 function apply(value: StorageSettings) { drafts.value = { upload: toDraft(value.upload), generated: toDraft(value.generated) } }
 function httpURL(value: string) { try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false } }
-function publicURL(policy: StoragePolicyInput) { return (policy.driver === 'local' ? policy.local_public_base_url : policy.s3.public_base_url) ?? '' }
+function publicURL(policy: StoragePolicyInput) { return (policy.driver === 'local' ? policy.local_public_base_url : policy.driver === 'oss' ? policy.oss?.public_base_url : policy.s3.public_base_url) ?? '' }
 const validationError = computed(() => {
   if (!drafts.value) return ''
   for (const { id, title } of kinds) {
@@ -93,9 +104,11 @@ const validationError = computed(() => {
       if (!policy.local_path.trim()) return `${title}需要填写本地目录。`
       if (id === 'generated' && policy.enabled && !httpURL(activePublicURL)) return '本地生成产物存储需要填写可公开访问的公网 HTTP(S) 地址。'
     } else {
-      if (policy.s3.endpoint && !httpURL(policy.s3.endpoint)) return `${title}的 S3 Endpoint 必须是完整的 HTTP(S) URL。`
-      if (policy.enabled && (!policy.s3.bucket.trim() || !policy.s3.access_key_id.trim() || (!draft.secretConfigured && !policy.s3.secret_access_key))) return `${title}需要填写 S3 Bucket、Access Key ID 和 Secret Access Key。`
-      if (policy.enabled && policy.ttl_hours > 168 && !httpURL(activePublicURL)) return `${title}的 S3 保留时间超过 168 小时，需要填写公网访问地址。`
+      const remote = policy.driver === 'oss' ? policy.oss : policy.s3
+      if (remote.endpoint && !httpURL(remote.endpoint)) return `${title}的 S3 Endpoint 必须是完整的 HTTP(S) URL。`
+      if (policy.enabled && (!remote.bucket.trim() || !remote.access_key_id.trim() || (!remote.secret_configured && !remote.secret_access_key))) return `${title}需要填写 S3 Bucket、Access Key ID 和 Secret Access Key。`
+      if (policy.driver === 'oss' && policy.enabled && (!remote.region.trim() || remote.region === 'auto' || !remote.download_endpoint || !httpURL(remote.download_endpoint))) return `${title}需要填写 OSS 实际地域和普通下载 Endpoint。`
+      if (policy.enabled && policy.ttl_hours > 168 && !httpURL(activePublicURL)) return policy.driver === 'oss' ? `${title}的 OSS 私有桶存储时长不能超过 168 小时。` : `${title}的 S3 保留时间超过 168 小时，需要填写公网访问地址。`
     }
   }
   return ''
@@ -116,12 +129,21 @@ async function load() {
     else for (const { id } of kinds) {
       drafts.value[id].usage = value[id].usage_bytes ?? 0
       drafts.value[id].fileCount = value[id].file_count ?? 0
-      drafts.value[id].secretConfigured = value[id].secret_configured ?? false
+      drafts.value[id].policy.s3.secret_configured = value[id].s3.secret_configured ?? value[id].secret_configured ?? false
+      drafts.value[id].policy.oss.secret_configured = value[id].oss?.secret_configured ?? false
     }
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '加载存储设置失败' } finally { busy.value = false }
 }
 function toInput(draft: PolicyDraft): StoragePolicyInput {
-  return { ...draft.policy, public_base_url: publicURL(draft.policy), max_storage_bytes: Math.round(draft.capacityGiB * GiB), max_file_bytes: Math.round(draft.maxFileMiB * MiB), s3: { ...draft.policy.s3 } }
+  return { ...draft.policy, public_base_url: publicURL(draft.policy), max_storage_bytes: Math.round(draft.capacityGiB * GiB), max_file_bytes: Math.round(draft.maxFileMiB * MiB), s3: { ...draft.policy.s3 }, oss: { ...draft.policy.oss } }
+}
+async function testConnection(kind: StorageKind) {
+  if (!drafts.value || busy.value) return
+  const input = toInput(drafts.value[kind])
+  busy.value = true; testing.value = kind; delete testResults.value[kind]
+  try { testResults.value[kind] = await stepUp.run(() => donebot.testStorage(kind, input)) }
+  catch (cause) { if (!isStepUpCancelled(cause)) testResults.value[kind] = { ok: false, message: '测试请求失败，请检查网络或管理权限后重试。' } }
+  finally { busy.value = false; testing.value = null }
 }
 async function save() {
   if (!drafts.value || validationError.value || busy.value) return

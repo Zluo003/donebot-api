@@ -63,13 +63,40 @@ func TestUnifiedImageProtocol(t *testing.T) {
 		require.Equal(t, "Preserve the subject", gjson.GetBytes(native, "prompt").String())
 		require.Equal(t, int64(1), gjson.GetBytes(native, "n").Int())
 		if spec == "seedream-5-5" {
-			require.Empty(t, path)
+			require.Equal(t, "/v1/images/generations", path)
 			require.Equal(t, "https://assets.invalid/ref.png", gjson.GetBytes(native, "image_urls.0").String())
 		} else {
 			require.Equal(t, "/v1/images/edits/async", path)
 			require.Equal(t, "https://assets.invalid/ref.png", gjson.GetBytes(native, "images.0.image_url").String())
 		}
 	}
+}
+
+func TestUnifiedSeedreamImagePassesNativeCatalogValidation(t *testing.T) {
+	catalogService, owner, group, _ := doneBotMediaValidationFixture(t)
+	_, _, accounts := doneBotMediaCatalogFixture()
+	accounts[0].GroupIDs = []int64{group.ID}
+	accounts[0].Credentials["model_mapping"] = map[string]any{seedream55Model: seedream55Model}
+	catalogService.admin.accounts = doneBotCatalogAccountsStub{accounts: accounts}
+	price := .2
+	catalogService.admin.channels = doneBotCatalogChannelsStub{channels: []Channel{{Status: StatusActive, GroupIDs: []int64{group.ID}, ModelPricing: []ChannelModelPricing{
+		{Platform: PlatformOpenAI, Models: []string{seedream55Model}, BillingMode: BillingModeImage, PerRequestPrice: &price},
+	}}}}
+	body := []byte(`{"protocol":"donebot.media.v1","model":"seedream-5-5","mode":"text","prompt":"An overhead view of a donkey in the desert","size":"16:9","resolution":"2K","count":1,"output_format":"png"}`)
+	native, path, err := ConvertUnifiedMedia(body, "image", seedream55Model)
+	require.NoError(t, err)
+	if path == "" {
+		path = "/v1/images/generations/async"
+	}
+	parameters := decodeDoneBotMediaTest(t, string(native))
+	require.NoError(t, catalogService.ValidateMediaPath(t.Context(), owner, "image", seedream55Model, path, parameters))
+	_, err = catalogService.EstimateMedia(t.Context(), owner, "image", seedream55Model, parameters)
+	require.NoError(t, err)
+	info, err := ParseAPIMartRequest(APIMartImages, native)
+	require.NoError(t, err)
+	require.Equal(t, seedream55Model, info.Model)
+	require.Equal(t, "2K", info.Tier)
+	require.Equal(t, float64(1), info.Units)
 }
 
 func TestUnifiedMediaRejectsLossyAndUnknownFields(t *testing.T) {

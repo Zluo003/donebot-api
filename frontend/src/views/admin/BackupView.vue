@@ -727,15 +727,18 @@ async function saveImageStorageConfig() {
 }
 
 async function testImageStorage() {
+  if (testingImageStorage.value) return
+  const input = { ...imageStorageForm.value }
   testingImageStorage.value = true
   try {
-    const result = await adminAPI.backup.testImageStorageConnection(imageStorageForm.value)
+    const result = await backupStepUp.run(() => adminAPI.backup.testImageStorageConnection(input))
     if (result.ok) {
       appStore.showSuccess(result.message || t('admin.backup.s3.testSuccess'))
     } else {
       appStore.showError(result.message || t('admin.backup.s3.testFailed'))
     }
   } catch (error) {
+    if (isStepUpCancelled(error)) return
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
   } finally {
     testingImageStorage.value = false
@@ -743,15 +746,18 @@ async function testImageStorage() {
 }
 
 async function testS3() {
+  if (testingS3.value) return
+  const input = { ...s3Form.value }
   testingS3.value = true
   try {
-    const result = await adminAPI.backup.testS3Connection(s3Form.value)
+    const result = await backupStepUp.run(() => adminAPI.backup.testS3Connection(input))
     if (result.ok) {
       appStore.showSuccess(result.message || t('admin.backup.s3.testSuccess'))
     } else {
       appStore.showError(result.message || t('admin.backup.s3.testFailed'))
     }
   } catch (error) {
+    if (isStepUpCancelled(error)) return
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
   } finally {
     testingS3.value = false

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -441,6 +442,9 @@ func (s *BackupService) TestS3Connection(ctx context.Context, cfg BackupS3Config
 	if cfg.SecretAccessKey == "" {
 		old, _ := s.loadS3Config(ctx)
 		if old != nil {
+			if !sameStorageCredentialTarget(cfg.Endpoint, cfg.AccessKeyID, old.Endpoint, old.AccessKeyID) {
+				return fmt.Errorf("存储 Endpoint 或 Access Key ID 已更改，请重新填写 Secret Access Key 后测试")
+			}
 			cfg.SecretAccessKey = old.SecretAccessKey
 		}
 	}
@@ -451,9 +455,12 @@ func (s *BackupService) TestS3Connection(ctx context.Context, cfg BackupS3Config
 
 	store, err := s.storeFactory(ctx, &cfg)
 	if err != nil {
-		return err
+		return storageConnectionError("初始化备份存储", err)
 	}
-	return store.HeadBucket(ctx)
+	return ProbeObjectStorage(ctx, cfg.Prefix, func(ctx context.Context, key string, data []byte) (string, error) {
+		_, err := store.Upload(ctx, key, bytes.NewReader(data), "text/plain")
+		return "", err
+	}, store.Download, store.Delete)
 }
 
 // ─── 定时备份管理 ───

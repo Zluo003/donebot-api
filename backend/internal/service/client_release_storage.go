@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -17,7 +16,15 @@ type ClientReleaseStorageSettings struct {
 	Driver           string           `json:"driver"`
 	LocalPath        string           `json:"local_path"`
 	S3               DoneBotStorageS3 `json:"s3"`
+	OSS              DoneBotStorageS3 `json:"oss"`
 	SecretConfigured bool             `json:"secret_configured"`
+}
+
+func (in *ClientReleaseStorageSettings) objectStorage() *DoneBotStorageS3 {
+	if in.Driver == "oss" {
+		return &in.OSS
+	}
+	return &in.S3
 }
 
 func (s *ClientReleaseService) loadStorageSettings(ctx context.Context) (ClientReleaseStorageSettings, error) {
@@ -43,8 +50,11 @@ func (s *ClientReleaseService) StorageSettings(ctx context.Context) (*ClientRele
 	if err != nil {
 		return nil, err
 	}
-	out.SecretConfigured = out.S3.SecretAccessKey != ""
-	out.S3.SecretAccessKey = ""
+	out.SecretConfigured = out.objectStorage().SecretAccessKey != ""
+	for _, remote := range []*DoneBotStorageS3{&out.S3, &out.OSS} {
+		remote.SecretConfigured = remote.SecretAccessKey != ""
+		remote.SecretAccessKey = ""
+	}
 	return &out, nil
 }
 
@@ -57,35 +67,27 @@ func (s *ClientReleaseService) UpdateStorageSettings(ctx context.Context, in Cli
 	}
 	in.Driver = strings.ToLower(strings.TrimSpace(in.Driver))
 	in.LocalPath = strings.TrimSpace(in.LocalPath)
-	in.S3.Endpoint = strings.TrimSpace(in.S3.Endpoint)
-	in.S3.Region = strings.TrimSpace(in.S3.Region)
-	in.S3.Bucket = strings.TrimSpace(in.S3.Bucket)
-	in.S3.AccessKeyID = strings.TrimSpace(in.S3.AccessKeyID)
-	in.S3.Prefix = strings.Trim(strings.TrimSpace(in.S3.Prefix), "/")
-	if in.S3.Region == "" {
-		in.S3.Region = "auto"
-	}
-	if in.S3.Prefix != "" {
-		in.S3.Prefix += "/"
-	}
-	if in.S3.PublicBaseURL != nil {
-		in.S3.PublicBaseURL = doneBotStorageURL(strings.TrimRight(strings.TrimSpace(*in.S3.PublicBaseURL), "/"))
-	}
-	supplied := in.S3.SecretAccessKey != ""
-	if !supplied {
-		in.S3.SecretAccessKey = old.S3.SecretAccessKey
+	normalizeObjectStorageSettings(&in.S3, "", "s3")
+	normalizeObjectStorageSettings(&in.OSS, "", "oss")
+	for _, pair := range [][2]*DoneBotStorageS3{{&in.S3, &old.S3}, {&in.OSS, &old.OSS}} {
+		remote, saved := pair[0], pair[1]
+		supplied := remote.SecretAccessKey != ""
+		if !supplied {
+			remote.SecretAccessKey = saved.SecretAccessKey
+		}
+		if supplied {
+			if s.storage.encryptor == nil || s.storage.cfg != nil && !s.storage.cfg.Totp.EncryptionKeyConfigured {
+				return nil, ErrSecretEncryptionKeyNotConfigured
+			}
+			remote.SecretAccessKey, err = s.storage.encryptSecret(remote.SecretAccessKey)
+			if err != nil {
+				return nil, err
+			}
+		}
+		remote.SecretConfigured = false
 	}
 	if err = validateClientReleaseStorage(in); err != nil {
 		return nil, infraerrors.BadRequest("INVALID_CLIENT_RELEASE_STORAGE", err.Error())
-	}
-	if supplied {
-		if s.storage.encryptor == nil || s.storage.cfg != nil && !s.storage.cfg.Totp.EncryptionKeyConfigured {
-			return nil, ErrSecretEncryptionKeyNotConfigured
-		}
-		in.S3.SecretAccessKey, err = s.storage.encryptSecret(in.S3.SecretAccessKey)
-		if err != nil {
-			return nil, err
-		}
 	}
 	in.SecretConfigured = false
 	raw, err := json.Marshal(in)
@@ -98,28 +100,54 @@ func (s *ClientReleaseService) UpdateStorageSettings(ctx context.Context, in Cli
 	return s.StorageSettings(ctx)
 }
 
+func (s *ClientReleaseService) TestStorageConnection(ctx context.Context, in ClientReleaseStorageSettings) error {
+	if in.Driver != "s3" && in.Driver != "oss" {
+		return fmt.Errorf("请选择 S3 / R2 或阿里云 OSS 存储")
+	}
+	remote := in.objectStorage()
+	if remote.SecretAccessKey == "" {
+		current, err := s.loadStorageSettings(ctx)
+		if err != nil {
+			return fmt.Errorf("无法读取已保存的安装包存储密钥，请重新填写密钥")
+		}
+		current.Driver = in.Driver
+		if !sameObjectStorageCredentialTarget(*remote, *current.objectStorage()) {
+			return fmt.Errorf("存储类型或 Endpoint、Access Key ID 已更改，请重新填写 Secret Access Key 后测试")
+		}
+		remote.SecretAccessKey, err = s.storage.decryptSecret(current.objectStorage().SecretAccessKey)
+		if err != nil {
+			return fmt.Errorf("无法读取已保存的安装包存储密钥，请重新填写密钥")
+		}
+	}
+	normalizeObjectStorageSettings(remote, "", in.Driver)
+	if err := validateClientReleaseStorage(in); err != nil {
+		return err
+	}
+	storage, err := s.storage.storage(ctx, DoneBotStoragePolicy{Enabled: true, Driver: in.Driver, S3: in.S3, OSS: in.OSS, MaxFileBytes: MaxClientReleaseBytes, TTLHours: 168})
+	if err != nil {
+		return storageConnectionError("初始化存储连接", err)
+	}
+	tester, ok := storage.(StorageConnectivityTester)
+	if !ok {
+		return fmt.Errorf("存储驱动不支持连通性测试")
+	}
+	return tester.TestConnection(ctx, remote.Prefix)
+}
+
 func validateClientReleaseStorage(in ClientReleaseStorageSettings) error {
-	if in.Driver != "local" && in.Driver != "s3" {
-		return fmt.Errorf("存储方式必须为 local 或 s3")
+	if in.Driver != "local" && in.Driver != "s3" && in.Driver != "oss" {
+		return fmt.Errorf("存储方式必须为 local、s3 或 oss")
 	}
 	if in.Driver == "local" && in.LocalPath == "" {
 		return fmt.Errorf("请填写安装包本地目录")
 	}
-	if in.Driver == "s3" && (in.S3.Bucket == "" || in.S3.AccessKeyID == "" || in.S3.SecretAccessKey == "") {
-		return fmt.Errorf("请填写独立的 Bucket、Access Key ID 和 Secret Access Key")
-	}
-	publicURL := ""
-	if in.S3.PublicBaseURL != nil {
-		publicURL = *in.S3.PublicBaseURL
-	}
-	for name, value := range map[string]string{"Endpoint": in.S3.Endpoint, "公网地址": publicURL} {
-		if value == "" {
-			continue
+	for _, remote := range []DoneBotStorageS3{in.S3, in.OSS} {
+		if err := validateObjectStorageURLs(remote); err != nil {
+			return err
 		}
-		u, err := url.Parse(value)
-		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return fmt.Errorf("%s 必须为完整的 HTTP(S) 地址", name)
-		}
+	}
+	if in.Driver != "local" {
+		return validateObjectStorageSettings(in.Driver, *in.objectStorage())
 	}
 	return nil
 }
@@ -132,14 +160,15 @@ func (s *ClientReleaseService) releaseStoragePolicy(ctx context.Context) (DoneBo
 	if err = validateClientReleaseStorage(in); err != nil {
 		return DoneBotStoragePolicy{}, err
 	}
-	if in.Driver == "s3" && in.S3.SecretAccessKey != "" {
+	remote := in.objectStorage()
+	if (in.Driver == "s3" || in.Driver == "oss") && remote.SecretAccessKey != "" {
 		if s.storage.encryptor == nil {
 			return DoneBotStoragePolicy{}, ErrSecretEncryptionKeyNotConfigured
 		}
-		in.S3.SecretAccessKey, err = s.storage.decryptSecret(in.S3.SecretAccessKey)
+		remote.SecretAccessKey, err = s.storage.decryptSecret(remote.SecretAccessKey)
 		if err != nil {
 			return DoneBotStoragePolicy{}, err
 		}
 	}
-	return DoneBotStoragePolicy{Enabled: true, Driver: in.Driver, LocalPath: in.LocalPath, S3: in.S3, MaxFileBytes: MaxClientReleaseBytes, TTLHours: 168}, nil
+	return DoneBotStoragePolicy{Enabled: true, Driver: in.Driver, LocalPath: in.LocalPath, S3: in.S3, OSS: in.OSS, MaxFileBytes: MaxClientReleaseBytes, TTLHours: 168}, nil
 }

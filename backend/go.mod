@@ -9,6 +9,7 @@ require (
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.1.13
 	github.com/alibabacloud-go/tea v1.3.13
 	github.com/alicebob/miniredis/v2 v2.38.0
+	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.6.1
 	github.com/alitto/pond/v2 v2.6.2
 	github.com/andybalholm/brotli v1.2.7
 	github.com/aws/aws-sdk-go-v2 v1.41.5

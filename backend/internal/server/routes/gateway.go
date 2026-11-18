@@ -155,7 +155,7 @@ func RegisterGatewayRoutes(
 		runtime.GET("/templates", h.DoneBot.Templates)
 		runtime.GET("/templates/:template_id/:release", h.DoneBot.Template)
 	}
-	doneBotGateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot))
+	doneBotGateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot, h.OpenAIGateway))
 	doneBotGateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
 	registerDoneBotWebToolsRoutes(doneBotGateway, h.DoneBot)
 	if h.OpenAIGateway != nil {
@@ -166,7 +166,7 @@ func RegisterGatewayRoutes(
 	gateway.Use(groupModelAllowlist)
 	gateway.Use(doneBotLLMRouting)
 	gateway.Use(compositeTarget)
-	gateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot))
+	gateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot, h.OpenAIGateway))
 	gateway.Use(requireGroupAnthropic)
 	{
 		// /v1/messages: auto-route based on group platform
@@ -355,7 +355,7 @@ func RegisterGatewayRoutes(
 	// 根路径别名共用中间件链：白名单准入在 apiKeyAuth 之后、compositeTarget
 	// 之前，避免逐条路由手工维护链导致漏挂。
 	rootRoute := func(method, path string, limit gin.HandlerFunc, handler gin.HandlerFunc) {
-		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot), groupModelAllowlist, doneBotLLMRouting, compositeTarget, doneBotReasoning, requireGroupAnthropic, handler)
+		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot, h.OpenAIGateway), groupModelAllowlist, doneBotLLMRouting, compositeTarget, doneBotReasoning, requireGroupAnthropic, handler)
 	}
 	for _, prefix := range []string{"/api/v3", "/v3", "/v1", ""} {
 		rootRoute(http.MethodPost, prefix+"/contents/generations/tasks", bodyLimit, h.OpenAIGateway.SeedanceTasks)

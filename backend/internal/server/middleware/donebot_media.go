@@ -41,7 +41,11 @@ type DoneBotMediaRecovery interface {
 	ValidateMedia(context.Context, service.DoneBotMediaOwner, string, string, map[string]any) error
 }
 
-func DoneBotMediaRecoveryMiddleware(recovery DoneBotMediaRecovery) gin.HandlerFunc {
+type DoneBotMediaNormalizer interface {
+	NormalizeUnifiedMedia(context.Context, *service.APIKey, string, []byte) ([]byte, string, error)
+}
+
+func DoneBotMediaRecoveryMiddleware(recovery DoneBotMediaRecovery, normalizers ...DoneBotMediaNormalizer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key, ok := GetAPIKeyFromContext(c)
 		if !ok || key == nil || !strings.HasPrefix(key.Key, "sk-donebot-") {
@@ -143,12 +147,32 @@ func DoneBotMediaRecoveryMiddleware(recovery DoneBotMediaRecovery) gin.HandlerFu
 		writer := &doneBotMediaCapture{ResponseWriter: c.Writer}
 		c.Writer = writer
 		var validationErr error
-		if validator, ok := recovery.(interface {
-			ValidateMediaPath(context.Context, service.DoneBotMediaOwner, string, string, string, map[string]any) error
-		}); ok {
-			validationErr = validator.ValidateMediaPath(c.Request.Context(), owner, kind, model, c.Request.URL.Path, parameters)
-		} else {
-			validationErr = recovery.ValidateMedia(c.Request.Context(), owner, kind, model, parameters)
+		if _, unified := parameters["protocol"]; unified {
+			if len(normalizers) != 1 || normalizers[0] == nil {
+				validationErr = service.ErrDoneBotGroupUnavailable
+			} else {
+				var path string
+				body, path, validationErr = normalizers[0].NormalizeUnifiedMedia(c.Request.Context(), key, kind, body)
+				if validationErr == nil {
+					parameters, validationErr = service.DecodeDoneBotMediaParameters(body)
+				}
+				if validationErr == nil {
+					if path != "" {
+						c.Request.URL.Path = path
+					}
+					requestmodel.ResetRequestBody(c.Request, body)
+					c.Request = c.Request.WithContext(service.WithUnifiedMediaProtocol(c.Request.Context()))
+				}
+			}
+		}
+		if validationErr == nil {
+			if validator, ok := recovery.(interface {
+				ValidateMediaPath(context.Context, service.DoneBotMediaOwner, string, string, string, map[string]any) error
+			}); ok {
+				validationErr = validator.ValidateMediaPath(c.Request.Context(), owner, kind, model, c.Request.URL.Path, parameters)
+			} else {
+				validationErr = recovery.ValidateMedia(c.Request.Context(), owner, kind, model, parameters)
+			}
 		}
 		if validationErr == nil {
 			if estimator, ok := recovery.(interface {

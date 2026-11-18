@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -12,6 +13,21 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
+
+func (h *OpenAIGatewayHandler) NormalizeUnifiedMedia(ctx context.Context, key *service.APIKey, kind string, body []byte) ([]byte, string, error) {
+	if h == nil || h.gatewayService == nil {
+		return nil, "", service.ErrDoneBotGroupUnavailable
+	}
+	native, err := h.gatewayService.UnifiedMediaNativeModel(ctx, key, gjson.GetBytes(body, "model").String(), kind)
+	if err != nil {
+		return nil, "", service.ErrDoneBotMediaInvalid.WithCause(err)
+	}
+	converted, path, err := service.ConvertUnifiedMedia(body, kind, native)
+	if err != nil {
+		return nil, "", service.ErrDoneBotMediaInvalid.WithCause(err)
+	}
+	return converted, path, nil
+}
 
 func (h *OpenAIGatewayHandler) DoneBotVideoGeneration(c *gin.Context) {
 	h.doneBotVideoCreate(c, h.GrokVideoGeneration)

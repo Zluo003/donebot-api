@@ -213,8 +213,8 @@ func (s *AssetService) uploadStored(ctx context.Context, purpose string, owner i
 			ext = ".txt"
 		}
 		objectKey := path.Join(purpose, digest[:2], digest+ext)
-		if policy != nil && policy.Driver == "s3" {
-			objectKey = path.Join(policy.S3.Prefix, objectKey)
+		if policy != nil && (policy.Driver == "s3" || policy.Driver == "oss") {
+			objectKey = path.Join(policy.objectStorage().Prefix, objectKey)
 		}
 		storage := s.storage
 		var snapshot json.RawMessage

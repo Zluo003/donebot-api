@@ -127,14 +127,15 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 			c.Request.URL.Path = path
 		}
 		requestmodel.ResetRequestBody(c.Request, body)
-		if service.IsAPIMartImageModel(native) {
-			if service.DoneBotMediaReceiptID(c.Request.Context()) == "" {
-				h.serveUnifiedAPIMartImage(c, false)
-				return
-			}
-			h.openAI.APIMartImages(c)
+	}
+	if service.IsUnifiedMediaProtocol(c.Request.Context()) && h.openAI != nil && h.openAI.IsAPIMartImageRequest(c, gjson.GetBytes(body, "model").String()) {
+		requestmodel.ResetRequestBody(c.Request, body)
+		if service.DoneBotMediaReceiptID(c.Request.Context()) == "" {
+			h.serveUnifiedAPIMartImage(c, false)
 			return
 		}
+		h.openAI.APIMartImages(c)
+		return
 	}
 	if asyncImageRequestStreams(c.GetHeader("Content-Type"), body) {
 		imageTaskJSONError(c, http.StatusBadRequest, "invalid_request_error", "streaming image requests cannot be submitted as asynchronous tasks")

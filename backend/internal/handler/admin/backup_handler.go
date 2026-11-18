@@ -57,7 +57,7 @@ func (h *BackupHandler) TestS3Connection(c *gin.Context) {
 		response.Success(c, gin.H{"ok": false, "message": err.Error()})
 		return
 	}
-	response.Success(c, gin.H{"ok": true, "message": "connection successful"})
+	response.Success(c, gin.H{"ok": true, "message": "存储桶写入、读取和删除测试通过，测试文件已清理。配置未保存。"})
 }
 
 // ─── 定时备份 ───
@@ -254,5 +254,5 @@ func (h *BackupHandler) TestImageStorageConnection(c *gin.Context) {
 		response.Success(c, gin.H{"ok": false, "message": err.Error()})
 		return
 	}
-	response.Success(c, gin.H{"ok": true, "message": "connection successful"})
+	response.Success(c, gin.H{"ok": true, "message": "存储桶写入、读取、下载链接和删除测试通过，测试文件已清理。配置未保存。"})
 }

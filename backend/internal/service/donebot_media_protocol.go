@@ -133,6 +133,7 @@ func ConvertUnifiedMedia(body []byte, kind, native string) ([]byte, string, erro
 	}
 	var options []string
 	edit := false
+	path := ""
 	switch kind {
 	case "image":
 		if r.Duration != nil {
@@ -168,6 +169,7 @@ func ConvertUnifiedMedia(body []byte, kind, native string) ([]byte, string, erro
 		}
 		options = []string{"background", "watermark", "optimize_prompt_options", "layer_decomposition_options"}
 		if IsAPIMartImageModel(native) {
+			path = "/v1/images/generations"
 			if len(urls) > 0 {
 				out["image_urls"] = urls
 			}
@@ -268,7 +270,6 @@ func ConvertUnifiedMedia(body []byte, kind, native string) ([]byte, string, erro
 		}
 		out[k] = v
 	}
-	path := ""
 	if edit {
 		path = "/v1/images/edits/async"
 	}

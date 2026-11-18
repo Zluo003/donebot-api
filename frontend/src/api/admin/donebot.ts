@@ -37,15 +37,17 @@ export interface ModelConfigurationInput { models: (ModelToggle & { pricing?: Mo
 export interface AdminImageTask { task_id: string; status: string; http_status?: number; user_id: number; install: { id: number; name: string }; created_at: number; completed_at?: number; expires_at: number }
 export interface Install { id: number; name: string; user_id: number; api_key_id: number; status: string; last_seen_at?: string; created_at: string }
 export interface Overview { asset_storage?: { driver: string; public_base_url_configured: boolean }; group: { id: number; name: string; platform: string }; user_count: number; model_count: number; install_count: number; today_usage: { total_requests: number; total_actual_cost: number } }
+export interface ObjectStorageSettings { endpoint: string; download_endpoint?: string; region: string; bucket: string; prefix: string; access_key_id: string; secret_access_key: string; force_path_style: boolean; public_base_url?: string; secret_configured?: boolean }
+export const ossStorageDraft = (value?: ObjectStorageSettings, prefix = 'generated/'): ObjectStorageSettings => ({ download_endpoint: '', region: '', bucket: '', access_key_id: '', force_path_style: false, ...value, endpoint: value?.endpoint || 'https://oss-accelerate.aliyuncs.com', prefix: value?.prefix || prefix, public_base_url: '', secret_access_key: '' })
 export interface StoragePolicyInput {
- enabled: boolean; driver: 'local' | 's3'; local_path: string; public_base_url: string; local_public_base_url?: string
+ enabled: boolean; driver: 'local' | 's3' | 'oss'; local_path: string; public_base_url: string; local_public_base_url?: string
  max_storage_bytes: number; ttl_hours: number; cleanup_threshold_percent: number; max_file_bytes: number
- s3: { endpoint: string; region: string; bucket: string; prefix: string; access_key_id: string; secret_access_key: string; force_path_style: boolean; public_base_url?: string }
+ s3: ObjectStorageSettings; oss?: ObjectStorageSettings
 }
 export interface StoragePolicy extends StoragePolicyInput { secret_configured?: boolean; usage_bytes?: number; file_count?: number }
 export interface StorageSettingsInput { upload: StoragePolicyInput; generated: StoragePolicyInput }
 export interface StorageSettings { upload: StoragePolicy; generated: StoragePolicy }
-export interface ClientReleaseStorageSettings { driver: 'local' | 's3'; local_path: string; s3: StoragePolicyInput['s3']; secret_configured?: boolean }
+export interface ClientReleaseStorageSettings { driver: 'local' | 's3' | 'oss'; local_path: string; s3: StoragePolicyInput['s3']; oss?: ObjectStorageSettings; secret_configured?: boolean }
 export type ClientReleasePlatform = 'windows-x64' | 'macos-arm64' | 'macos-arm64-dmg'
 export interface ClientReleaseArtifact { filename: string; size_bytes: number; sha256: string; sha512: string; download_url: string }
 export interface ClientRelease { version: string; notes?: string; status: 'draft' | 'published'; created_at: string; published_at?: string; platforms: Partial<Record<ClientReleasePlatform, ClientReleaseArtifact>> }
@@ -67,8 +69,10 @@ const donebot = {
  async saveWebTools(input: WebToolsSettingsInput) { return (await apiClient.put<WebToolsSettings>('/admin/donebot/web-tools', input)).data },
  async storage() { return (await apiClient.get<StorageSettings>('/admin/donebot/storage')).data },
  async saveStorage(input: StorageSettingsInput) { return (await apiClient.put<StorageSettings>('/admin/donebot/storage', input)).data },
+ async testStorage(purpose: 'upload' | 'generated', input: StoragePolicyInput) { return (await apiClient.post<{ ok: boolean; message: string }>(`/admin/donebot/storage/${purpose}/test`, input)).data },
  async clientReleaseStorage() { return (await apiClient.get<ClientReleaseStorageSettings>('/admin/donebot/releases/storage')).data },
  async saveClientReleaseStorage(input: ClientReleaseStorageSettings) { return (await apiClient.put<ClientReleaseStorageSettings>('/admin/donebot/releases/storage', input)).data },
+ async testClientReleaseStorage(input: ClientReleaseStorageSettings) { return (await apiClient.post<{ ok: boolean; message: string }>('/admin/donebot/releases/storage/test', input)).data },
  async clientReleases() { return (await apiClient.get<{ releases: ClientRelease[] }>('/admin/donebot/releases')).data },
  async uploadClientRelease(input: FormData) { return (await apiClient.post<ClientRelease>('/admin/donebot/releases/upload', input, { headers: { 'Content-Type': 'multipart/form-data' } })).data },
  async publishClientRelease(version: string) { return (await apiClient.post<ClientRelease>(`/admin/donebot/releases/${encodeURIComponent(version)}/publish`)).data },
