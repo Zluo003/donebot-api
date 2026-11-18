@@ -54,6 +54,7 @@ export default {
         invalidModelMapping: '请填写上下游模型名称，不支持通配符',
         duplicateModelMapping: '下游模型名称不能重复',
         selectModelSpec: '请选择官方模型规格',
+        flashNewTokenOnly: 'Seedance 2.5 Flash 仅支持 NewToken 账号。要使用其他上游，请取消启用 Flash 映射。',
         resolutions: '允许的分辨率（多选）',
         resolutionHint: '按火山引擎官方模型规格，与账号允许的分辨率取交集。实际可用范围还受 NewToken 上游密钥分组限制。素材支持 asset:// 与公网 URL。',
         outputStorage: '上游产物存储方式',

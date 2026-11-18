@@ -8,12 +8,14 @@ import (
 )
 
 const SeedanceNewTokenBaseURL = "https://api.newtoken.club"
+const seedance25Flash = "doubao-seedance-2-5-flash-261115"
 
 var seedanceModelResolutions = map[string][]string{
 	"doubao-seedance-2-0-260128":      {"480p", "720p", "1080p", "4k"},
 	"doubao-seedance-2-0-fast-260128": {"480p", "720p"},
 	"doubao-seedance-2-0-mini-260615": {"480p", "720p"},
 	"doubao-seedance-2-5-260628":      {"480p", "720p", "1080p"},
+	seedance25Flash:                   {"480p", "720p"},
 }
 
 // SeedanceSpecModelForAccount resolves protocol capabilities independently from
@@ -138,6 +140,11 @@ func (a *Account) SeedanceAllowsResolution(model, resolution string) bool {
 		return false
 	}
 	spec := SeedanceSpecModelForAccount(a, model)
+	if spec == seedance25Flash || a.GetMappedModel(model) == seedance25Flash || model == seedance25Flash {
+		if spec != seedance25Flash || !isSeedanceNewTokenAccount(a) {
+			return false
+		}
+	}
 	resolution = strings.ToLower(strings.TrimSpace(resolution))
 	supported, known := seedanceModelResolutions[spec]
 	if !known {

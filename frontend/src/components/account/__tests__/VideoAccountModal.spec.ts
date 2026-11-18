@@ -126,7 +126,7 @@ describe('Video account panel', () => {
     expect(wrapper.get<HTMLInputElement>('[data-testid="video-base-url"]').element.value).toBe('https://api.newtoken.club')
     expect(wrapper.get<HTMLInputElement>('[data-testid="video-resolution-720p"]').element.checked).toBe(true)
     expect(wrapper.findAll('[data-testid^="video-resolution-"]')).toHaveLength(4)
-    expect(wrapper.findAll('[data-testid^="video-model-enabled-"]')).toHaveLength(4)
+    expect(wrapper.findAll('[data-testid^="video-model-enabled-"]')).toHaveLength(5)
     expect(wrapper.get<HTMLSelectElement>('[data-testid=video-output-storage]').element.value).toBe('upstream')
     await wrapper.get('[data-testid="video-name"]').setValue('Video upstream')
     await wrapper.get('[data-testid="video-api-key"]').setValue('upstream-test-secret')
@@ -200,11 +200,11 @@ describe('Video account panel', () => {
     const wrapper = setup()
     await wrapper.get('[data-testid=video-name]').setValue('Video')
     await wrapper.get('[data-testid=video-api-key]').setValue('secret')
-    for (let index = 0; index < 4; index++) await wrapper.get(`[data-testid=video-model-enabled-${index}]`).setValue(false)
+    for (let index = 0; index < SEEDANCE_MODELS.length; index++) await wrapper.get(`[data-testid=video-model-enabled-${index}]`).setValue(false)
     await wrapper.get('[data-testid=video-model-add]').trigger('click')
-    await wrapper.get('[data-testid=video-model-downstream-4]').setValue('new-video')
-    await wrapper.get('[data-testid=video-model-upstream-4]').setValue('ep-upstream')
-    await wrapper.get('[data-testid=video-model-spec-4]').setValue('doubao-seedance-2-0-fast-260128')
+    await wrapper.get(`[data-testid=video-model-downstream-${SEEDANCE_MODELS.length}]`).setValue('new-video')
+    await wrapper.get(`[data-testid=video-model-upstream-${SEEDANCE_MODELS.length}]`).setValue('ep-upstream')
+    await wrapper.get(`[data-testid=video-model-spec-${SEEDANCE_MODELS.length}]`).setValue('doubao-seedance-2-0-fast-260128')
     await wrapper.get('[data-testid=video-model-remove-0]').trigger('click')
     await wrapper.get('form').trigger('submit'); await flushPromises()
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ credentials: expect.objectContaining({
@@ -248,7 +248,7 @@ describe('Video account panel', () => {
     const wrapper = setup()
     await wrapper.get('[data-testid=video-name]').setValue('Video')
     await wrapper.get('[data-testid=video-api-key]').setValue('secret')
-    for (let index = 0; index < 4; index++) await wrapper.get(`[data-testid=video-model-enabled-${index}]`).setValue(false)
+    for (let index = 0; index < SEEDANCE_MODELS.length; index++) await wrapper.get(`[data-testid=video-model-enabled-${index}]`).setValue(false)
     await wrapper.get('form').trigger('submit'); await flushPromises()
     expect(mocks.create).not.toHaveBeenCalled()
     expect(mocks.error).toHaveBeenCalledWith('admin.accounts.videoAccount.selectModel')
@@ -278,6 +278,20 @@ describe('Video account panel', () => {
       { enabled: true, downstream: canonical, upstream: 'ep-unknown', spec: canonical },
       { enabled: true, downstream: 'unknown', upstream: 'vendor', spec: '' }
     ])
+  })
+
+  it('keeps Flash exclusive to NewToken without blocking older models', async () => {
+    const wrapper = setup()
+    await wrapper.get('[data-testid=video-name]').setValue('Other upstream')
+    await wrapper.get('[data-testid=video-api-key]').setValue('test-key')
+    await wrapper.get('[data-testid=video-base-url]').setValue('https://other.example')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(mocks.error).toHaveBeenCalledWith('admin.accounts.videoAccount.flashNewTokenOnly')
+    expect(mocks.create).not.toHaveBeenCalled()
+    const flash = SEEDANCE_MODELS.findIndex(model => model.id === 'doubao-seedance-2-5-flash-261115')
+    await wrapper.get(`[data-testid=video-model-enabled-${flash}]`).setValue(false)
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(mocks.create).toHaveBeenCalledOnce()
   })
 
   it('rejects an empty resolution selection before writing', async () => {

@@ -54,6 +54,7 @@ export default {
         invalidModelMapping: 'Enter both model names without wildcards',
         duplicateModelMapping: 'Downstream model names must be unique',
         selectModelSpec: 'Select an official model specification',
+        flashNewTokenOnly: 'Seedance 2.5 Flash requires a NewToken account. Disable its mapping to use another upstream.',
         resolutions: 'Allowed resolutions (select multiple)',
         resolutionHint: 'Resolution support follows official Volcengine model specifications, intersected with the account allowlist. The upstream NewToken key group may impose further limits. Assets support asset:// and public URLs.',
         outputStorage: 'Upstream output storage',

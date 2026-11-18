@@ -13,6 +13,23 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+func TestSeedanceFlashNewTokenContract(t *testing.T) {
+	const model = "seedance-2-5-flash"
+	a := doneBotEnabledCatalogAccount(PlatformOpenAI, map[string]any{model: seedance25Flash})
+	a.Credentials["base_url"] = "https://other.example"
+	require.False(t, a.SeedanceAllowsResolution(model, "720p"))
+	a.Credentials["base_url"] = SeedanceNewTokenBaseURL
+	require.True(t, a.SeedanceAllowsResolution(model, "720p"))
+	require.False(t, a.SeedanceAllowsResolution(model, "4k"))
+	const body = `{"model":"seedance-2-5-flash","resolution":"720p","content":[{"type":"text","text":"follow the beat"},{"type":"audio_url","role":"reference_audio","audio_url":{"url":"https://example.test/beat.wav"}}],`
+	_, err := ParseSeedanceRequestForAccount([]byte(body+`"duration":30,"output_format":"mov"}`), &a)
+	require.NoError(t, err)
+	for _, field := range []string{`"draft":true`, `"omni_reference_task_type":"reference"`, `"duration":-1`, `"duration":31`} {
+		_, err := ParseSeedanceRequestForAccount([]byte(body+field+`}`), &a)
+		require.Error(t, err, field)
+	}
+}
+
 func TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling(t *testing.T) {
 	for _, model := range []struct {
 		public, upstream string
@@ -23,6 +40,7 @@ func TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling(t *testing.T) {
 		{"seedance-2-0-fast", "doubao-seedance-2-0-fast-260128", []string{"480p", "720p"}, 15},
 		{"seedance-2-0-mini", "doubao-seedance-2-0-mini-260615", []string{"480p", "720p"}, 15},
 		{"seedance-2-5", "doubao-seedance-2-5-260628", []string{"480p", "720p", "1080p"}, 30},
+		{"seedance-2-5-flash", seedance25Flash, []string{"480p", "720p"}, 30},
 	} {
 		t.Run(model.public, func(t *testing.T) {
 			catalogService, owner, group, _ := doneBotMediaValidationFixture(t)
@@ -58,7 +76,7 @@ func TestDoneBotSeedancePublicModelsKeepCatalogMappingAndBilling(t *testing.T) {
 			require.NotNil(t, entry.MediaParameters)
 			require.Equal(t, doneBotMediaProtocol("seedance.videos.v1"), entry.MediaParameters.Protocol)
 			require.Equal(t, model.resolutions, entry.MediaParameters.Resolutions)
-			require.Equal(t, &DoneBotCatalogDuration{Min: 4, Max: model.maxSeconds, Step: 1, Automatic: true}, entry.MediaParameters.DurationSeconds)
+			require.Equal(t, &DoneBotCatalogDuration{Min: 4, Max: model.maxSeconds, Step: 1, Automatic: model.upstream != seedance25Flash}, entry.MediaParameters.DurationSeconds)
 			body := []byte(`{"model":"` + model.public + `","content":[{"type":"text","text":"a tracking shot"}],"resolution":"720p","duration":5,"ratio":"16:9"}`)
 			parameters, err := DecodeDoneBotMediaParameters(body)
 			require.NoError(t, err)

@@ -109,7 +109,7 @@ import { isStepUpCancelled, useStepUp } from '@/composables/useStepUp'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import type { Account, AdminGroup, Proxy } from '@/types'
-import { createMuseModelMappings, createSeedanceModelMappings, getVideoAccountProvider, SEEDANCE_MODELS, SEEDANCE_RESOLUTIONS, VIDEO_ACCOUNT_PROVIDERS, type VideoAccountProvider, type VideoModelMapping } from './videoAccount'
+import { createMuseModelMappings, createSeedanceModelMappings, getVideoAccountProvider, SEEDANCE_25_FLASH, SEEDANCE_MODELS, SEEDANCE_RESOLUTIONS, VIDEO_ACCOUNT_PROVIDERS, type VideoAccountProvider, type VideoModelMapping } from './videoAccount'
 
 const props = defineProps<{ show: boolean; account?: Account | null; groups: AdminGroup[]; proxies: Proxy[] }>()
 const emit = defineEmits<{ close: []; created: []; updated: [account: Account] }>()
@@ -194,6 +194,9 @@ async function save() {
   try {
     const url = new URL(form.baseURL.trim())
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('invalid URL')
+    if (form.provider === 'seedance' && url.hostname !== 'api.newtoken.club' && mappings.some(mapping => [mapping.spec, mapping.upstream, mapping.downstream].includes(SEEDANCE_25_FLASH))) {
+      app.showError(t('admin.accounts.videoAccount.flashNewTokenOnly')); return
+    }
   } catch { app.showError(t('admin.accounts.videoAccount.invalidURL')); return }
   saving.value = true
   try {

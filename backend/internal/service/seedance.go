@@ -177,6 +177,7 @@ func validSeedanceMaterialURL(raw string, image bool) bool {
 func validateSeedanceModelRequest(body []byte, info GrokMediaRequestInfo, frames bool, images, videos, audios int, draftReference bool) error {
 	supported, known := seedanceModelResolutions[info.Model]
 	is25 := info.Model == "doubao-seedance-2-5-260628"
+	isFlash := info.Model == seedance25Flash
 	if known {
 		resolution := info.Resolution
 		if resolution == "" {
@@ -188,17 +189,24 @@ func validateSeedanceModelRequest(body []byte, info GrokMediaRequestInfo, frames
 		maxDuration, maxImages, maxVideos, maxAudios := 15, 9, 3, 3
 		if is25 {
 			maxDuration, maxImages, maxVideos, maxAudios = 30, 30, 10, 10
+		} else if isFlash {
+			maxDuration, maxImages, maxVideos, maxAudios = 30, 10, 5, 5
 		}
-		if duration := gjson.GetBytes(body, "duration"); duration.Exists() && info.DurationSeconds != -1 && (info.DurationSeconds < 4 || info.DurationSeconds > maxDuration) {
-			return fmt.Errorf("duration must be -1 or between 4 and %d seconds", maxDuration)
+		if gjson.GetBytes(body, "duration").Exists() && (info.DurationSeconds < 4 || info.DurationSeconds > maxDuration) {
+			if isFlash {
+				return fmt.Errorf("duration must be between 4 and %d seconds for Seedance 2.5 Flash", maxDuration)
+			}
+			if info.DurationSeconds != -1 {
+				return fmt.Errorf("duration must be -1 or between 4 and %d seconds", maxDuration)
+			}
 		}
 		if images > maxImages || videos > maxVideos || audios > maxAudios {
 			return fmt.Errorf("too many Seedance reference materials")
 		}
-		if !is25 && audios > 0 && images == 0 && videos == 0 {
+		if !is25 && !isFlash && audios > 0 && images == 0 && videos == 0 {
 			return fmt.Errorf("seedance 2.0 audio references require an image or video reference")
 		}
-		if is25 && frames && info.AspectRatio != "" && info.AspectRatio != "adaptive" {
+		if (is25 || isFlash) && frames && info.AspectRatio != "" && info.AspectRatio != "adaptive" {
 			return fmt.Errorf("seedance 2.5 first/last frames require ratio adaptive")
 		}
 	}

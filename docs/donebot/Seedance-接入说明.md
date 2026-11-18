@@ -9,7 +9,7 @@
 - [火山引擎 Seedance 2.0](https://docs.volcengine.com/docs/ark/seedance-2-0?lang=zh)、[Seedance 2.5](https://docs.volcengine.com/docs/ark/seedance-2-5?lang=zh)：各模型能力。
 - [火山引擎查询视频生成任务](https://docs.volcengine.com/docs/ark/get-video-generation-task-api?lang=zh)、[取消或删除任务](https://docs.volcengine.com/docs/ark/cancel-or-delete-video-generation-tasks-api?lang=zh)：状态与任务生命周期。
 
-分辨率按用户选择，以[火山引擎创建任务 API 的 `resolution` 字段](https://docs.volcengine.com/docs/ark/create-video-generation-task-api?lang=zh)为准。官方明确列出下表四个模型系列的分辨率集合，默认均为 `720p`；2.0 支持 `4k`，并说明其 4k 输出采用 10bit 位深和 H.265/HEVC 编码。下表的具体版本 ID 来自 NewToken，系列能力与官方逐项一致。
+2026-11-18 核对：下表为 NewToken 可提交的输出分辨率。方舟 2.5 标准版原生支持 4K，但当前 NewToken 文档仅列到 1080p；Flash 可使用 4K 视频作参考，不支持 4K 输出。
 
 NewToken 页面包含一次动态修订：初始 HTML 的说明写着仅支持 720p，但页面末尾的 `DOMContentLoaded` 脚本会替换说明和价格表，展示与官方一致的分辨率矩阵，不能只解析静态正文。该脚本还说明，`doubao-官方xx全分辨率` Key 分组支持全部分辨率，其他分组受供应商限制；账号面板的选择不能扩大上游 Key 权限。
 
@@ -19,6 +19,9 @@ NewToken 页面包含一次动态修订：初始 HTML 的说明写着仅支持 7
 | `doubao-seedance-2-0-fast-260128` | `480p`、`720p` |
 | `doubao-seedance-2-0-mini-260615` | `480p`、`720p` |
 | `doubao-seedance-2-5-260628` | `480p`、`720p`、`1080p` |
+| `doubao-seedance-2-5-flash-261115` | `480p`、`720p` |
+
+启用 Flash 时，NewToken 视频账号将公开 ID `seedance-2-5-flash` 映射至 `doubao-seedance-2-5-flash-261115`，并在相应分组启用公开 ID，单独配置各分辨率和参考视频档位的按秒售价。NewToken 的每百万 Tokens 报价不是 DoneBot 的按秒售价，不能直接填入。Flash 用 `content.role` 指定参考素材；不要传标准版的 `omni_reference_task_type`、`draft` 或 `draft_task`。
 
 NewToken 要求请求显式提供 `resolution`，且 `content` 至少包含一条非空文本。官方接口在部分场景允许省略文本或分辨率，不能据此放宽供应商的要求。默认值也有差异：NewToken 写明默认时长 4 秒、默认比例 `16:9`，官方部分模型默认自动时长或 `adaptive`。网关保留未提交的可选字段，避免注入一套与供应商不一致的默认值；下面示例显式填写影响结果的参数。
 
