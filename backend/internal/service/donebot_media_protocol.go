@@ -131,9 +131,10 @@ func ConvertUnifiedMedia(body []byte, kind, native string) ([]byte, string, erro
 	if r.Resolution != "" {
 		out["resolution"] = r.Resolution
 	}
-	options := []string{}
+	var options []string
 	edit := false
-	if kind == "image" {
+	switch kind {
+	case "image":
 		if r.Duration != nil {
 			return nil, "", fmt.Errorf("duration is not an image field")
 		}
@@ -189,7 +190,7 @@ func ConvertUnifiedMedia(body []byte, kind, native string) ([]byte, string, erro
 		} else {
 			return nil, "", fmt.Errorf("unsupported unified image adapter")
 		}
-	} else if kind == "video" {
+	case "video":
 		if r.Size != "" || r.Count != nil {
 			return nil, "", fmt.Errorf("size/count are not video fields")
 		}
@@ -205,13 +206,13 @@ func ConvertUnifiedMedia(body []byte, kind, native string) ([]byte, string, erro
 		}
 		if native == "muse-video" {
 			if r.Mode != "text" && r.Mode != "reference" {
-				return nil, "", fmt.Errorf("Muse does not support this video mode")
+				return nil, "", fmt.Errorf("this video mode is not supported by Muse")
 			}
 			out["aspect_ratio"] = r.AspectRatio
 			refs := []string{}
 			for _, ref := range r.References {
 				if ref.Type != "image" {
-					return nil, "", fmt.Errorf("Muse accepts image references only")
+					return nil, "", fmt.Errorf("only image references are supported by Muse")
 				}
 				refs = append(refs, ref.URL)
 			}
@@ -220,7 +221,7 @@ func ConvertUnifiedMedia(body []byte, kind, native string) ([]byte, string, erro
 			}
 			if r.OutputFormat != "" {
 				if r.OutputFormat != "mp4" {
-					return nil, "", fmt.Errorf("Muse outputs MP4 only")
+					return nil, "", fmt.Errorf("only MP4 output is supported by Muse")
 				}
 				delete(out, "output_format")
 			}
@@ -230,7 +231,7 @@ func ConvertUnifiedMedia(body []byte, kind, native string) ([]byte, string, erro
 				return nil, "", fmt.Errorf("this Seedance adapter does not expose editing")
 			}
 			if native == seedance25Flash && r.Mode == "extend" {
-				return nil, "", fmt.Errorf("Seedance Flash does not expose extension")
+				return nil, "", fmt.Errorf("extension is not exposed by Seedance Flash")
 			}
 			content := []map[string]any{{"type": "text", "text": r.Prompt}}
 			for _, ref := range r.References {
@@ -250,7 +251,7 @@ func ConvertUnifiedMedia(body []byte, kind, native string) ([]byte, string, erro
 			}
 			if !strings.HasPrefix(native, "doubao-seedance-2-5-") && r.OutputFormat != "" {
 				if r.OutputFormat != "mp4" {
-					return nil, "", fmt.Errorf("Seedance 2.0 outputs MP4 only")
+					return nil, "", fmt.Errorf("only MP4 output is supported by Seedance 2.0")
 				}
 				delete(out, "output_format")
 			}
@@ -258,7 +259,7 @@ func ConvertUnifiedMedia(body []byte, kind, native string) ([]byte, string, erro
 		} else {
 			return nil, "", fmt.Errorf("unsupported unified video adapter")
 		}
-	} else {
+	default:
 		return nil, "", fmt.Errorf("unsupported unified media kind")
 	}
 	for k, v := range r.Options {

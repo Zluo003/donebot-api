@@ -45,7 +45,7 @@ func TestUnifiedVideoModes(t *testing.T) {
 			}
 			body, _ := json.Marshal(map[string]any{"protocol": DoneBotMediaProtocol, "model": "alias", "mode": mode, "prompt": "waves", "duration": 6, "resolution": "720p", "aspect_ratio": "adaptive", "references": refs})
 			_, _, err := ConvertUnifiedMedia(body, "video", spec)
-			supported := mode != "edit" && !(mode == "extend" && spec == seedance25Flash) && (spec != "muse-video" || mode == "text")
+			supported := mode != "edit" && (mode != "extend" || spec != seedance25Flash) && (spec != "muse-video" || mode == "text")
 			if supported {
 				require.NoError(t, err, "%s %s", spec, mode)
 			} else {
