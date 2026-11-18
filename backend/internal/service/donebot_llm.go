@@ -201,14 +201,21 @@ func doneBotLLMAccountAllowed(ctx context.Context, account *Account, model strin
 	if !doneBotLLMAPIAccount(account) {
 		return false
 	}
-	mappedID := doneBotNativeLLMID(account.GetMappedModel(model))
-	mapped, known := doneBotNativeLLMs[mappedID]
+	modelID := request.model
+	if modelID == "" {
+		modelID = model
+		if public, ok := RequestedPublicModelFromContext(ctx); ok {
+			modelID = public
+		}
+		modelID = doneBotNativeLLMID(modelID)
+	}
+	native, known := doneBotNativeLLMs[modelID]
 	if !known && request.model == "" {
 		return true
 	}
-	if !known || request.model != "" && request.model != mappedID || !doneBotAccountUsesNativeInterface(account, model, "llm", request.iface) {
+	if !known || !doneBotAccountUsesNativeInterface(account, model, "llm", request.iface) {
 		return false
 	}
-	reasoning, supported := mapped.ByInterface[request.iface]
+	reasoning, supported := native.ByInterface[request.iface]
 	return supported && (request.level == "" || slices.Contains(reasoning.Levels, request.level))
 }

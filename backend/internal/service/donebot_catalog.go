@@ -369,9 +369,6 @@ func (s *DoneBotCatalogService) prepareReasoning(ctx context.Context, groupID in
 		return reject(ErrDoneBotReasoningUnsupported)
 	}
 	if selectedPath == "" {
-		if upstream, ok := ResolvedUpstreamModelFromContext(ctx); ok {
-			modelID = upstream
-		}
 		if _, known := doneBotNativeLLMs[doneBotNativeLLMID(modelID)]; !known {
 			return body, request, "", nil
 		}
@@ -798,6 +795,15 @@ func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account
 		candidates := 0
 		allNative := true
 		modelID := ""
+		if row.Kind == "llm" {
+			publicID := doneBotNativeLLMID(row.Model)
+			if native, known := doneBotNativeLLMs[publicID]; known {
+				if _, supported := native.ByInterface[iface]; !supported {
+					continue
+				}
+				modelID = publicID
+			}
+		}
 		for i := range activeAccounts {
 			account := &activeAccounts[i]
 			if account.Platform != row.Platform || !doneBotCatalogRawMappingSupports(account, upstream) {
@@ -809,22 +815,6 @@ func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account
 			}
 			if !doneBotCatalogAccountSupports(account, upstream, capabilityEndpoint) {
 				continue
-			}
-			candidateID := ""
-			if row.Kind == "llm" {
-				mapped := doneBotNativeLLMID(account.GetMappedModel(upstream))
-				if native, known := doneBotNativeLLMs[mapped]; known {
-					if _, supported := native.ByInterface[iface]; !supported {
-						continue
-					}
-					candidateID = mapped
-				}
-			}
-			if candidates == 0 {
-				modelID = candidateID
-			} else if modelID != candidateID {
-				allNative = false
-				break
 			}
 			candidates++
 			if !doneBotAccountUsesNativeInterface(account, upstream, row.Kind, iface) {
