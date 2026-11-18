@@ -265,6 +265,10 @@ func doneBotAccountMediaParameters(account *Account, model string, row DoneBotMo
 			operations = append(operations, "edit", "extend")
 		}
 		media := &DoneBotCatalogMediaParameters{Operations: operations, Protocol: doneBotMediaProtocol("seedance.videos.v1"), AspectRatios: []string{"16:9", "9:16", "1:1", "21:9", "4:3", "3:4", "adaptive"}, DurationSeconds: &DoneBotCatalogDuration{Min: 4, Max: maximum, Step: 1, Automatic: spec != seedance25Flash}}
+		media.Formats = []string{"mp4"}
+		if spec == "doubao-seedance-2-5-260628" || spec == seedance25Flash {
+			media.Formats = append(media.Formats, "mov")
+		}
 		for _, resolution := range resolutions {
 			if !account.SeedanceAllowsResolution(model, resolution) {
 				continue

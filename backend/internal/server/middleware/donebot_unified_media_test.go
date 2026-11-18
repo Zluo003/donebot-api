@@ -76,8 +76,9 @@ func TestDoneBotUnifiedMediaNormalizesAfterFingerprintBeforeValidation(t *testin
 	for _, tc := range []struct{ kind, spec, path, body string }{
 		{"image", "seedream-5-5", "/v1/images/generations/async", `{"protocol":"donebot.media.v1","model":"seedream-5-5","mode":"text","prompt":"An overhead view of a donkey in the desert","resolution":"2K","size":"16:9","count":1,"output_format":"png"}`},
 		{"video", "doubao-seedance-2-5-260628", "/v1/videos", `{"protocol":"donebot.media.v1","model":"seedance-2-5","mode":"text","prompt":"waves","resolution":"720p","aspect_ratio":"16:9","duration":6}`},
+		{"video", "doubao-seedance-2-5-flash-261115", "/v1/videos", `{"protocol":"donebot.media.v1","model":"seedance-2-5-flash","mode":"reference","prompt":"A person wears the referenced coat at a cafe","resolution":"720p","aspect_ratio":"16:9","duration":5,"output_format":"mp4","references":[{"type":"image","role":"reference","url":"https://assets.invalid/front.webp"},{"type":"image","role":"reference","url":"https://assets.invalid/back.webp"}]}`},
 	} {
-		t.Run(tc.kind, func(t *testing.T) {
+		t.Run(tc.kind+"/"+tc.spec, func(t *testing.T) {
 			recovery := &doneBotUnifiedRecovery{doneBotMediaRecoveryStub: newDoneBotMediaRecoveryStub(), t: t}
 			normalizer := &doneBotUnifiedNormalizer{native: tc.spec}
 			generated := 0
@@ -94,6 +95,10 @@ func TestDoneBotUnifiedMediaNormalizesAfterFingerprintBeforeValidation(t *testin
 				body, err := io.ReadAll(c.Request.Body)
 				require.NoError(t, err)
 				require.NotContains(t, string(body), `"protocol"`)
+				if strings.Contains(tc.body, `"output_format":"mp4"`) {
+					require.Contains(t, string(body), `"output_format":"mp4"`)
+					require.Contains(t, string(body), `"role":"reference_image"`)
+				}
 				require.Equal(t, recovery.path, c.Request.URL.Path)
 				c.Set(DoneBotMediaProvider, "donebot")
 				c.JSON(http.StatusAccepted, gin.H{"id": "dbtask_fixture", "status": "processing"})
@@ -126,6 +131,9 @@ func TestDoneBotUnifiedMediaNormalizesAfterFingerprintBeforeValidation(t *testin
 			require.Equal(t, tc.path, recovery.begin[0].Path)
 			require.Equal(t, "accepted", recovery.completion[0].Status)
 			invalid := strings.Replace(tc.body, `"mode":"text"`, `"mode":"reference"`, 1)
+			if invalid == tc.body {
+				invalid = strings.Replace(tc.body, `"mode":"reference"`, `"mode":"text"`, 1)
+			}
 			refused := doneBotMediaTestRequest(router, http.MethodPost, tc.path, "application/json", "fixture-invalid", []byte(invalid))
 			require.Equal(t, http.StatusBadRequest, refused.Code, refused.Body.String())
 			require.Equal(t, 1, generated)

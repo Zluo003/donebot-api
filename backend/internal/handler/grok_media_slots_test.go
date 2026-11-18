@@ -260,6 +260,14 @@ func newGrokMediaSlotHandlerWithBilling(t *testing.T, money service.UsageBilling
 			accounts[i].Platform = platforms[0]
 			accounts[i].Credentials["base_url"] = "https://ark.cn-beijing.volces.com/api/v3"
 			accounts[i].Credentials["openai_capabilities"] = []string{"seedance"}
+			if len(platforms) > 1 && platforms[1] == "seedance-newtoken" {
+				accounts[i].Credentials["base_url"] = service.SeedanceNewTokenBaseURL
+				accounts[i].Credentials["model_mapping"] = map[string]any{
+					"seedance-2-0": "doubao-seedance-2-0-260128", "seedance-2-0-fast": "doubao-seedance-2-0-fast-260128",
+					"seedance-2-0-mini": "doubao-seedance-2-0-mini-260615", "seedance-2-5": "doubao-seedance-2-5-260628",
+					"seedance-2-5-flash": "doubao-seedance-2-5-flash-261115",
+				}
+			}
 			if len(platforms) > 1 && platforms[1] == "muse" {
 				accounts[i].Credentials["base_url"] = "https://token.secure-skill.com"
 				accounts[i].Credentials["openai_capabilities"] = []string{"muse"}

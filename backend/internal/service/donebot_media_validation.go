@@ -128,7 +128,7 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 		"openai.images.v1":        {"size", "response_format", "output_format", "quality"},
 		"donebot.images.async.v1": {"size", "response_format", "output_format", "quality"},
 		"apimart.images.v1":       {"size", "resolution", "output_format"},
-		"seedance.videos.v1":      {"resolution", "ratio", "duration"},
+		"seedance.videos.v1":      {"resolution", "ratio", "duration", "output_format"},
 		"apimart.music.v1":        {"version", "audio_format", "duration", "custom", "max_mode", "instrumental", "auto_lyrics"},
 		"apimart.speech.v1":       {"voice", "response_format"},
 	}

@@ -55,12 +55,18 @@ go test -tags unit ./internal/service ./internal/handler \
 
 - 相同结构请求跨已有／新增型号转换，公开别名、原生 ID 和规格 ID 正确。
 - 各模式成功、非法模式／角色失败；素材数量／类型、分辨率／时长／格式边界；未知字段和 options 拒绝。
+- 公共输出字段逐项穿过真实目录校验／估价、原生解析与转发，不只检查转换器。Seedance 覆盖省略格式／MP4，以及 2.5／Flash 的 MOV；普通参考至少含单图、双图和视频。公开 ID 与自定义别名分别验证。
 - 完整 handler 创建→查询→下载或取图；跨用户／Key／分组拒绝，不接触上游。
 - 持久序列化恢复、同幂等键重复不新建收费请求、异参冲突、提交超时后不重发。
 - 生成完成但交付／结算待定、缺结果 URL、下载 409、结算失败与真实失败退款。
 - 老原生请求不带 protocol 时不变；历史任务仍可查询、下载、核账。
 
 全部用内存 mock、临时数据库或隔离 fixture；不使用真实付费供应商、线上账号或用户桌面数据。
+
+`donebot_seedance_unified_test.go` 覆盖五个型号的目录／估价／NewToken 转发矩阵；
+`donebot_media_test.go` 检查 MP4 双图参考在原始／已归一请求下进入实际视频 handler，
+并查询、等待下载和拒绝越权；中间件专项以 Flash 双图参考检查原始指纹、单派发、
+重放和异参冲突。保留旧原生入口和持久派发／回执的回归，不用假 handler 代替所有层。
 
 ## 3. DoneBot 客户端登记清单
 
@@ -85,7 +91,8 @@ go test -tags unit ./internal/service ./internal/handler \
 pnpm typecheck
 pnpm exec vitest run server/donebot/unified-media.test.ts \
   server/donebot/media-guidance.test.ts server/donebot/media-routes.test.ts \
-  server/donebot/media-fallback.test.ts server/donebot/media-settings.e2e.test.ts --maxWorkers=1
+  server/donebot/media-fallback.test.ts server/donebot/media-settings.e2e.test.ts \
+  server/donebot/seedance-modes.e2e.test.ts --maxWorkers=1
 ```
 
 端到端必须走真实工具 schema（含实际使用的 Gemini 等 LLM 工具传输）→隔离网关→后台查询→原会话附件；不能只调内部 submit 函数。

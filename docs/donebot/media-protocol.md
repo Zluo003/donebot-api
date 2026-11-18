@@ -72,8 +72,14 @@ Seedance 的客户端集成固定带声音，网关转换为 `generate_audio=tru
 | 视频 | `first_last_frame` | 恰好两张图片，一张 `first_frame`、一张 `last_frame` |
 | 视频 | `edit` / `extend` | 至少一个视频，全部素材 `role=reference`；模型还可有额外限制 |
 
-Seedance 有任意参考时默认使用 `reference`，单张图也不自动当成首帧。只有用户明确
-要求才选择首帧、首尾帧、编辑或延长。延长的 `duration` 是最终总时长，不是追加秒数。
+所有 Seedance 有任意参考时客户端默认使用 `reference`，一张或两张图都不按数量
+自动选择帧模式；无素材使用 `text`。一张图且明确要求“图生视频 / image-to-video / i2v”
+或首帧，才用 `first_frame`；两张图且明确指定首尾帧，才用 `first_last_frame`。
+编辑或延长同样要求明确指定且型号支持。网关只转换客户端显式 `mode`，不分析语义。
+延长的 `duration` 是最终总时长，不是追加秒数。
+
+Seedance 2.5／2.5 Flash 的 `output_format` 可为 `mp4` 或 `mov`，目录校验与原生解析
+均保留该字段。2.0 系列仅接受省略或 `mp4`，转换时不向原生接口传不支持的格式字段。
 
 当前接线边界（不是模型官网的完整能力列表）：
 
@@ -104,6 +110,7 @@ Seedance 有任意参考时默认使用 `reference`，单张图也不自动当�
 - `url` 不允许凭据或 fragment；网关继续应用素材访问与上游安全策略。
 - DoneBot 的 LLM 工具中用 `url: {"local_path":"/allowed/reference.png"}`，这是**客户端内部表示**，不是网关 wire 格式。客户端按现有会话权限读取、检查文件、上传后替换成 HTTPS URL。
 - 文件格式、大小、数量与角色本地校验；尺寸、编解码、帧率、时长及肖像授权中尚未实现本地检查的部分仍由供应商校验。普通上传不能证明肖像授权。
+- 保留模型支持的原始素材格式，包括 WebP；不强制转 JPG。格式不受支持时明确拒绝，不能只改扩展名。
 
 ### `options` 接线白名单
 
