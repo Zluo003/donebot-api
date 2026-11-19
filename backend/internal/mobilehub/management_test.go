@@ -5,11 +5,34 @@ package mobilehub
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	infra "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPostgresDeviceNamesAndOfflineWorkspaces(t *testing.T) {
+	s := mobilePostgres(t)
+	ctx := context.Background()
+	in := registerFixture(t, s)
+	in.Name = "  " + strings.Repeat("电脑", 30) + "  "
+	_, err := s.Register(ctx, 101, fixtureHost, in)
+	require.NoError(t, err)
+	for _, name := range []string{"  ", strings.Repeat("机", 101), string([]byte{0xff})} {
+		invalidName := in
+		invalidName.Name = name
+		_, err = s.Register(ctx, 101, fixtureHost, invalidName)
+		require.Equal(t, 400, infra.Code(err))
+	}
+	_, err = s.DB.Exec(`UPDATE donebot_mobile_hosts SET last_seen=now()-interval '2 minutes'`)
+	require.NoError(t, err)
+	list, err := s.Workspaces(ctx, 101)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, strings.TrimSpace(in.Name), list[0].Name)
+	require.False(t, list[0].Online)
+}
 
 func TestPostgresDevicePresenceAndRelayStatus(t *testing.T) {
 	s := mobilePostgres(t)

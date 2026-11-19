@@ -176,8 +176,13 @@ func (r *doneBotInstallRepository) RotateCredential(ctx context.Context, install
 ), touched AS (
  UPDATE donebot_installs SET updated_at=NOW() WHERE id=$1 AND EXISTS (SELECT 1 FROM changed)
  RETURNING updated_at
+), mobile_reset AS (
+ UPDATE donebot_mobile_hosts SET public_key='',relay_state='off',relay_node=''
+ WHERE installation_id=$5::uuid AND user_id=$2 AND EXISTS (SELECT 1 FROM changed)
+), mobile_grants AS (
+ DELETE FROM donebot_mobile_grants WHERE host_id=$5::uuid AND EXISTS (SELECT 1 FROM changed)
 )
-SELECT changed.key,touched.updated_at FROM changed CROSS JOIN touched`, install.ID, install.UserID, install.APIKeyID, credential)
+SELECT changed.key,touched.updated_at FROM changed CROSS JOIN touched`, install.ID, install.UserID, install.APIKeyID, credential, install.InstallationID)
 	if err != nil {
 		return "", err
 	}

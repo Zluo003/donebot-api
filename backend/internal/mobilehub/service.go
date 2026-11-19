@@ -7,8 +7,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	infra "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/google/uuid"
@@ -89,7 +91,7 @@ func (s *Service) host(ctx context.Context, owner int64, id string) (string, str
 		return "", "", denied()
 	}
 	var host, key string
-	err := s.DB.QueryRowContext(ctx, `SELECT h.host_id,h.public_key`+hostFrom+`WHERE h.installation_id=$1::uuid AND i.user_id=$2 AND h.user_id=i.user_id AND `+eligible, id, owner).Scan(&host, &key)
+	err := s.DB.QueryRowContext(ctx, `SELECT h.host_id,h.public_key`+hostFrom+`WHERE h.installation_id=$1::uuid AND i.user_id=$2 AND h.user_id=i.user_id AND h.public_key<>'' AND `+eligible, id, owner).Scan(&host, &key)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = denied()
 	}
@@ -134,7 +136,8 @@ func (s *Service) Register(ctx context.Context, owner int64, install string, in 
 	}
 	host, e := base64.RawURLEncoding.DecodeString(in.Host)
 	key, e2 := base64.RawURLEncoding.DecodeString(in.Key)
-	if !validUUID(install) || e != nil || len(host) != 16 || base64.RawURLEncoding.EncodeToString(host) != in.Host || e2 != nil || len(key) != 65 || len(in.Name) > 120 || len(in.Ack) > 20 {
+	in.Name = strings.TrimSpace(in.Name)
+	if !validUUID(install) || e != nil || len(host) != 16 || base64.RawURLEncoding.EncodeToString(host) != in.Host || e2 != nil || len(key) != 65 || !utf8.ValidString(in.Name) || in.Name == "" || utf8.RuneCountInString(in.Name) > 100 || len(in.Ack) > 20 {
 		return nil, invalid()
 	}
 	if _, e = ecdh.P256().NewPublicKey(key); e != nil {
@@ -145,7 +148,7 @@ func (s *Service) Register(ctx context.Context, owner int64, install string, in 
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	result, err := tx.ExecContext(ctx, `INSERT INTO donebot_mobile_hosts(installation_id,user_id,host_id,public_key,name,relay_state,relay_node) SELECT i.installation_id,i.user_id,$3,$4,$5,$6,$7 FROM donebot_installs i JOIN api_keys k ON k.id=i.api_key_id JOIN users u ON u.id=i.user_id LEFT JOIN donebot_cloud_instances c ON c.id=i.installation_id LEFT JOIN donebot_cloud_subscriptions cs ON cs.instance_id=c.id WHERE i.installation_id=$1::uuid AND i.user_id=$2 AND `+eligible+` ON CONFLICT(installation_id) DO UPDATE SET name=EXCLUDED.name,last_seen=now(),relay_state=$6,relay_node=$7 WHERE donebot_mobile_hosts.user_id=EXCLUDED.user_id AND donebot_mobile_hosts.host_id=EXCLUDED.host_id AND donebot_mobile_hosts.public_key=EXCLUDED.public_key`, install, owner, in.Host, in.Key, in.Name, in.RelayState, in.RelayNode)
+	result, err := tx.ExecContext(ctx, `INSERT INTO donebot_mobile_hosts(installation_id,user_id,host_id,public_key,name,relay_state,relay_node) SELECT i.installation_id,i.user_id,$3,$4,$5,$6,$7 FROM donebot_installs i JOIN api_keys k ON k.id=i.api_key_id JOIN users u ON u.id=i.user_id LEFT JOIN donebot_cloud_instances c ON c.id=i.installation_id LEFT JOIN donebot_cloud_subscriptions cs ON cs.instance_id=c.id WHERE i.installation_id=$1::uuid AND i.user_id=$2 AND `+eligible+` ON CONFLICT(installation_id) DO UPDATE SET name=EXCLUDED.name,host_id=EXCLUDED.host_id,public_key=EXCLUDED.public_key,last_seen=now(),relay_state=$6,relay_node=$7 WHERE donebot_mobile_hosts.user_id=EXCLUDED.user_id AND (donebot_mobile_hosts.public_key='' OR (donebot_mobile_hosts.host_id=EXCLUDED.host_id AND donebot_mobile_hosts.public_key=EXCLUDED.public_key))`, install, owner, in.Host, in.Key, in.Name, in.RelayState, in.RelayNode)
 	if err != nil {
 		return nil, err
 	}

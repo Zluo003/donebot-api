@@ -347,3 +347,5 @@ func testPostgresMobileWorkflow(t *testing.T, cloud bool) {
 	require.NoError(t, err, string(out))
 	t.Log(string(out))
 }
+
+func PostgresFixture(t *testing.T) *Service { return mobilePostgres(t) }
