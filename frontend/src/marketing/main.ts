@@ -125,7 +125,7 @@ function header() {
   return `<a class="skip-link" href="#main">跳到内容</a><header class="site-header"><div class="header-inner">${brand()}<nav aria-label="主导航"><a href="/#features">产品能力</a><a href="/#scenarios">使用场景</a><a href="/#cloud">云端与手机</a></nav><div class="header-actions"><a href="/download" class="button small primary">下载 DoneBot ${icon("arrow-up-right")}</a><button class="theme-toggle" type="button" aria-label="切换到${theme() === "dark" ? "浅" : "深"}色模式" title="切换主题">${icon("sun", "sun-icon")}${icon("moon", "moon-icon")}</button></div></div></header>`;
 }
 function footer() {
-  return `<footer class="site-footer"><div class="footer-inner">${brand()}<p>让任务走到完成。</p><a href="/download">下载客户端 ${icon("arrow-up-right")}</a><span>© ${new Date().getFullYear()} DoneBot</span></div></footer>`;
+  return `<footer class="site-footer"><div class="footer-inner">${brand()}<p>让任务走到完成。</p><nav class="footer-links" aria-label="页脚导航"><a href="/download">下载客户端 ${icon("arrow-up-right")}</a><a href="/privacy.html">隐私政策</a></nav><span>© ${new Date().getFullYear()} DoneBot</span></div></footer>`;
 }
 function demo(phone = false) {
   const scene = scenes[phone ? 2 : 0]!;

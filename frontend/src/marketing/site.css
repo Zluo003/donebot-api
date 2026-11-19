@@ -1403,12 +1403,18 @@ p {
   font-size: 11px;
   color: var(--muted);
 }
-.footer-inner > a:not(.brand) {
+.footer-links {
   display: flex;
-  gap: 6px;
-  align-items: center;
-  font-size: 11px;
+  flex-wrap: wrap;
+  gap: 0 16px;
   margin-left: auto;
+  font-size: 11px;
+}
+.footer-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
 }
 .footer-inner .icon {
   width: 13px;
@@ -2003,9 +2009,11 @@ p {
     grid-column: 1;
     grid-row: 2;
   }
-  .footer-inner > a:not(.brand) {
+  .footer-links {
     grid-column: 2;
     grid-row: 1;
+    justify-content: flex-end;
+    gap: 0 10px;
     margin-left: 0;
     font-size: 10px;
   }

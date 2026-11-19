@@ -1,0 +1,92 @@
+:root {
+  color-scheme: light dark;
+  --page: #fff;
+  --ink: #171717;
+  --secondary: #525252;
+  --rule: #e9e9e9;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d;
+    --ink: #ededed;
+    --secondary: #b2b2b2;
+    --rule: #333;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--page);
+  font-size: 1rem;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.site-header {
+  padding: 0.75rem max(1.25rem, calc((100% - 64rem) / 2));
+  border-bottom: 1px solid var(--rule);
+}
+
+.brand {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.brand img { border-radius: 7px; }
+
+main {
+  max-width: 49rem;
+  margin-inline: auto;
+  padding: clamp(2.5rem, 7vw, 5rem) 1.25rem 5rem;
+}
+
+.policy-header { padding-bottom: 0.75rem; }
+
+h1, h2 { line-height: 1.35; }
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.85rem, 5vw, 3rem);
+  letter-spacing: -0.025em;
+}
+
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+}
+
+p, ul { margin: 0 0 0.75rem; }
+
+ul { padding-inline-start: 1.35rem; }
+
+li + li { margin-top: 0.65rem; }
+
+.updated {
+  margin: 0.5rem 0 1.25rem;
+  color: var(--secondary);
+  font-size: 0.875rem;
+}
+
+section {
+  padding-block: 1.4rem 0.65rem;
+  border-top: 1px solid var(--rule);
+}
+
+a {
+  color: inherit;
+  text-underline-offset: 0.2em;
+}
+
+a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}

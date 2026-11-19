@@ -244,3 +244,24 @@ func TestDoneBotMarketingPagesAndSectionRedirects(t *testing.T) {
 	require.True(t, isDoneBotMarketingPath("/"))
 	require.True(t, isDoneBotMarketingPath("/download"))
 }
+
+func TestDoneBotPrivacyPolicyIsPublic(t *testing.T) {
+	for _, frontend := range embeddedAssetMiddlewareFactories() {
+		t.Run(frontend.name, func(t *testing.T) {
+			r := gin.New()
+			r.Use(frontend.new(t))
+
+			page := httptest.NewRecorder()
+			r.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/privacy.html", nil))
+			require.Equal(t, http.StatusOK, page.Code)
+			require.Contains(t, page.Header().Get("Content-Type"), "text/html")
+			require.Contains(t, page.Body.String(), "<h1>DoneBot 隐私政策</h1>")
+			require.Contains(t, page.Body.String(), `href="/privacy.css"`)
+
+			stylesheet := httptest.NewRecorder()
+			r.ServeHTTP(stylesheet, httptest.NewRequest(http.MethodGet, "/privacy.css", nil))
+			require.Equal(t, http.StatusOK, stylesheet.Code)
+			require.Contains(t, stylesheet.Header().Get("Content-Type"), "text/css")
+		})
+	}
+}
