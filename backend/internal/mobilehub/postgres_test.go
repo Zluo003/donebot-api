@@ -278,6 +278,10 @@ func testPostgresMobileWorkflow(t *testing.T, cloud bool) {
 				return
 			}
 			switch {
+			case r.URL.Path == "/fixture/computer/offline" && r.Method == http.MethodPost && !cloud:
+				_, err = s.DB.ExecContext(r.Context(), `UPDATE donebot_mobile_hosts SET last_seen=now()-interval '1 minute',relay_state='off' WHERE installation_id=$1`, fixtureHost)
+			case r.URL.Path == "/api/v1/donebot/mobile/workspaces/"+fixtureHost && r.Method == http.MethodDelete:
+				err = s.RemoveComputer(r.Context(), fixtureIdentity, fixtureHost)
 			case r.URL.Path == "/api/v1/donebot/devices":
 				result, err = s.Devices(r.Context(), 101)
 			case r.URL.Path == "/fixture/pushes":

@@ -87,6 +87,15 @@ func (h *DoneBotHandler) MobileWorkspaces(c *gin.Context) {
 		response.Success(c, gin.H{"workspaces": items})
 	}
 }
+func (h *DoneBotHandler) MobileRemoveComputer(c *gin.Context) {
+	who, ok := h.mobileIdentity(c)
+	if !ok {
+		return
+	}
+	if !response.ErrorFrom(c, h.mobile.RemoveComputer(c.Request.Context(), who, c.Param("id"))) {
+		c.Status(204)
+	}
+}
 func (h *DoneBotHandler) Devices(c *gin.Context) {
 	owner, ok := h.mobileOwner(c)
 	if !ok {

@@ -11,6 +11,7 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 		authenticated.GET("/donebot/devices", h.DoneBot.Devices)
 		authenticated.PUT("/donebot/mobile/session", h.DoneBot.MobilePresence)
 		authenticated.GET("/donebot/mobile/workspaces", h.DoneBot.MobileWorkspaces)
+		authenticated.DELETE("/donebot/mobile/workspaces/:id", h.DoneBot.MobileRemoveComputer)
 		authenticated.POST("/donebot/mobile/workspaces/:id/connection", h.DoneBot.MobileConnection)
 		authenticated.PUT("/donebot/mobile/push/subscription", h.DoneBot.MobileSubscribe)
 		authenticated.DELETE("/donebot/mobile/push/subscription", h.DoneBot.MobileUnsubscribe)

@@ -62,6 +62,17 @@ Apple topic 固定为 `cn.donebot.mobile`，订阅自动区分 sandbox / product
 
 Cloud 列表投影使用现有实例、订阅和归属记录；已开通但尚未运行连接器的实例显示离线。取消续费但仍在已付费期限内的实例可继续显示；未开通、过期、清理锁定、已删除的实例不显示。电脑必须保持 DoneBot 运行，切换查看位置不会迁移任务。
 
+手机列表通过 `DELETE /api/v1/donebot/mobile/workspaces/:id` 移除离线电脑，无请求体，
+成功返回 204。要求当前有效登录会话和本人设备，数据库删除条件再次核验离线状态；
+已恢复在线返回 409 `MOBILE_COMPUTER_ONLINE`，Cloud 与他人设备返回 404。
+同账号重复移除已不存在的记录返回 204。
+
+该接口只删除 `donebot_mobile_hosts` 及关联手机授权、事件和通知队列，不吊销
+`donebot_installs` 或 API Key，也不删除电脑聊天和文件。电脑重新打开 DoneBot
+或恢复联网后，由现有心跳按同一安装 ID / 主机身份重新登记，手机重新获取授权。
+已有运行服务无需修改。真正吊销安装仍使用 `/donebot/installations/:id`，不自动恢复。
+此功能需要更新网关和手机 App，无新增数据库迁移。
+
 ## 消息通知
 
 原版消息落入会话后由已验证安装上报 bot/thread/message ID。网关只信任该所属工作空间的运行服务作为消息来源，不让手机指定事件拥有者。`(workspace,messageId)` 去重，通知只包含“Bot 有新消息”和目标 ID。
