@@ -86,7 +86,20 @@ api.sub2api.com {
 	# =========================================================================
 	# 请求大小限制 (防止大文件攻击)
 	# =========================================================================
-	request_body {
+	@clientReleaseUpload {
+		method POST
+		path /api/v1/admin/donebot/releases/upload
+	}
+	request_body @clientReleaseUpload {
+		max_size 501048576
+	}
+	@regularRequest {
+		not {
+			method POST
+			path /api/v1/admin/donebot/releases/upload
+		}
+	}
+	request_body @regularRequest {
 		max_size 256MB
 	}
 

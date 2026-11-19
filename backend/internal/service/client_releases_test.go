@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -240,6 +241,12 @@ func TestClientReleaseFilenameRequiresPlatformPackageFormat(t *testing.T) {
 			require.Equal(t, test.valid, err == nil)
 		})
 	}
+}
+
+func TestClientReleaseRejectsFilesLargerThan500MB(t *testing.T) {
+	svc := &ClientReleaseService{}
+	_, err := svc.Upload(context.Background(), "0.1.0", ClientReleaseMacOSArm64DMG, "DoneBot.dmg", "", strings.NewReader("fixture"), 500_000_001)
+	require.ErrorContains(t, err, "500 MB")
 }
 
 func TestClientReleaseLegacyPublishedZipRemainsAvailable(t *testing.T) {

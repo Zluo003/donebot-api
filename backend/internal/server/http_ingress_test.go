@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -161,6 +162,51 @@ func TestHTTPServerGlobalBodyLimit(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+}
+
+type installerFillReader struct{}
+
+func (installerFillReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
+}
+
+func TestHTTPServerClientInstallerBodyLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name, method, path string
+		size               int64
+		status             int
+	}{
+		{"installer at request limit", http.MethodPost, "/api/v1/admin/donebot/releases/upload", service.MaxClientReleaseUploadBytes, http.StatusOK},
+		{"installer exceeds request limit", http.MethodPost, "/api/v1/admin/donebot/releases/upload", service.MaxClientReleaseUploadBytes + 1, http.StatusRequestEntityTooLarge},
+		{"ordinary API", http.MethodPost, "/api/v1/admin/donebot/releases/storage", 1025, http.StatusRequestEntityTooLarge},
+		{"different method", http.MethodPut, "/api/v1/admin/donebot/releases/upload", 1025, http.StatusRequestEntityTooLarge},
+		{"similar path", http.MethodPost, "/api/v1/admin/donebot/releases/upload/other", 1025, http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			router := gin.New()
+			router.Handle(tc.method, tc.path, func(c *gin.Context) {
+				_, err := io.Copy(io.Discard, c.Request.Body)
+				if err != nil {
+					var maxErr *http.MaxBytesError
+					require.ErrorAs(t, err, &maxErr)
+					c.Status(http.StatusRequestEntityTooLarge)
+					return
+				}
+				if tc.name == "installer at request limit" {
+					deadline, ok := c.Request.Context().Deadline()
+					require.True(t, ok)
+					require.InDelta(t, time.Hour.Seconds(), time.Until(deadline).Seconds(), 5)
+				}
+				c.Status(http.StatusOK)
+			})
+			srv := ProvideHTTPServer(ingressTestConfig(), router)
+			request := httptest.NewRequest(tc.method, tc.path, io.LimitReader(installerFillReader{}, tc.size))
+			rec := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(rec, request)
+			require.Equal(t, tc.status, rec.Code)
+		})
+	}
 }
 
 func serveIngressTestServer(t *testing.T, srv *http.Server) (string, func()) {

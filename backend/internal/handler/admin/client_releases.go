@@ -26,11 +26,15 @@ func (h *DoneBotHandler) UploadClientRelease(c *gin.Context) {
 		response.Error(c, http.StatusServiceUnavailable, "Client release service is unavailable")
 		return
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, service.MaxClientReleaseBytes+(1<<20))
+	if c.Request.ContentLength > service.MaxClientReleaseUploadBytes {
+		response.Error(c, http.StatusRequestEntityTooLarge, "Client package exceeds the 500 MB upload limit")
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, service.MaxClientReleaseUploadBytes)
 	if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			response.Error(c, http.StatusRequestEntityTooLarge, "Client package exceeds the 1 GiB upload limit")
+			response.Error(c, http.StatusRequestEntityTooLarge, "Client package exceeds the 500 MB upload limit")
 			return
 		}
 		response.BadRequest(c, "Invalid client release upload")

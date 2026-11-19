@@ -22,11 +22,12 @@ import (
 )
 
 const (
-	clientReleasesSettingKey   = "donebot_client_releases"
-	ClientReleaseWindowsX64    = "windows-x64"
-	ClientReleaseMacOSArm64    = "macos-arm64"
-	ClientReleaseMacOSArm64DMG = "macos-arm64-dmg"
-	MaxClientReleaseBytes      = int64(1 << 30)
+	clientReleasesSettingKey    = "donebot_client_releases"
+	ClientReleaseWindowsX64     = "windows-x64"
+	ClientReleaseMacOSArm64     = "macos-arm64"
+	ClientReleaseMacOSArm64DMG  = "macos-arm64-dmg"
+	MaxClientReleaseBytes       = int64(500_000_000)
+	MaxClientReleaseUploadBytes = MaxClientReleaseBytes + (1 << 20)
 )
 
 var clientReleaseVersionPattern = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$`)
@@ -164,7 +165,7 @@ func (s *ClientReleaseService) Upload(ctx context.Context, version, platform, fi
 		return nil, infraerrors.BadRequest("INVALID_CLIENT_PACKAGE", err.Error())
 	}
 	if size <= 0 || size > MaxClientReleaseBytes {
-		return nil, infraerrors.BadRequest("INVALID_CLIENT_PACKAGE_SIZE", "Client package must be between 1 byte and 1 GiB")
+		return nil, infraerrors.BadRequest("INVALID_CLIENT_PACKAGE_SIZE", "Client package must be between 1 byte and 500 MB")
 	}
 	if len(notes) > 12000 {
 		return nil, infraerrors.BadRequest("CLIENT_RELEASE_NOTES_TOO_LONG", "Release notes are too long")

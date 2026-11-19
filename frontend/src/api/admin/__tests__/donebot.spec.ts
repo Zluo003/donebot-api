@@ -3,6 +3,15 @@ import donebot, { type StorageSettings } from '../donebot'
 import { apiClient } from '../../client'
 vi.mock('../../client', () => ({ apiClient: { get: vi.fn(), put: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 describe('DoneBot admin API', () => {
+ it('allows installer uploads to run for one hour and reports transport progress', async () => {
+  vi.mocked(apiClient.post).mockResolvedValue({ data: { version: '0.1.0' } })
+  const form = new FormData()
+  const progress = vi.fn()
+  await donebot.uploadClientRelease(form, progress)
+  expect(apiClient.post).toHaveBeenLastCalledWith('/admin/donebot/releases/upload', form, {
+   headers: { 'Content-Type': 'multipart/form-data' }, timeout: 3_600_000, onUploadProgress: progress
+  })
+ })
  it('loads public web tool status and writes replacement or clear commands separately', async () => {
   const status = { enabled: true, key_configured: true }
   vi.mocked(apiClient.get).mockResolvedValue({ data: status })

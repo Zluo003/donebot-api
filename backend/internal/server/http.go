@@ -129,7 +129,7 @@ func ProvideHTTPServer(cfg *config.Config, router *gin.Engine) *http.Server {
 		globalMaxSize = cfg.Gateway.MaxBodySize
 	}
 	if globalMaxSize > 0 {
-		httpHandler = http.MaxBytesHandler(httpHandler, globalMaxSize)
+		httpHandler = limitRequestBody(httpHandler, globalMaxSize)
 		log.Printf("Global max request body size: %d bytes (%.2f MB)", globalMaxSize, float64(globalMaxSize)/(1<<20))
 	}
 
@@ -161,6 +161,23 @@ func ProvideHTTPServer(cfg *config.Config, router *gin.Engine) *http.Server {
 
 	server.Handler = httpHandler
 	return server
+}
+
+func limitRequestBody(next http.Handler, globalMaxSize int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		maxSize := globalMaxSize
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/donebot/releases/upload" {
+			maxSize = service.MaxClientReleaseUploadBytes
+			ctx, cancel := context.WithTimeout(r.Context(), time.Hour)
+			defer cancel()
+			r = r.WithContext(ctx)
+			controller := http.NewResponseController(w)
+			if err := controller.SetReadDeadline(time.Now().Add(time.Hour)); err == nil {
+				defer func() { _ = controller.SetReadDeadline(time.Time{}) }()
+			}
+		}
+		http.MaxBytesHandler(next, maxSize).ServeHTTP(w, r)
+	})
 }
 
 func derefInt64(p *int64) int64 {

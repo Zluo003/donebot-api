@@ -16,6 +16,14 @@ docker compose logs -f sub2api
 
 The preparation script downloads this repository's Compose and environment templates and generates local credentials. It writes `COMPOSE_FILE=docker-compose.local.yml` into `.env`, so plain `docker compose` commands keep PostgreSQL, Redis and application data in `./postgres_data`, `./data` and `./redis_data`. The templates enable DoneBot mode, PostgreSQL and Redis persistence, and local asset storage. Configure an upstream-reachable public gateway URL and proxy `/assets/*` before using asynchronous images. Configure media accounts, prices and enabled models in DoneBot; video and audio have no separate runtime switches. The marketing frontend and client-release API are built into the gateway image, so they are deployed together. Configure installer storage separately under DoneBot → 客户端版本 → 安装包独立存储设置. It has its own local directory (default `data/client-packages`) or S3/OSS/R2 credentials and bucket; media upload and generated-output policies do not apply. The default directory is covered by the `/app/data` volume. Existing releases retain their original storage snapshots when settings change. Upload Windows EXE, macOS Apple-chip DMG (website download) and ZIP (online update) before publishing a version.
 
+Enter the version before uploading. Each installer may be up to 500 MB
+(500,000,000 bytes); the upload timeout is one hour. Set the upload path's
+reverse-proxy body limit to 501,048,576 bytes to include multipart overhead,
+and its body/proxy timeouts to 3600 seconds. See the exact Nginx location in
+[EDGE_SECURITY.md](EDGE_SECURITY.md); the bundled Caddyfile already separates
+this limit from the ordinary 256 MiB API limit. Update and reload an existing
+external proxy separately from the gateway image.
+
 When using the named-volume `docker-compose.yml`, pass `-f docker-compose.yml` explicitly. For an external PostgreSQL/Redis deployment, use `docker-compose.standalone.yml` and supply `DATABASE_HOST`, `DATABASE_PASSWORD` and `REDIS_HOST`. The complete environment reference and operations guide are in [deploy/README.md](README.md).
 
 DoneBot asynchronous media requires Redis AOF and a persistent Redis data directory. The bundled Redis uses `appendfsync everysec`; review its crash-loss window or use `always` when required, and test recovery. See [Redis persistence and retries](README.md#redis-persistence-and-retries). Upload and generated output storage are independent policies in DoneBot → Storage; they can use different local/S3 backends.

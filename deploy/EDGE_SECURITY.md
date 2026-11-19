@@ -10,7 +10,11 @@ terminate healthy long generations and streams.
   Go maps it to the corresponding HTTP/2 header-list limit.
 - `server.read_header_timeout: 10` bounds slow-header attacks. It does not
   limit request processing or response streaming.
-- `server.max_request_body_size: 268435456` is the absolute 256 MiB safety net.
+- `server.max_request_body_size: 268435456` is the default 256 MiB safety net.
+  Only `POST /api/v1/admin/donebot/releases/upload` uses a separate
+  501,048,576-byte request limit: a 500 MB (500,000,000-byte) installer plus
+  1 MiB of multipart overhead. This route retains admin authentication and
+  step-up verification, and has a one-hour request/read deadline.
 - `gateway.max_body_size: 268435456` remains available to multimodal, Gemini,
   image, video, and batch-image endpoints.
 - `gateway.text_max_body_size: 33554432` limits the known pure-text
@@ -99,6 +103,20 @@ server {
     large_client_header_buffers 4 16k;
     limit_conn sub2api_conn 40;
 
+    location = /api/v1/admin/donebot/releases/upload {
+        client_max_body_size 501048576;
+        client_body_timeout 3600s;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_request_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_pass http://127.0.0.1:8080;
+    }
+
     location ~ ^/(auth|api/auth)/ {
         limit_req zone=sub2api_auth burst=10 nodelay;
         proxy_pass http://127.0.0.1:8080;
@@ -127,6 +145,13 @@ server {
     }
 }
 ```
+
+Existing deployments must apply the upload location to their active Nginx
+configuration and reload it; replacing the gateway image does not update an
+external reverse proxy. The bundled Caddyfile applies the same upload-only
+size limit. Any CDN or additional proxy on this path must also accept this
+request size and the one-hour upload; a lower edge limit rejects the request
+before it reaches the gateway. Other API body limits remain unchanged.
 
 If Nginx gzip is enabled in the `http` block, keep `text/event-stream` out of
 `gzip_types` and do not use `gzip_types *` for Sub2API. The

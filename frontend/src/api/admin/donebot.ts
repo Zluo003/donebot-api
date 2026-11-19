@@ -1,3 +1,4 @@
+import type { AxiosProgressEvent } from 'axios'
 import { apiClient } from '../client'
 export interface CodingGroup { engine: "codex" | "claude"; id: number; name: string; platform: string; rate_multiplier: number; status: string }
 export type Modality = 'llm' | 'images' | 'audio' | 'video'
@@ -74,7 +75,7 @@ const donebot = {
  async saveClientReleaseStorage(input: ClientReleaseStorageSettings) { return (await apiClient.put<ClientReleaseStorageSettings>('/admin/donebot/releases/storage', input)).data },
  async testClientReleaseStorage(input: ClientReleaseStorageSettings) { return (await apiClient.post<{ ok: boolean; message: string }>('/admin/donebot/releases/storage/test', input)).data },
  async clientReleases() { return (await apiClient.get<{ releases: ClientRelease[] }>('/admin/donebot/releases')).data },
- async uploadClientRelease(input: FormData) { return (await apiClient.post<ClientRelease>('/admin/donebot/releases/upload', input, { headers: { 'Content-Type': 'multipart/form-data' } })).data },
+ async uploadClientRelease(input: FormData, onUploadProgress?: (event: AxiosProgressEvent) => void) { return (await apiClient.post<ClientRelease>('/admin/donebot/releases/upload', input, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 3_600_000, onUploadProgress })).data },
  async publishClientRelease(version: string) { return (await apiClient.post<ClientRelease>(`/admin/donebot/releases/${encodeURIComponent(version)}/publish`)).data },
  async codingGroups() { return (await apiClient.get<CodingGroup[]>('/admin/donebot/coding')).data },
  async overview() { return (await apiClient.get<Overview>('/admin/donebot/overview')).data },
