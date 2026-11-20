@@ -83,6 +83,19 @@ func (h *DoneBotHandler) CloudNode(c *gin.Context) {
 	}
 	token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
 	switch c.Param("verb") {
+	case "runtime-configuration":
+		var in struct {
+			InstanceID string `json:"instance_id"`
+		}
+		if c.ShouldBindJSON(&in) != nil {
+			response.BadRequest(c, "Invalid runtime configuration request")
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		out, err := h.cloud.RuntimeConfiguration(c.Request.Context(), c.Param("node"), token, in.InstanceID)
+		if !response.ErrorFrom(c, err) {
+			response.Success(c, out)
+		}
 	case "runtime-credential":
 		var in struct {
 			InstanceID string `json:"instance_id"`
@@ -98,13 +111,14 @@ func (h *DoneBotHandler) CloudNode(c *gin.Context) {
 		}
 	case "claim":
 		var in struct {
-			Running []cloudbilling.RunningCommand `json:"running"`
+			Running      []cloudbilling.RunningCommand `json:"running"`
+			TeamProtocol string                        `json:"team_protocol"`
 		}
 		if err := c.ShouldBindJSON(&in); err != nil || len(in.Running) > 100 {
 			response.BadRequest(c, "Invalid claim")
 			return
 		}
-		out, err := h.cloud.Claim(c.Request.Context(), c.Param("node"), token, in.Running)
+		out, err := h.cloud.Claim(c.Request.Context(), c.Param("node"), token, in.Running, in.TeamProtocol)
 		if !response.ErrorFrom(c, err) {
 			response.Success(c, out)
 		}

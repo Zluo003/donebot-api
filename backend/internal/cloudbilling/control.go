@@ -453,7 +453,7 @@ func (s *Service) nodeAuth(ctx context.Context, id, token string) error {
 	return s.enabled()
 }
 
-func (s *Service) Claim(ctx context.Context, node, token string, running []RunningCommand) (*Claim, error) {
+func (s *Service) Claim(ctx context.Context, node, token string, running []RunningCommand, teamProtocols ...string) (*Claim, error) {
 	if err := s.nodeAuth(ctx, node, token); err != nil {
 		return nil, err
 	}
@@ -461,7 +461,11 @@ func (s *Service) Claim(ctx context.Context, node, token string, running []Runni
 	if err != nil {
 		return nil, err
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE donebot_cloud_nodes SET last_seen=clock_timestamp() WHERE id=$1::uuid AND deleted_at IS NULL`, node)
+	protocol := ""
+	if len(teamProtocols) == 1 && teamProtocols[0] == "donebot.teams.v1" && s.Teams().Enabled() {
+		protocol = teamProtocols[0]
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE donebot_cloud_nodes SET last_seen=clock_timestamp(),team_protocol=$2 WHERE id=$1::uuid AND deleted_at IS NULL`, node, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -478,7 +482,7 @@ func (s *Service) Claim(ctx context.Context, node, token string, running []Runni
 	if err = s.db.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&result.ServerTime); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT i.id::text,i.generation,LEAST(s.paid_until,$2::timestamptz + $3 * INTERVAL '1 minute') FROM donebot_cloud_instances i JOIN donebot_cloud_subscriptions s ON s.instance_id=i.id JOIN users u ON u.id=i.user_id WHERE i.node_id=$1::uuid AND i.deleted_at IS NULL AND i.desired='running' AND s.state IN ('pending','active') AND s.paid_until>clock_timestamp() AND NOT s.purge_locked AND u.status='active' AND u.deleted_at IS NULL`, node, result.ServerTime, policy.OutageGraceMinutes)
+	rows, err := s.db.QueryContext(ctx, `SELECT i.id::text,i.generation,LEAST(s.paid_until,$2::timestamptz + $3 * INTERVAL '1 minute') FROM donebot_cloud_instances i JOIN donebot_cloud_subscriptions s ON s.instance_id=i.id JOIN users u ON u.id=i.user_id LEFT JOIN donebot_teams t ON t.id=i.team_id WHERE i.node_id=$1::uuid AND i.deleted_at IS NULL AND i.desired='running' AND s.state IN ('pending','active') AND s.paid_until>clock_timestamp() AND NOT s.purge_locked AND u.status='active' AND u.deleted_at IS NULL AND (i.team_id IS NULL OR $4='donebot.teams.v1' AND t.state='active')`, node, result.ServerTime, policy.OutageGraceMinutes, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -504,7 +508,7 @@ func (s *Service) Claim(ctx context.Context, node, token string, running []Runni
 	}
 	defer func() { _ = tx.Rollback() }()
 	op := &Operation{}
-	err = tx.QueryRowContext(ctx, `SELECT o.id::text,o.instance_id::text,o.action,o.generation,o.state,o.error FROM donebot_cloud_operations o JOIN donebot_cloud_instances i ON i.id=o.instance_id WHERE i.node_id=$1::uuid AND o.generation=i.generation AND i.deleted_at IS NULL AND (o.state='pending' OR o.state='leased' AND o.lease_until<clock_timestamp() OR o.state='failed' AND (o.action<>'start' OR o.attempts>0)) AND o.retry_at<=clock_timestamp() ORDER BY o.created_at FOR UPDATE OF o SKIP LOCKED LIMIT 1`, node).Scan(&op.ID, &op.InstanceID, &op.Action, &op.Generation, &op.State, &op.Error)
+	err = tx.QueryRowContext(ctx, `SELECT o.id::text,o.instance_id::text,o.action,o.generation,o.state,o.error FROM donebot_cloud_operations o JOIN donebot_cloud_instances i ON i.id=o.instance_id LEFT JOIN donebot_teams t ON t.id=i.team_id WHERE i.node_id=$1::uuid AND o.generation=i.generation AND i.deleted_at IS NULL AND (o.action<>'start' OR i.team_id IS NULL OR $2='donebot.teams.v1' AND t.state='active') AND (o.state='pending' OR o.state='leased' AND o.lease_until<clock_timestamp() OR o.state='failed' AND (o.action<>'start' OR o.attempts>0)) AND o.retry_at<=clock_timestamp() ORDER BY o.created_at FOR UPDATE OF o SKIP LOCKED LIMIT 1`, node, protocol).Scan(&op.ID, &op.InstanceID, &op.Action, &op.Generation, &op.State, &op.Error)
 	if errors.Is(err, sql.ErrNoRows) {
 		return result, tx.Commit()
 	}
