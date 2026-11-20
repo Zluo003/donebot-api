@@ -69,7 +69,7 @@ func (s *Service) RuntimeCredential(ctx context.Context, node, token, id string)
 	out := &RuntimeCredential{InstallationID: id}
 	var owner int64
 	step = "authorize_runtime"
-	err = tx.QueryRowContext(ctx, `SELECT i.user_id,u.id::text,u.email FROM donebot_cloud_instances i JOIN donebot_cloud_subscriptions s ON s.instance_id=i.id JOIN users u ON u.id=i.user_id JOIN donebot_cloud_nodes n ON n.id=i.node_id WHERE i.id=$1::uuid AND i.node_id=$2::uuid AND i.deleted_at IS NULL AND i.desired='running' AND s.state IN ('pending','active') AND s.paid_until>clock_timestamp() AND NOT s.purge_locked AND u.status='active' AND u.deleted_at IS NULL AND n.last_seen>clock_timestamp()-INTERVAL '30 seconds' FOR SHARE OF i`, id, node).Scan(&owner, &out.User.ID, &out.User.Email)
+	err = tx.QueryRowContext(ctx, `SELECT i.user_id,u.id::text,u.email FROM donebot_cloud_instances i JOIN donebot_cloud_subscriptions s ON s.instance_id=i.id JOIN users u ON u.id=i.user_id JOIN donebot_cloud_nodes n ON n.id=i.node_id WHERE i.id=$1::uuid AND i.node_id=$2::uuid AND i.team_id IS NULL AND i.deleted_at IS NULL AND i.desired='running' AND s.state IN ('pending','active') AND s.paid_until>clock_timestamp() AND NOT s.purge_locked AND u.status='active' AND u.deleted_at IS NULL AND n.last_seen>clock_timestamp()-INTERVAL '30 seconds' FOR SHARE OF i`, id, node).Scan(&owner, &out.User.ID, &out.User.Email)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, infraerrors.Forbidden("CLOUD_RUNTIME_INACTIVE", "Cloud runtime is not authorized on this node")
 	}

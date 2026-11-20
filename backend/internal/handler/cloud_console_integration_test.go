@@ -163,7 +163,7 @@ func TestCloudConsoleJourney(t *testing.T) {
 		_, err = db.Exec(`INSERT INTO users(id,email,password_hash,balance,created_at,updated_at) VALUES($1,$2,$3,$4,NOW(),NOW())`, row.id, row.email, string(hash), row.balance)
 		require.NoError(t, err)
 	}
-	for _, name := range []string{"108_auth_identity_foundation_core.sql", "260_donebot_cloud_subscriptions.sql", "261_donebot_cloud_control.sql", "262_donebot_cloud_browser.sql", "263_donebot_cloud_runtime.sql", "264_donebot_cloud_node_deletion.sql"} {
+	for _, name := range []string{"108_auth_identity_foundation_core.sql", "250_donebot_installs.sql", "260_donebot_cloud_subscriptions.sql", "261_donebot_cloud_control.sql", "262_donebot_cloud_browser.sql", "263_donebot_cloud_runtime.sql", "264_donebot_cloud_node_deletion.sql", "269_donebot_cloud_auto_renew.sql", "271_donebot_teams.sql", "272_donebot_team_cloud_instances.sql"} {
 		migration, e := os.ReadFile(filepath.Join("../../migrations", name))
 		require.NoError(t, e)
 		_, e = db.Exec(string(migration))

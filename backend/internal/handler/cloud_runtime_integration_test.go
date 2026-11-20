@@ -61,7 +61,7 @@ func TestCloudRuntimeCredentialWithRealManagedKeys(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
 	require.NoError(t, migrate.Create(ctx, client.Schema, []*schema.Table{migrate.UsersTable, migrate.GroupsTable, migrate.APIKeysTable, migrate.UserAllowedGroupsTable}, migrate.WithForeignKeys(false)))
-	for _, name := range []string{"108_auth_identity_foundation_core.sql", "250_donebot_installs.sql", "260_donebot_cloud_subscriptions.sql", "261_donebot_cloud_control.sql", "262_donebot_cloud_browser.sql", "263_donebot_cloud_runtime.sql", "264_donebot_cloud_node_deletion.sql"} {
+	for _, name := range []string{"108_auth_identity_foundation_core.sql", "250_donebot_installs.sql", "260_donebot_cloud_subscriptions.sql", "261_donebot_cloud_control.sql", "262_donebot_cloud_browser.sql", "263_donebot_cloud_runtime.sql", "264_donebot_cloud_node_deletion.sql", "269_donebot_cloud_auto_renew.sql", "271_donebot_teams.sql", "272_donebot_team_cloud_instances.sql"} {
 		content, e := os.ReadFile(filepath.Join("../../migrations", name))
 		require.NoError(t, e)
 		_, e = db.Exec(string(content))

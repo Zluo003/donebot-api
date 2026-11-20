@@ -140,13 +140,19 @@ func (s *Service) Action(ctx context.Context, id, action string, owner int64) (*
 		return nil, infraerrors.BadRequest("CLOUD_ACTION_INVALID", "Invalid Cloud action")
 	}
 	var plan *Plan
+	var teamID string
+	var snapshot []byte
+	var payer int64
 	if action == "purchase" || action == "renew" {
-		plan, err = s.Plan(ctx)
+		plan, teamID, snapshot, payer, err = s.instancePlan(ctx, id)
 		if err != nil {
 			return nil, err
 		}
 		if err = validatePlan(*plan); err != nil {
 			return nil, err
+		}
+		if teamID != "" && action == "purchase" && owner != payer {
+			return nil, infraerrors.Forbidden("TEAM_PAYER_FIXED", "Team billing belongs to the team owner")
 		}
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -217,7 +223,7 @@ func (s *Service) Action(ctx context.Context, id, action string, owner int64) (*
 		}
 		if missing {
 			var exists bool
-			if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM donebot_cloud_subscriptions WHERE user_id=$1 AND purged_at IS NULL)`, uid).Scan(&exists); err != nil {
+			if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM donebot_cloud_subscriptions WHERE purged_at IS NULL AND (($2='' AND user_id=$1 AND team_id IS NULL) OR team_id::text=NULLIF($2,'')))`, uid, teamID).Scan(&exists); err != nil {
 				return nil, err
 			}
 			if exists {
@@ -248,7 +254,7 @@ func (s *Service) Action(ctx context.Context, id, action string, owner int64) (*
 			cycle = v.Cycle + 1
 		}
 		until := nextMonth(now)
-		_, err = tx.ExecContext(ctx, `INSERT INTO donebot_cloud_subscriptions(instance_id,user_id,state,paid_until,cycle,cycle_price) VALUES($1::uuid,$2,$3,$4,$5,$6::numeric) ON CONFLICT(instance_id) DO UPDATE SET state=EXCLUDED.state,paid_until=EXCLUDED.paid_until,cycle=EXCLUDED.cycle,cycle_price=EXCLUDED.cycle_price,auto_renew=TRUE,updated_at=NOW()`, id, uid, state, until, cycle, plan.MonthlyPrice)
+		_, err = tx.ExecContext(ctx, `INSERT INTO donebot_cloud_subscriptions(instance_id,user_id,state,paid_until,cycle,cycle_price,team_id,plan_snapshot) VALUES($1::uuid,$2,$3,$4,$5,$6::numeric,NULLIF($7,'')::uuid,$8::jsonb) ON CONFLICT(instance_id) DO UPDATE SET state=EXCLUDED.state,paid_until=EXCLUDED.paid_until,cycle=EXCLUDED.cycle,cycle_price=EXCLUDED.cycle_price,auto_renew=TRUE,updated_at=NOW()`, id, uid, state, until, cycle, plan.MonthlyPrice, teamID, nullableSnapshot(snapshot))
 		if err != nil {
 			return nil, err
 		}

@@ -7,7 +7,9 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -48,6 +50,7 @@ type Instance struct {
 	SubscriptionState string     `json:"subscription_state"`
 	PurgeLocked       bool       `json:"purge_locked"`
 	AutoRenew         bool       `json:"auto_renew"`
+	TeamID            string     `json:"team_id,omitempty"`
 }
 type Operation struct {
 	ID         string `json:"id"`
@@ -160,21 +163,21 @@ func (s *Service) Nodes(ctx context.Context) ([]Node, error) {
 	return out, rows.Err()
 }
 
-const instanceColumns = `i.id::text,i.user_id,COALESCE(i.node_id::text,''),i.desired,i.actual,i.generation,i.bound,i.error,s.paid_until,COALESCE(s.state,'unpaid'),COALESCE(s.purge_locked,FALSE),COALESCE(s.auto_renew,FALSE)`
+const instanceColumns = `i.id::text,i.user_id,COALESCE(i.node_id::text,''),i.desired,i.actual,i.generation,i.bound,i.error,s.paid_until,COALESCE(s.state,'unpaid'),COALESCE(s.purge_locked,FALSE),COALESCE(s.auto_renew,FALSE),COALESCE(i.team_id::text,'')`
 const instanceJoin = ` FROM donebot_cloud_instances i LEFT JOIN donebot_cloud_subscriptions s ON s.instance_id=i.id `
 
 type scanner interface{ Scan(...any) error }
 
 func scanInstance(row scanner) (*Instance, error) {
 	v := &Instance{}
-	err := row.Scan(&v.ID, &v.UserID, &v.NodeID, &v.Desired, &v.Actual, &v.Generation, &v.Bound, &v.Error, &v.PaidUntil, &v.SubscriptionState, &v.PurgeLocked, &v.AutoRenew)
+	err := row.Scan(&v.ID, &v.UserID, &v.NodeID, &v.Desired, &v.Actual, &v.Generation, &v.Bound, &v.Error, &v.PaidUntil, &v.SubscriptionState, &v.PurgeLocked, &v.AutoRenew, &v.TeamID)
 	return v, err
 }
 func (s *Service) Instances(ctx context.Context, owner int64) ([]Instance, error) {
 	where := "WHERE i.deleted_at IS NULL"
 	args := []any{}
 	if owner > 0 {
-		where += " AND i.user_id=$1"
+		where += " AND i.user_id=$1 AND i.team_id IS NULL"
 		args = append(args, owner)
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT `+instanceColumns+instanceJoin+where+` ORDER BY i.created_at`, args...)
@@ -196,7 +199,7 @@ func (s *Service) Owned(ctx context.Context, id string, owner int64) (*Instance,
 	if !validID(id) || owner <= 0 {
 		return nil, infraerrors.NotFound("CLOUD_NOT_FOUND", "Cloud instance not found")
 	}
-	v, err := scanInstance(s.db.QueryRowContext(ctx, `SELECT `+instanceColumns+instanceJoin+` WHERE i.id=$1::uuid AND i.user_id=$2 AND i.deleted_at IS NULL`, id, owner))
+	v, err := scanInstance(s.db.QueryRowContext(ctx, `SELECT `+instanceColumns+instanceJoin+` WHERE i.id=$1::uuid AND i.user_id=$2 AND i.team_id IS NULL AND i.deleted_at IS NULL`, id, owner))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, infraerrors.NotFound("CLOUD_NOT_FOUND", "Cloud instance not found")
 	}
@@ -206,10 +209,13 @@ func (s *Service) Owned(ctx context.Context, id string, owner int64) (*Instance,
 var requestKey = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 
 func (s *Service) Mutate(ctx context.Context, owner int64, id, action, key string) (*Instance, *Operation, error) {
+	return s.mutate(ctx, owner, id, action, key, "", nil)
+}
+func (s *Service) mutate(ctx context.Context, owner int64, id, action, key, teamID string, plan *TeamPlan) (*Instance, *Operation, error) {
 	if err := s.enabled(); err != nil {
 		return nil, nil, err
 	}
-	if owner <= 0 || !requestKey.MatchString(key) || action != "start" && action != "stop" && action != "cancel" && action != "keep" || action == "keep" && id == "" {
+	if owner <= 0 || !requestKey.MatchString(key) || action != "start" && action != "stop" && action != "cancel" && action != "keep" || action == "keep" && id == "" && teamID == "" {
 		return nil, nil, infraerrors.BadRequest("CLOUD_OPERATION_INVALID", "A valid action and Idempotency-Key are required")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -217,14 +223,35 @@ func (s *Service) Mutate(ctx context.Context, owner int64, id, action, key strin
 		return nil, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('donebot-cloud-user:' || $1::text,0))`, owner); err != nil {
+	scope := "user:" + fmt.Sprint(owner)
+	if teamID != "" {
+		scope = "team:" + teamID
+	}
+	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('donebot-cloud-' || $1,0))`, scope); err != nil {
 		return nil, nil, err
 	}
+	if teamID != "" {
+		var authorized bool
+		err = tx.QueryRowContext(ctx, `SELECT TRUE FROM donebot_teams t JOIN donebot_team_members m ON m.team_id=t.id JOIN users u ON u.id=m.user_id WHERE t.id=$1::uuid AND t.state='active' AND t.owner_id=$2 AND m.user_id=$2 AND m.role='owner' AND m.removed_at IS NULL AND u.status='active' AND u.deleted_at IS NULL FOR SHARE OF t,m`, teamID, owner).Scan(&authorized)
+		if err != nil {
+			return nil, nil, infraerrors.Forbidden("TEAM_OWNER_REQUIRED", "Active team owner required")
+		}
+	}
 	if id == "" {
-		err = tx.QueryRowContext(ctx, `SELECT id::text FROM donebot_cloud_instances WHERE user_id=$1 AND deleted_at IS NULL FOR UPDATE`, owner).Scan(&id)
+		err = tx.QueryRowContext(ctx, `SELECT id::text FROM donebot_cloud_instances WHERE user_id=$1 AND COALESCE(team_id::text,'')=$2 AND deleted_at IS NULL FOR UPDATE`, owner, teamID).Scan(&id)
 		if errors.Is(err, sql.ErrNoRows) {
 			id = uuid.NewString()
-			_, err = tx.ExecContext(ctx, `INSERT INTO donebot_cloud_instances(id,user_id) VALUES($1::uuid,$2)`, id, owner)
+			var snapshot []byte
+			if teamID != "" {
+				if plan == nil || action != "start" {
+					return nil, nil, infraerrors.BadRequest("TEAM_PLAN_REQUIRED", "Choose a team Cloud plan before starting")
+				}
+				snapshot, err = json.Marshal(plan)
+				if err != nil {
+					return nil, nil, err
+				}
+			}
+			_, err = tx.ExecContext(ctx, `INSERT INTO donebot_cloud_instances(id,user_id,team_id,plan_snapshot) VALUES($1::uuid,$2,NULLIF($3,'')::uuid,$4::jsonb)`, id, owner, teamID, nullableSnapshot(snapshot))
 		}
 	}
 	if err != nil {
@@ -233,12 +260,21 @@ func (s *Service) Mutate(ctx context.Context, owner int64, id, action, key strin
 	if !validID(id) {
 		return nil, nil, infraerrors.NotFound("CLOUD_NOT_FOUND", "Cloud instance not found")
 	}
-	v, err := scanInstance(tx.QueryRowContext(ctx, `SELECT `+instanceColumns+instanceJoin+` WHERE i.id=$1::uuid AND i.user_id=$2 AND i.deleted_at IS NULL FOR UPDATE OF i`, id, owner))
+	v, err := scanInstance(tx.QueryRowContext(ctx, `SELECT `+instanceColumns+instanceJoin+` WHERE i.id=$1::uuid AND i.user_id=$2 AND COALESCE(i.team_id::text,'')=$3 AND i.deleted_at IS NULL FOR UPDATE OF i`, id, owner, teamID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, infraerrors.NotFound("CLOUD_NOT_FOUND", "Cloud instance not found")
 	}
 	if err != nil {
 		return nil, nil, err
+	}
+	if teamID != "" && plan != nil {
+		var savedPlan string
+		if err = tx.QueryRowContext(ctx, `SELECT plan_snapshot->>'id' FROM donebot_cloud_instances WHERE id=$1::uuid`, id).Scan(&savedPlan); err != nil {
+			return nil, nil, err
+		}
+		if savedPlan != plan.ID {
+			return nil, nil, infraerrors.Conflict("TEAM_CLOUD_PLAN_FIXED", "The purchased team Cloud specification cannot be replaced")
+		}
 	}
 	op := &Operation{}
 	err = tx.QueryRowContext(ctx, `SELECT id::text,instance_id::text,action,generation,state,error FROM donebot_cloud_operations WHERE instance_id=$1::uuid AND request_key=$2`, id, key).Scan(&op.ID, &op.InstanceID, &op.Action, &op.Generation, &op.State, &op.Error)
@@ -322,7 +358,7 @@ func (s *Service) prepare(ctx context.Context, op *Operation) {
 		return
 	}
 	if v.NodeID == "" {
-		err = tx.QueryRowContext(ctx, `SELECT n.id::text FROM donebot_cloud_nodes n WHERE n.deleted_at IS NULL AND n.enabled AND n.last_seen>clock_timestamp()-INTERVAL '30 seconds' AND (SELECT COUNT(*) FROM donebot_cloud_instances i WHERE i.node_id=n.id AND i.deleted_at IS NULL)<n.capacity ORDER BY (SELECT COUNT(*) FROM donebot_cloud_instances i WHERE i.node_id=n.id AND i.deleted_at IS NULL)::float/n.capacity,n.id FOR UPDATE OF n SKIP LOCKED LIMIT 1`).Scan(&v.NodeID)
+		err = tx.QueryRowContext(ctx, `SELECT n.id::text FROM donebot_cloud_nodes n WHERE n.deleted_at IS NULL AND n.enabled AND n.last_seen>clock_timestamp()-INTERVAL '30 seconds' AND ($1='' OR n.team_protocol='donebot.teams.v1') AND (SELECT COUNT(*) FROM donebot_cloud_instances i WHERE i.node_id=n.id AND i.deleted_at IS NULL)<n.capacity ORDER BY (SELECT COUNT(*) FROM donebot_cloud_instances i WHERE i.node_id=n.id AND i.deleted_at IS NULL)::float/n.capacity,n.id FOR UPDATE OF n SKIP LOCKED LIMIT 1`, v.TeamID).Scan(&v.NodeID)
 		if err == nil {
 			_, err = tx.ExecContext(ctx, `UPDATE donebot_cloud_instances SET node_id=$2::uuid WHERE id=$1::uuid`, v.ID, v.NodeID)
 		}
@@ -532,7 +568,7 @@ func (s *Service) ConfirmPurge(ctx context.Context, node, token, id, lease strin
 	if locked {
 		return tx.Commit()
 	}
-	plan, err := s.Plan(ctx)
+	plan, _, _, _, err := s.instancePlan(ctx, v.ID)
 	if err != nil {
 		return err
 	}
@@ -701,10 +737,6 @@ func (s *Service) Sweep(ctx context.Context) error {
 			_, _ = s.CompleteLocal(ctx, &ops[i])
 		}
 	}
-	plan, err := s.Plan(ctx)
-	if err != nil {
-		return err
-	}
 	rows, err = s.db.QueryContext(ctx, `SELECT `+instanceColumns+instanceJoin+` WHERE i.deleted_at IS NULL AND s.instance_id IS NOT NULL AND (s.paid_until<=clock_timestamp() OR i.desired='running' AND i.actual IN ('stopped','error')) ORDER BY i.reconciled_at,i.id LIMIT 100`)
 	if err != nil {
 		return err
@@ -720,6 +752,10 @@ func (s *Service) Sweep(ctx context.Context) error {
 	}
 	_ = rows.Close()
 	for _, v := range instances {
+		plan, _, _, _, e := s.instancePlan(ctx, v.ID)
+		if e != nil {
+			return e
+		}
 		if _, err = s.db.ExecContext(ctx, `UPDATE donebot_cloud_instances SET reconciled_at=clock_timestamp() WHERE id=$1::uuid`, v.ID); err != nil {
 			return err
 		}

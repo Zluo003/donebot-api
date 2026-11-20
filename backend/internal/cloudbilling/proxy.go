@@ -59,11 +59,17 @@ func (s *Service) proxyTarget(ctx context.Context, id string, owner int64) (*Ins
 	if err != nil {
 		return nil, nil, err
 	}
+	return s.instanceProxyTarget(ctx, v)
+}
+func (s *Service) instanceProxyTarget(ctx context.Context, v *Instance) (*Instance, *url.URL, error) {
+	if v == nil {
+		return nil, nil, infraerrors.NotFound("CLOUD_NOT_FOUND", "Cloud instance not found")
+	}
 	if v.Desired != "running" || v.Actual != "running" || v.PurgeLocked || v.PaidUntil == nil || !v.PaidUntil.After(time.Now()) || v.SubscriptionState != "active" {
 		return nil, nil, infraerrors.Forbidden("CLOUD_INACTIVE", "Cloud instance is stopped or subscription expired")
 	}
 	var endpoint string
-	err = s.db.QueryRowContext(ctx, `SELECT endpoint FROM donebot_cloud_nodes WHERE id=$1::uuid AND last_seen>clock_timestamp()-INTERVAL '30 seconds'`, v.NodeID).Scan(&endpoint)
+	err := s.db.QueryRowContext(ctx, `SELECT endpoint FROM donebot_cloud_nodes WHERE id=$1::uuid AND last_seen>clock_timestamp()-INTERVAL '30 seconds'`, v.NodeID).Scan(&endpoint)
 	if err != nil {
 		return nil, nil, infraerrors.ServiceUnavailable("CLOUD_NODE_OFFLINE", "Cloud node is unavailable")
 	}
@@ -77,10 +83,19 @@ func (s *Service) Proxy(w http.ResponseWriter, r *http.Request, id string, owner
 	return s.proxy(w, r, id, owner, path, "", func(ctx context.Context) error { return s.liveIdentity(ctx, jwt, owner) })
 }
 func (s *Service) proxy(w http.ResponseWriter, r *http.Request, id string, owner int64, path, browserMaster string, identity func(context.Context) error) error {
+	return s.proxyAuthorized(w, r, id, path, browserMaster,
+		func(ctx context.Context) (*Instance, *url.URL, error) { return s.proxyTarget(ctx, id, owner) }, identity, nil)
+}
+
+func (s *Service) proxyAuthorized(w http.ResponseWriter, r *http.Request, id, path, browserMaster string,
+	targetFor func(context.Context) (*Instance, *url.URL, error), identity func(context.Context) error, team *teamProxyGrant) error {
 	if !strings.HasPrefix(path, "/") || strings.Contains(path, "\\") || strings.Contains(path, "%") || strings.Contains(path, "..") || strings.HasPrefix(path, "//") {
 		return infraerrors.BadRequest("CLOUD_PROXY_PATH", "Invalid instance path")
 	}
-	v, target, err := s.proxyTarget(r.Context(), id, owner)
+	if err := identity(r.Context()); err != nil {
+		return err
+	}
+	v, target, err := targetFor(r.Context())
 	if err != nil {
 		return err
 	}
@@ -99,7 +114,7 @@ func (s *Service) proxy(w http.ResponseWriter, r *http.Request, id string, owner
 				return
 			case <-ticker.C:
 				check, c := context.WithTimeout(ctx, 2*time.Second)
-				_, _, e := s.proxyTarget(check, id, owner)
+				_, _, e := targetFor(check)
 				if e == nil {
 					e = identity(check)
 				}
@@ -111,6 +126,10 @@ func (s *Service) proxy(w http.ResponseWriter, r *http.Request, id string, owner
 			}
 		}
 	}()
+	runtimeURI := path
+	if r.URL.RawQuery != "" {
+		runtimeURI += "?" + r.URL.RawQuery
+	}
 	path = "/v1/instances/" + id + "/proxy" + path
 	uri := path
 	if r.URL.RawQuery != "" {
@@ -122,6 +141,13 @@ func (s *Service) proxy(w http.ResponseWriter, r *http.Request, id string, owner
 	}
 	payload, _ := json.Marshal(map[string]any{"node_id": v.NodeID, "instance_id": id, "expires": expires, "request_hash": tokenHash(r.Method + "\n" + uri)})
 	grant := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(key, payload))
+	memberGrant := ""
+	if team != nil {
+		memberGrant, err = signedTeamProxyGrant(key, *team, id, r.Method, runtimeURI, expires)
+		if err != nil {
+			return err
+		}
+	}
 	origin := "https://" + r.Host
 	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
 		origin = "http://" + r.Host
@@ -145,11 +171,14 @@ func (s *Service) proxy(w http.ResponseWriter, r *http.Request, id string, owner
 		pr.Out.URL.Path = path
 		pr.Out.URL.RawPath = ""
 		pr.Out.Host = target.Host
-		for _, h := range []string{"Authorization", "Cookie", "Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Real-IP", "X-User-Id", "X-Donebot-Companion-Auth", "X-Donebot-Owner", "X-Cloud-Grant", "X-Cloud-Origin"} {
+		for _, h := range []string{"Authorization", "Cookie", "Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Real-IP", "X-User-Id", "X-Donebot-Companion-Auth", "X-Donebot-Owner", "X-Donebot-Team-Grant", "X-Cloud-Grant", "X-Cloud-Origin"} {
 			pr.Out.Header.Del(h)
 		}
 		pr.Out.Header.Set("X-Cloud-Grant", grant)
 		pr.Out.Header.Set("X-Cloud-Origin", origin)
+		if memberGrant != "" {
+			pr.Out.Header.Set("X-Donebot-Team-Grant", memberGrant)
+		}
 	}, ModifyResponse: func(res *http.Response) error {
 		res.Header.Del("Set-Cookie")
 		res.Header.Del("Access-Control-Allow-Origin")
