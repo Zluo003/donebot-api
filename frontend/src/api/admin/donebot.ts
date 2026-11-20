@@ -55,7 +55,11 @@ export interface ClientRelease { version: string; notes?: string; status: 'draft
 export interface WebToolsSettings { enabled: boolean; key_configured: boolean }
 export interface WebToolsSettingsInput { enabled: boolean; api_key?: string; clear_api_key?: boolean }
 export interface CloudRuntimePolicy { outage_grace_minutes: number }
+export interface TeamResources { cpu_millis: number; memory_mib: number; storage_gib: number; pids: number }
+export interface TeamCloudPlan { id: string; name: string; enabled: boolean; monthly_price: string; retention_days: number; runtime: TeamResources; desktop: TeamResources; shared_quota_bytes: number; max_file_bytes: number }
 const donebot = {
+ async teamPlans() { return (await apiClient.get<TeamCloudPlan[]>('/admin/donebot/teams/plans')).data },
+ async saveTeamPlans(input: TeamCloudPlan[]) { return (await apiClient.put<TeamCloudPlan[]>('/admin/donebot/teams/plans', input)).data },
  async cloudRuntimePolicy() { return (await apiClient.get<CloudRuntimePolicy>('/admin/donebot/cloud/runtime-policy')).data },
  async saveCloudRuntimePolicy(input: CloudRuntimePolicy) { return (await apiClient.put<CloudRuntimePolicy>('/admin/donebot/cloud/runtime-policy', input)).data },
  async cloudPlan() { return (await apiClient.get<{ enabled: boolean; monthly_price: string; retention_days: number }>('/admin/donebot/cloud/plan')).data },

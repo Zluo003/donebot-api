@@ -8,6 +8,17 @@ import (
 
 func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handlers) {
 	if h.DoneBot != nil {
+		authenticated.GET("/donebot/workspaces", h.DoneBot.TeamWorkspaces)
+		authenticated.GET("/donebot/teams", h.DoneBot.Teams)
+		authenticated.POST("/donebot/teams", h.DoneBot.Teams)
+		authenticated.POST("/donebot/teams/invitations/accept", h.DoneBot.TeamAccept)
+		authenticated.GET("/donebot/teams/:team", h.DoneBot.Team)
+		authenticated.PATCH("/donebot/teams/:team", h.DoneBot.Team)
+		authenticated.GET("/donebot/teams/:team/members", h.DoneBot.TeamMembers)
+		authenticated.PATCH("/donebot/teams/:team/members/:member", h.DoneBot.TeamMember)
+		authenticated.DELETE("/donebot/teams/:team/members/:member", h.DoneBot.TeamMember)
+		authenticated.POST("/donebot/teams/:team/invitations", h.DoneBot.TeamInvite)
+		authenticated.DELETE("/donebot/teams/:team/invitations/:invitation", h.DoneBot.TeamInvite)
 		authenticated.GET("/donebot/devices", h.DoneBot.Devices)
 		authenticated.PUT("/donebot/mobile/session", h.DoneBot.MobilePresence)
 		authenticated.GET("/donebot/mobile/workspaces", h.DoneBot.MobileWorkspaces)
@@ -41,6 +52,8 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUp middleware.StepUpAuthMiddleware) {
 	if h.Admin.DoneBot != nil {
 		donebot := admin.Group("/donebot")
+		donebot.GET("/teams/plans", h.Admin.DoneBot.TeamPlans)
+		donebot.PUT("/teams/plans", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateTeamPlans)
 		donebot.GET("/mobile/settings", h.Admin.DoneBot.MobileSettings)
 		donebot.PUT("/mobile/settings", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateMobileSettings)
 		donebot.GET("/relay/nodes", h.Admin.DoneBot.RelayNodes)

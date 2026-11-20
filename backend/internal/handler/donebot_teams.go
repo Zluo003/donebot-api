@@ -1,0 +1,175 @@
+package handler
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"strconv"
+
+	"github.com/Wei-Shaw/sub2api/internal/donebotteam"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/gin-gonic/gin"
+)
+
+func (h *DoneBotHandler) teamActor(c *gin.Context) (*donebotteam.Service, int64, bool) {
+	if h.cloud == nil {
+		response.Error(c, 503, "Team collaboration is unavailable")
+		return nil, 0, false
+	}
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "Login required")
+		return nil, 0, false
+	}
+	teams := h.cloud.Teams()
+	if !teams.Enabled() {
+		response.Error(c, 503, "Team collaboration is disabled")
+		return nil, 0, false
+	}
+	c.Header("Cache-Control", "no-store")
+	return teams, subject.UserID, true
+}
+func strictTeamBody(c *gin.Context, out any) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(out) != nil || decoder.Decode(new(any)) != io.EOF {
+		response.BadRequest(c, "Invalid team request")
+		return false
+	}
+	return true
+}
+func (h *DoneBotHandler) Teams(c *gin.Context) {
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	if c.Request.Method == http.MethodPost {
+		var in struct {
+			Name string `json:"name"`
+		}
+		if !strictTeamBody(c, &in) {
+			return
+		}
+		out, err := teams.Create(c.Request.Context(), actor, in.Name, c.GetHeader("Idempotency-Key"))
+		if !response.ErrorFrom(c, err) {
+			response.Success(c, out)
+		}
+		return
+	}
+	out, err := teams.List(c.Request.Context(), actor)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+func (h *DoneBotHandler) Team(c *gin.Context) {
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	if c.Request.Method == http.MethodPatch {
+		var in struct {
+			Name string `json:"name"`
+		}
+		if !strictTeamBody(c, &in) {
+			return
+		}
+		out, err := teams.Rename(c.Request.Context(), c.Param("team"), actor, in.Name)
+		if !response.ErrorFrom(c, err) {
+			response.Success(c, out)
+		}
+		return
+	}
+	out, err := teams.Access(c.Request.Context(), c.Param("team"), actor)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+func (h *DoneBotHandler) TeamMembers(c *gin.Context) {
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	out, err := teams.Members(c.Request.Context(), c.Param("team"), actor)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+func (h *DoneBotHandler) TeamMember(c *gin.Context) {
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	target, err := strconv.ParseInt(c.Param("member"), 10, 64)
+	if err != nil || target < 1 {
+		response.BadRequest(c, "Invalid member")
+		return
+	}
+	var in struct {
+		Role donebotteam.Role `json:"role"`
+	}
+	remove := c.Request.Method == http.MethodDelete
+	if !remove && !strictTeamBody(c, &in) {
+		return
+	}
+	if !response.ErrorFrom(c, teams.ChangeMember(c.Request.Context(), c.Param("team"), actor, target, in.Role, remove)) {
+		response.Success(c, gin.H{"ok": true})
+	}
+}
+func (h *DoneBotHandler) TeamInvite(c *gin.Context) {
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	if c.Request.Method == http.MethodDelete {
+		if !response.ErrorFrom(c, teams.RevokeInvitation(c.Request.Context(), c.Param("team"), actor, c.Param("invitation"))) {
+			response.Success(c, gin.H{"ok": true})
+		}
+		return
+	}
+	var in struct {
+		Email string           `json:"email"`
+		Role  donebotteam.Role `json:"role"`
+	}
+	if !strictTeamBody(c, &in) {
+		return
+	}
+	if in.Role == "" {
+		in.Role = donebotteam.Member
+	}
+	out, err := teams.Invite(c.Request.Context(), c.Param("team"), actor, in.Email, in.Role)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+func (h *DoneBotHandler) TeamAccept(c *gin.Context) {
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	var in struct {
+		Token string `json:"token"`
+	}
+	if !strictTeamBody(c, &in) {
+		return
+	}
+	out, err := teams.Accept(c.Request.Context(), actor, in.Token)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+func (h *DoneBotHandler) TeamWorkspaces(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if h.cloud == nil || !h.cloud.Teams().Enabled() {
+		response.Success(c, gin.H{"protocol": donebotteam.Protocol, "capabilities": []string{}, "workspaces": []any{}})
+		return
+	}
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	out, err := teams.List(c.Request.Context(), actor)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, gin.H{"protocol": donebotteam.Protocol, "capabilities": []string{"identity"}, "workspaces": out})
+	}
+}

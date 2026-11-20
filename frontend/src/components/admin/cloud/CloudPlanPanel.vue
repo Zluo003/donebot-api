@@ -13,6 +13,7 @@
     <button class="btn btn-primary" type="submit" :disabled="busy || !loaded">保存 Cloud 月费</button>
     <p class="text-xs text-gray-500">到期立即停机；超过保留期限后自动永久删除实例和专属数据。节点离线或删除失败时保持待处理状态。调整保留天数会应用于已有过期实例。关闭收费后不再扣取新的月费，已支付账期继续有效。停止实例不等于取消订阅；尚未成功开通的订阅取消后退回本期扣款。</p>
   </form>
+  <TeamPlansPanel />
   <TotpStepUpDialog :controller="stepUp" />
 </template>
 <script setup lang="ts">
@@ -21,6 +22,7 @@ import donebot from '@/api/admin/donebot'
 import { useAppStore } from '@/stores/app'
 import { isStepUpCancelled, useStepUp } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
+import TeamPlansPanel from './TeamPlansPanel.vue'
 const app = useAppStore(), stepUp = useStepUp()
 const plan = ref({ enabled: false, monthly_price: '0', retention_days: 7 })
 const busy = ref(false), loaded = ref(false), error = ref('')
