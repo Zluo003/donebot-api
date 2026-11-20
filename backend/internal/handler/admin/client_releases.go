@@ -83,6 +83,16 @@ func (h *DoneBotHandler) LatestClientRelease(c *gin.Context) {
 	}
 }
 
+func (h *DoneBotHandler) DeleteClientRelease(c *gin.Context) {
+	if h.releases == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Client release service is unavailable")
+		return
+	}
+	if err := h.releases.Delete(c.Request.Context(), c.Param("version")); !response.ErrorFrom(c, err) {
+		response.Success(c, gin.H{"deleted": true})
+	}
+}
+
 func (h *DoneBotHandler) CheckClientRelease(c *gin.Context) {
 	if h.releases == nil {
 		response.Error(c, http.StatusServiceUnavailable, "Client release service is unavailable")

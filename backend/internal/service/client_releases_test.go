@@ -15,11 +15,17 @@ import (
 
 type clientReleaseSettingsStub struct {
 	SettingRepository
-	values map[string]string
+	values         map[string]string
+	setError       error
+	setErrorOnCall int
+	setCalls       int
 }
 
 type clientReleaseStorageStub struct {
-	files map[string][]byte
+	files             map[string][]byte
+	deleteError       error
+	deleteErrorOnCall int
+	deleteCalls       []string
 }
 
 func (s *clientReleaseStorageStub) Save(_ context.Context, key, _ string, data []byte) (string, error) {
@@ -40,6 +46,10 @@ func (s *clientReleaseStorageStub) SaveStream(_ context.Context, key, _ string, 
 }
 
 func (s *clientReleaseStorageStub) Delete(_ context.Context, key string) error {
+	s.deleteCalls = append(s.deleteCalls, key)
+	if s.deleteError != nil && (s.deleteErrorOnCall == 0 || len(s.deleteCalls) == s.deleteErrorOnCall) {
+		return s.deleteError
+	}
 	delete(s.files, key)
 	return nil
 }
@@ -63,6 +73,10 @@ func (s *clientReleaseSettingsStub) GetValue(_ context.Context, key string) (str
 }
 
 func (s *clientReleaseSettingsStub) Set(_ context.Context, key, value string) error {
+	s.setCalls++
+	if s.setError != nil && (s.setErrorOnCall == 0 || s.setCalls == s.setErrorOnCall) {
+		return s.setError
+	}
 	s.values[key] = value
 	return nil
 }
@@ -264,4 +278,148 @@ func TestCompareClientReleaseVersionsUsesSemverPrecedence(t *testing.T) {
 	require.Greater(t, compareClientReleaseVersions("1.10.0", "1.9.0"), 0)
 	require.Less(t, compareClientReleaseVersions("1.10.0-rc.2", "1.10.0-rc.10"), 0)
 	require.Less(t, compareClientReleaseVersions("1.10.0-rc.1", "1.10.0"), 0)
+}
+
+func TestClientReleaseDeleteUsesOriginalStorageAndKeepsLatest(t *testing.T) {
+	ctx := context.Background()
+	repo := &clientReleaseSettingsStub{values: map[string]string{}}
+	stores := map[string]*clientReleaseStorageStub{}
+	storage := NewDoneBotStorageService(repo, nil, func(_ context.Context, policy DoneBotStoragePolicy) (AssetStorage, error) {
+		if stores[policy.LocalPath] == nil {
+			stores[policy.LocalPath] = &clientReleaseStorageStub{files: map[string][]byte{}}
+		}
+		return stores[policy.LocalPath], nil
+	}, nil, nil)
+	svc := NewClientReleaseService(storage)
+	paths := []string{t.TempDir(), t.TempDir()}
+	for i, version := range []string{"0.1.0", "0.1.1"} {
+		_, err := svc.UpdateStorageSettings(ctx, ClientReleaseStorageSettings{Driver: "local", LocalPath: paths[i]})
+		require.NoError(t, err)
+		for platform, artifact := range testClientReleasePlatforms() {
+			_, err = svc.Upload(ctx, version, platform, artifact.Filename, "", strings.NewReader(version), int64(len(version)))
+			require.NoError(t, err)
+		}
+		_, err = svc.Publish(ctx, version)
+		require.NoError(t, err)
+	}
+	for _, version := range []string{"0.1.1", "v0.1.1"} {
+		require.ErrorContains(t, svc.Delete(ctx, version), "Publish a newer release")
+	}
+	require.Len(t, stores[paths[1]].files, 3)
+	require.Empty(t, stores[paths[1]].deleteCalls)
+	require.NoError(t, svc.Delete(ctx, "v0.1.0"))
+	require.Empty(t, stores[paths[0]].files)
+	require.Len(t, stores[paths[0]].deleteCalls, 3)
+	require.Len(t, stores[paths[1]].files, 3)
+	require.Empty(t, stores[paths[1]].deleteCalls)
+	list, err := svc.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, "0.1.1", list[0].Version)
+	for _, platform := range []string{ClientReleaseWindowsX64, ClientReleaseMacOSArm64} {
+		check, err := svc.Check(ctx, "0.1.0", platform)
+		require.NoError(t, err)
+		require.True(t, check.UpdateAvailable)
+		feed, err := svc.UpdateFeed(ctx, platform)
+		require.NoError(t, err)
+		require.Contains(t, string(feed), `version: "0.1.1"`)
+		_, reader, err := svc.OpenArtifact(ctx, "0.1.1", platform)
+		require.NoError(t, err)
+		data, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		require.NoError(t, reader.Close())
+		require.Equal(t, "0.1.1", string(data))
+	}
+	_, _, err = svc.OpenArtifact(ctx, "0.1.0", ClientReleaseMacOSArm64)
+	require.Error(t, err)
+}
+
+func TestClientReleaseDeleteFailureCanBeRetriedWithoutRepublishing(t *testing.T) {
+	ctx := context.Background()
+	policy, err := json.Marshal(DoneBotStoragePolicy{Driver: "local", LocalPath: t.TempDir()})
+	require.NoError(t, err)
+	platforms := testClientReleasePlatforms()
+	objects := &clientReleaseStorageStub{files: map[string][]byte{}}
+	for platform, artifact := range platforms {
+		artifact.StorageConfig = policy
+		platforms[platform] = artifact
+		objects.files[artifact.ObjectKey] = []byte("fixture")
+	}
+	svc, repo := newClientReleaseTestService(t,
+		testClientReleaseRecord("0.1.0", "published", platforms),
+		testClientReleaseRecord("0.1.1", "published", testClientReleasePlatforms()),
+	)
+	svc.storage = NewDoneBotStorageService(repo, nil, func(context.Context, DoneBotStoragePolicy) (AssetStorage, error) { return objects, nil }, nil, nil)
+	repo.setError = errors.New("fixture persistence failure")
+	require.ErrorContains(t, svc.Delete(ctx, "0.1.0"), "fixture persistence failure")
+	require.Empty(t, objects.deleteCalls)
+	store, err := svc.load(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "published", findClientRelease(store.Releases, "0.1.0").Status)
+	repo.setError = nil
+	objects.deleteError = errors.New("fixture object storage failure")
+	require.ErrorContains(t, svc.Delete(ctx, "0.1.0"), "retry deleting")
+	store, err = svc.load(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "deleting", findClientRelease(store.Releases, "0.1.0").Status)
+	_, err = svc.Publish(ctx, "0.1.0")
+	require.ErrorContains(t, err, "being deleted")
+	_, err = svc.Upload(ctx, "0.1.0", ClientReleaseMacOSArm64, "DoneBot.zip", "", strings.NewReader("fixture"), 7)
+	require.ErrorContains(t, err, "being deleted")
+	objects.deleteError = nil
+	require.NoError(t, svc.Delete(ctx, "0.1.0"))
+	require.Empty(t, objects.files)
+	latest, err := svc.Latest(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0.1.1", latest.Version)
+	require.Error(t, svc.Delete(ctx, "0.1.0"))
+	require.Error(t, svc.Delete(ctx, "invalid"))
+}
+
+func TestClientReleaseDeleteResumesAfterPartialCleanupOrMetadataFailure(t *testing.T) {
+	for _, failure := range []string{"partial storage cleanup", "final metadata save"} {
+		t.Run(failure, func(t *testing.T) {
+			ctx := context.Background()
+			policy, err := json.Marshal(DoneBotStoragePolicy{Driver: "local", LocalPath: t.TempDir()})
+			require.NoError(t, err)
+			platforms := testClientReleasePlatforms()
+			objects := &clientReleaseStorageStub{files: map[string][]byte{}}
+			for platform, artifact := range platforms {
+				artifact.StorageConfig = policy
+				platforms[platform] = artifact
+				objects.files[artifact.ObjectKey] = []byte("fixture")
+			}
+			svc, repo := newClientReleaseTestService(t,
+				testClientReleaseRecord("0.1.0", "published", platforms),
+				testClientReleaseRecord("0.1.1", "published", testClientReleasePlatforms()),
+			)
+			svc.storage = NewDoneBotStorageService(repo, nil, func(context.Context, DoneBotStoragePolicy) (AssetStorage, error) { return objects, nil }, nil, nil)
+			if failure == "partial storage cleanup" {
+				objects.deleteError = errors.New("fixture storage failure")
+				objects.deleteErrorOnCall = 2
+			} else {
+				repo.setError = errors.New("fixture metadata failure")
+				repo.setErrorOnCall = 2
+			}
+			require.Error(t, svc.Delete(ctx, "0.1.0"))
+			store, err := svc.load(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "deleting", findClientRelease(store.Releases, "0.1.0").Status)
+			if failure == "partial storage cleanup" {
+				require.Len(t, objects.files, 2)
+			} else {
+				require.Empty(t, objects.files)
+			}
+			_, _, err = svc.OpenArtifact(ctx, "0.1.0", ClientReleaseMacOSArm64)
+			require.Error(t, err)
+			latest, err := svc.Latest(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "0.1.1", latest.Version)
+			require.NoError(t, svc.Delete(ctx, "0.1.0"))
+			require.Empty(t, objects.files)
+			store, err = svc.load(ctx)
+			require.NoError(t, err)
+			require.Nil(t, findClientRelease(store.Releases, "0.1.0"))
+		})
+	}
 }

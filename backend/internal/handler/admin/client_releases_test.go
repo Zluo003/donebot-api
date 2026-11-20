@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"mime/multipart"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -83,6 +84,9 @@ func TestClientReleaseHTTPFixtureStoragePublishAndDownload(t *testing.T) {
 	r.PUT("/storage", h.UpdateClientReleaseStorage)
 	r.POST("/upload", h.UploadClientRelease)
 	r.POST("/publish/:version", h.PublishClientRelease)
+	r.DELETE("/releases/:version", h.DeleteClientRelease)
+	r.GET("/releases", h.ClientReleases)
+	r.GET("/updates/:platform/latest-mac.yml", h.ClientUpdateFeed)
 	r.GET("/latest", h.LatestClientRelease)
 	r.GET("/check", h.CheckClientRelease)
 	r.GET("/api/v1/client/releases/:version/:platform/:filename", h.DownloadClientRelease)
@@ -106,19 +110,23 @@ func TestClientReleaseHTTPFixtureStoragePublishAndDownload(t *testing.T) {
 	firstDir := t.TempDir()
 	saveStorage(firstDir)
 	payload := []byte("fixture installer bytes")
-	for _, item := range []struct{ platform, filename string }{{"windows-x64", "DoneBot.exe"}, {"macos-arm64-dmg", "DoneBot.dmg"}, {"macos-arm64", "DoneBot.zip"}} {
-		var body bytes.Buffer
-		writer := multipart.NewWriter(&body)
-		require.NoError(t, writer.WriteField("version", "9.8.7"))
-		require.NoError(t, writer.WriteField("platform", item.platform))
-		file, err := writer.CreateFormFile("file", item.filename)
-		require.NoError(t, err)
-		_, err = file.Write(payload)
-		require.NoError(t, err)
-		require.NoError(t, writer.Close())
-		w := request("POST", "/upload", &body, writer.FormDataContentType())
-		require.Equal(t, 200, w.Code, w.Body.String())
+	upload := func(version string) {
+		t.Helper()
+		for _, item := range []struct{ platform, filename string }{{"windows-x64", "DoneBot.exe"}, {"macos-arm64-dmg", "DoneBot.dmg"}, {"macos-arm64", "DoneBot.zip"}} {
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			require.NoError(t, writer.WriteField("version", version))
+			require.NoError(t, writer.WriteField("platform", item.platform))
+			file, err := writer.CreateFormFile("file", item.filename)
+			require.NoError(t, err)
+			_, err = file.Write(payload)
+			require.NoError(t, err)
+			require.NoError(t, writer.Close())
+			w := request("POST", "/upload", &body, writer.FormDataContentType())
+			require.Equal(t, 200, w.Code, w.Body.String())
+		}
 	}
+	upload("9.8.7")
 	w := request("POST", "/publish/9.8.7", nil, "")
 	require.Equal(t, 200, w.Code, w.Body.String())
 	w = request("GET", "/latest", nil, "")
@@ -138,4 +146,33 @@ func TestClientReleaseHTTPFixtureStoragePublishAndDownload(t *testing.T) {
 		require.Equal(t, payload, w.Body.Bytes())
 	}
 	require.Contains(t, settings.values["donebot_storage_policies"], "media-only")
+	upload("9.8.8")
+	w = request("POST", "/publish/9.8.8", nil, "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	w = request("GET", "/updates/macos-arm64/latest-mac.yml", nil, "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	feed := w.Body.String()
+	require.Contains(t, feed, `version: "9.8.8"`)
+	w = request("DELETE", "/releases/9.8.8", nil, "")
+	require.Equal(t, 409, w.Code, w.Body.String())
+	w = request("DELETE", "/releases/9.8.7", nil, "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Empty(t, stores[firstDir].objects)
+	w = request("GET", "/updates/macos-arm64/latest-mac.yml", nil, "")
+	require.Equal(t, feed, w.Body.String())
+	w = request("GET", "/check?version=9.8.7&platform=macos-arm64", nil, "")
+	require.Equal(t, 200, w.Code)
+	require.Contains(t, w.Body.String(), `"update_available":true`)
+	for _, platform := range []string{"windows-x64", "macos-arm64-dmg", "macos-arm64"} {
+		oldURL := latest.Data.Platforms[platform].DownloadURL
+		w = request("GET", oldURL, nil, "")
+		require.Equal(t, 404, w.Code)
+		w = request("GET", strings.Replace(oldURL, "9.8.7", "9.8.8", 1), nil, "")
+		require.Equal(t, 200, w.Code)
+		require.Equal(t, payload, w.Body.Bytes())
+	}
+	w = request("GET", "/releases", nil, "")
+	require.Equal(t, 200, w.Code)
+	require.NotContains(t, w.Body.String(), "9.8.7")
+	t.Log("isolated release fixture: upload/publish two versions -> reject deleting latest -> delete old packages at original storage -> unchanged latest feed and downloadable current packages")
 }

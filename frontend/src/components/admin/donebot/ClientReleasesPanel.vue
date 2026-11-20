@@ -75,19 +75,23 @@
       <div v-else class="divide-y divide-gray-200 dark:divide-gray-700">
         <article v-for="release in releases" :key="release.version" class="grid gap-3 py-4 sm:grid-cols-[110px_100px_1fr_auto] sm:items-start">
           <strong class="text-sm">v{{ release.version }}</strong>
-          <span class="text-xs" :class="release.status === 'published' ? 'text-green-700 dark:text-green-400' : 'text-gray-500'">{{ release.status === 'published' ? '已发布' : '草稿' }}</span>
+          <span class="text-xs" :class="release.status === 'published' ? 'text-green-700 dark:text-green-400' : 'text-gray-500'">{{ release.version === latestPublishedVersion ? '当前版本' : release.status === 'published' ? '已发布' : release.status === 'deleting' ? '删除未完成' : '草稿' }}</span>
           <div class="space-y-1 text-xs text-gray-500">
             <p>Windows：{{ release.platforms['windows-x64'] ? `${release.platforms['windows-x64']?.filename} · ${formatSize(release.platforms['windows-x64']?.size_bytes ?? 0)}` : '未上传' }}</p>
             <p>macOS DMG：{{ release.platforms['macos-arm64-dmg'] ? `${release.platforms['macos-arm64-dmg']?.filename} · ${formatSize(release.platforms['macos-arm64-dmg']?.size_bytes ?? 0)}` : '未上传' }}</p>
             <p>macOS 更新 ZIP：{{ release.platforms['macos-arm64'] ? `${release.platforms['macos-arm64']?.filename} · ${formatSize(release.platforms['macos-arm64']?.size_bytes ?? 0)}` : '未上传' }}</p>
             <p v-if="release.notes">{{ release.notes }}</p>
           </div>
-          <button v-if="release.status === 'draft'" class="text-left text-sm font-medium text-primary-600 hover:text-primary-500 sm:text-right" @click="useDraft(release)">继续编辑</button>
-          <span v-else class="text-xs text-gray-400 sm:text-right">{{ formatDate(release.published_at) }}</span>
+          <div class="flex flex-col items-start gap-2 sm:items-end">
+            <button v-if="release.status === 'draft'" class="text-left text-sm font-medium text-primary-600 hover:text-primary-500 sm:text-right" :disabled="busy" @click="useDraft(release)">继续编辑</button>
+            <span v-else class="text-xs text-gray-400 sm:text-right">{{ formatDate(release.published_at) }}</span>
+            <button class="text-sm font-medium text-red-600 hover:text-red-500 disabled:cursor-not-allowed disabled:text-gray-400" :data-testid="`delete-release-${release.version}`" :disabled="busy || release.version === latestPublishedVersion" :title="release.version === latestPublishedVersion ? '请先发布新版本，再删除此版本' : undefined" @click="deleteTarget = release">{{ release.status === 'deleting' ? '重试删除' : '删除版本' }}</button>
+          </div>
         </article>
       </div>
     </div>
   </section>
+  <ConfirmDialog :show="Boolean(deleteTarget)" title="删除客户端版本" :message="`确认删除 v${deleteTarget?.version} 及其全部安装包？删除后无法恢复，当前最新版将保留。`" confirm-text="删除版本" cancel-text="取消" danger @confirm="removeRelease" @cancel="deleteTarget = null" />
   <TotpStepUpDialog :controller="stepUp" />
 </template>
 
@@ -98,11 +102,14 @@ import donebot, { type ClientRelease, type ClientReleasePlatform } from '@/api/a
 import { useAppStore } from '@/stores/app'
 import { isStepUpCancelled, useStepUp } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 
 const showStorage = ref(false)
 const app = useAppStore()
 const stepUp = useStepUp()
 const releases = ref<ClientRelease[]>([])
+const deleteTarget = ref<ClientRelease | null>(null)
+const latestPublishedVersion = computed(() => releases.value.find(release => release.status === 'published')?.version)
 const version = ref('')
 const notes = ref('')
 const busy = ref(false)
@@ -183,6 +190,26 @@ async function publish() {
     await load()
   } catch (cause) {
     if (!isStepUpCancelled(cause)) error.value = releaseErrorMessage(cause, '发布客户端版本失败')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function removeRelease() {
+  const target = deleteTarget.value
+  if (!target || busy.value || target.version === latestPublishedVersion.value) return
+  deleteTarget.value = null
+  busy.value = true
+  error.value = ''
+  try {
+    await stepUp.run(() => donebot.deleteClientRelease(target.version))
+    app.showSuccess(`v${target.version} 及其安装包已删除`)
+    await load()
+  } catch (cause) {
+    if (!isStepUpCancelled(cause)) {
+      await load()
+      error.value = releaseErrorMessage(cause, '删除客户端版本失败')
+    }
   } finally {
     busy.value = false
   }

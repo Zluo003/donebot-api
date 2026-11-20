@@ -177,8 +177,12 @@ func (s *ClientReleaseService) Upload(ctx context.Context, version, platform, fi
 	s.mu.Lock()
 	store, err := s.load(ctx)
 	if err == nil {
-		if record := findClientRelease(store.Releases, version); record != nil && record.Status == "published" {
-			err = infraerrors.Conflict("CLIENT_RELEASE_ALREADY_PUBLISHED", "Published releases cannot be changed")
+		if record := findClientRelease(store.Releases, version); record != nil {
+			if record.Status == "deleting" {
+				err = infraerrors.Conflict("CLIENT_RELEASE_DELETING", "A release being deleted cannot be changed")
+			} else if record.Status == "published" {
+				err = infraerrors.Conflict("CLIENT_RELEASE_ALREADY_PUBLISHED", "Published releases cannot be changed")
+			}
 		}
 	}
 	s.mu.Unlock()
@@ -215,6 +219,9 @@ func (s *ClientReleaseService) Upload(ctx context.Context, version, platform, fi
 		return nil, err
 	}
 	record := findClientRelease(store.Releases, version)
+	if record != nil && record.Status == "deleting" {
+		return nil, infraerrors.Conflict("CLIENT_RELEASE_DELETING", "A release being deleted cannot be changed")
+	}
 	if record != nil && record.Status == "published" {
 		return nil, infraerrors.Conflict("CLIENT_RELEASE_ALREADY_PUBLISHED", "Published releases cannot be changed")
 	}
@@ -253,6 +260,9 @@ func (s *ClientReleaseService) Publish(ctx context.Context, version string) (*Cl
 	if record == nil {
 		return nil, infraerrors.NotFound("CLIENT_RELEASE_NOT_FOUND", "Client release draft was not found")
 	}
+	if record.Status == "deleting" {
+		return nil, infraerrors.Conflict("CLIENT_RELEASE_DELETING", "A release being deleted cannot be published")
+	}
 	if record.Status == "published" {
 		out := clientReleaseInfo(*record)
 		return &out, nil
@@ -277,6 +287,58 @@ func (s *ClientReleaseService) Publish(ctx context.Context, version string) (*Cl
 	}
 	out := clientReleaseInfo(*record)
 	return &out, nil
+}
+
+func (s *ClientReleaseService) Delete(ctx context.Context, version string) error {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if _, _, _, _, ok := parseClientReleaseVersion(version); !ok {
+		return infraerrors.BadRequest("INVALID_CLIENT_VERSION", "A semantic client version is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	store, err := s.load(ctx)
+	if err != nil {
+		return err
+	}
+	record := findClientRelease(store.Releases, version)
+	if record == nil {
+		return infraerrors.NotFound("CLIENT_RELEASE_NOT_FOUND", "Client release was not found")
+	}
+	if latest := latestPublishedClientRelease(store.Releases); latest != nil && latest.Version == version {
+		return infraerrors.Conflict("CLIENT_RELEASE_IS_LATEST", "Publish a newer release before deleting the latest published release")
+	}
+	if len(record.Platforms) > 0 && s.storage == nil {
+		return infraerrors.ServiceUnavailable("CLIENT_RELEASES_UNAVAILABLE", "Client release storage is unavailable")
+	}
+	if record.Status != "deleting" {
+		record.Status = "deleting"
+		if err = s.save(ctx, store); err != nil {
+			return err
+		}
+	}
+	platforms := make([]string, 0, len(record.Platforms))
+	for platform := range record.Platforms {
+		platforms = append(platforms, platform)
+	}
+	sort.Strings(platforms)
+	for _, platform := range platforms {
+		artifact := record.Platforms[platform]
+		storage, err := s.storage.originalStorage(ctx, &GatewayAsset{StorageConfig: artifact.StorageConfig})
+		if err != nil {
+			return err
+		}
+		if err = storage.Delete(ctx, artifact.ObjectKey); err != nil {
+			return infraerrors.ServiceUnavailable("CLIENT_RELEASE_DELETE_FAILED", "Unable to delete a stored client package; retry deleting this release")
+		}
+	}
+	remaining := make([]clientReleaseRecord, 0, len(store.Releases)-1)
+	for _, release := range store.Releases {
+		if release.Version != version {
+			remaining = append(remaining, release)
+		}
+	}
+	store.Releases = remaining
+	return s.save(ctx, store)
 }
 
 func (s *ClientReleaseService) OpenArtifact(ctx context.Context, version, platform string) (*ClientReleaseArtifact, io.ReadCloser, error) {

@@ -4,15 +4,77 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AxiosProgressEvent } from 'axios'
 import ClientReleasesPanel from '../ClientReleasesPanel.vue'
 import donebot from '@/api/admin/donebot'
+import type { ClientRelease } from '@/api/admin/donebot'
 
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showSuccess: vi.fn() }) }))
-vi.mock('@/api/admin/donebot', () => ({ default: { clientReleases: vi.fn(), uploadClientRelease: vi.fn(), publishClientRelease: vi.fn() } }))
+vi.mock('@/api/admin/donebot', () => ({ default: { clientReleases: vi.fn(), uploadClientRelease: vi.fn(), publishClientRelease: vi.fn(), deleteClientRelease: vi.fn() } }))
 vi.mock('@/components/auth/TotpStepUpDialog.vue', () => ({ default: defineComponent({ name: 'TotpStepUpDialog', props: ['controller'], template: '<div />' }) }))
+vi.mock('@/components/common/ConfirmDialog.vue', () => ({ default: defineComponent({ name: 'ConfirmDialog', props: ['show', 'message'], emits: ['confirm', 'cancel'], template: '<div v-if="show" role="dialog">{{ message }}</div>' }) }))
 
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(donebot.clientReleases).mockResolvedValue({ releases: [] })
   vi.mocked(donebot.uploadClientRelease).mockResolvedValue({ version: '0.1.0', status: 'draft', created_at: '', platforms: {} })
+})
+
+describe('client release deletion', () => {
+  const release = (version: string, status: ClientRelease['status'] = 'published'): ClientRelease => ({ version, status, created_at: '', platforms: {} })
+
+  async function history() {
+    vi.mocked(donebot.clientReleases).mockResolvedValue({ releases: [release('0.1.2', 'draft'), release('0.1.1'), release('0.1.0')] })
+    const wrapper = mount(ClientReleasesPanel)
+    await flushPromises()
+    return wrapper
+  }
+
+  it('protects the current published version even when a newer draft exists', async () => {
+    const wrapper = await history()
+    expect(wrapper.get('[data-testid="delete-release-0.1.1"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="delete-release-0.1.0"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="delete-release-0.1.2"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('当前版本')
+  })
+
+  it('allows cancellation and removes an old release only after confirmation', async () => {
+    const wrapper = await history()
+    await wrapper.get('[data-testid="delete-release-0.1.0"]').trigger('click')
+    expect(wrapper.get('[role=dialog]').text()).toContain('v0.1.0 及其全部安装包')
+    expect(donebot.deleteClientRelease).not.toHaveBeenCalled()
+    wrapper.getComponent({ name: 'ConfirmDialog' }).vm.$emit('cancel')
+    await flushPromises()
+    expect(wrapper.find('[role=dialog]').exists()).toBe(false)
+    expect(donebot.deleteClientRelease).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="delete-release-0.1.0"]').trigger('click')
+    vi.mocked(donebot.clientReleases).mockResolvedValue({ releases: [release('0.1.1')] })
+    wrapper.getComponent({ name: 'ConfirmDialog' }).vm.$emit('confirm')
+    await flushPromises()
+    expect(donebot.deleteClientRelease).toHaveBeenCalledTimes(1)
+    expect(donebot.deleteClientRelease).toHaveBeenCalledWith('0.1.0')
+    expect(wrapper.find('[data-testid="delete-release-0.1.0"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="delete-release-0.1.1"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('retains a failed deletion for retry and performs required step-up verification', async () => {
+    const wrapper = await history()
+    vi.mocked(donebot.deleteClientRelease).mockRejectedValueOnce({ code: 'STEP_UP_REQUIRED' })
+    await wrapper.get('[data-testid="delete-release-0.1.0"]').trigger('click')
+    wrapper.getComponent({ name: 'ConfirmDialog' }).vm.$emit('confirm')
+    await flushPromises()
+    const controller = wrapper.getComponent({ name: 'TotpStepUpDialog' }).props('controller')
+    expect(controller.visible.value).toBe(true)
+    vi.mocked(donebot.deleteClientRelease).mockRejectedValueOnce({ status: 503, message: 'retry deleting this release' })
+    vi.mocked(donebot.clientReleases).mockResolvedValue({ releases: [release('0.1.1'), release('0.1.0', 'deleting')] })
+    controller.onVerified()
+    await flushPromises()
+    expect(wrapper.get('[role=alert]').text()).toContain('retry deleting this release')
+    expect(wrapper.get('[data-testid="delete-release-0.1.0"]').text()).toBe('重试删除')
+    expect(donebot.deleteClientRelease).toHaveBeenCalledTimes(2)
+    await wrapper.get('[data-testid="delete-release-0.1.0"]').trigger('click')
+    vi.mocked(donebot.clientReleases).mockResolvedValue({ releases: [release('0.1.1')] })
+    wrapper.getComponent({ name: 'ConfirmDialog' }).vm.$emit('confirm')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="delete-release-0.1.0"]').exists()).toBe(false)
+  })
 })
 
 async function chooseFile(wrapper: VueWrapper, testID: string, name: string, size = 1024) {
