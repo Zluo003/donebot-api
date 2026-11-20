@@ -178,9 +178,10 @@ func (s *ClientReleaseService) Upload(ctx context.Context, version, platform, fi
 	store, err := s.load(ctx)
 	if err == nil {
 		if record := findClientRelease(store.Releases, version); record != nil {
-			if record.Status == "deleting" {
+			switch record.Status {
+			case "deleting":
 				err = infraerrors.Conflict("CLIENT_RELEASE_DELETING", "A release being deleted cannot be changed")
-			} else if record.Status == "published" {
+			case "published":
 				err = infraerrors.Conflict("CLIENT_RELEASE_ALREADY_PUBLISHED", "Published releases cannot be changed")
 			}
 		}
