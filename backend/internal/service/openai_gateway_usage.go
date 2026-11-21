@@ -161,6 +161,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if result == nil {
 		return errors.New("openai usage result is nil")
 	}
+	if err := validateDoneBotTeamUsage(ctx, input.APIKey, input.Subscription, s.cfg, s.usageBillingRepo); err != nil {
+		return err
+	}
 	if handled, err := s.recordDoneBotPrepaidUsage(ctx, input); handled || err != nil {
 		return err
 	}

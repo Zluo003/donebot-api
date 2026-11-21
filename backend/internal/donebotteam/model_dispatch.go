@@ -94,11 +94,20 @@ func (s *Service) AdmitModelExecution(ctx context.Context, token string, executi
 
 // A transport response is not durable provider completion or settlement. Acceptance can never be replayed as a new dispatch.
 func (s *Service) ModelResponseReturned(ctx context.Context, id string) error {
+	return s.modelResponseState(ctx, id, "uncertain")
+}
+
+// ModelCompleted is called only after a provider protocol confirms generation completed, independently of billing or delivery.
+func (s *Service) ModelCompleted(ctx context.Context, id string) error {
+	return s.modelResponseState(ctx, id, "completed")
+}
+
+func (s *Service) modelResponseState(ctx context.Context, id, state string) error {
 	if err := s.available(); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE donebot_team_executions e SET state='uncertain'
-		WHERE e.id=$1::uuid AND e.state='accepted' AND EXISTS(SELECT 1 FROM donebot_team_model_dispatches d WHERE d.execution_id=e.id)`, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE donebot_team_executions e SET state=$2
+		WHERE e.id=$1::uuid AND e.state IN ('accepted','uncertain') AND EXISTS(SELECT 1 FROM donebot_team_model_dispatches d WHERE d.execution_id=e.id)`, id, state)
 	return err
 }
 
@@ -136,16 +145,25 @@ func (s *Service) ModelExecutionStatus(ctx context.Context, coordinator *Coordin
 	}
 	status := &ModelExecutionStatus{ID: e.ID, State: e.State, ReceiptID: e.ID, Currency: "CNY", BillingState: "pending"}
 	var amount sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT SUM(u.actual_cost)::text FROM donebot_team_model_dispatches d
-		JOIN donebot_team_billing_keys b ON b.team_id=$2::uuid AND b.api_key_id=d.api_key_id
-		JOIN usage_logs u ON u.api_key_id=d.api_key_id AND u.user_id=b.payer_id AND u.group_id=b.group_id
-		AND u.request_id='client:'||d.execution_id::text WHERE d.execution_id=$1::uuid`, e.ID, e.TeamID).Scan(&amount)
-	if err != nil {
+	err = tx.QueryRowContext(ctx, `SELECT actual_amount::text FROM donebot_team_model_settlements WHERE execution_id=$1::uuid`, e.ID).Scan(&amount)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	if amount.Valid {
-		status.BillingState = "recorded"
+		status.BillingState = "settled"
 		status.ActualAmount = &amount.String
+	} else {
+		err = tx.QueryRowContext(ctx, `SELECT SUM(u.actual_cost)::text FROM donebot_team_model_dispatches d
+		JOIN donebot_team_billing_keys b ON b.team_id=$2::uuid AND b.api_key_id=d.api_key_id
+		JOIN usage_logs u ON u.api_key_id=d.api_key_id AND u.user_id=b.payer_id AND u.group_id=b.group_id
+		AND u.request_id='client:'||d.execution_id::text WHERE d.execution_id=$1::uuid`, e.ID, e.TeamID).Scan(&amount)
+		if err != nil {
+			return nil, err
+		}
+		if amount.Valid {
+			status.BillingState = "recorded"
+			status.ActualAmount = &amount.String
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return nil, err

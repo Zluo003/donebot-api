@@ -9,11 +9,13 @@ import (
 	"math"
 	"strings"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/shopspring/decimal"
 )
 
 var ErrUsageBillingRequestIDRequired = errors.New("usage billing request_id is required")
 var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerprint conflict")
+var ErrDoneBotTeamBillingUnavailable = infraerrors.ServiceUnavailable("TEAM_BILLING_UNAVAILABLE", "Durable team billing is unavailable")
 
 // UsageBillingCommand describes one billable request that must be applied at most once.
 type UsageBillingCommand struct {

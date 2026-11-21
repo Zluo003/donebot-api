@@ -2565,6 +2565,10 @@ func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task serv
 	if task == nil {
 		return
 	}
+	if service.DoneBotTeamUsageExecutionID(parent) != "" {
+		h.submitMandatoryUsageRecordTask(parent, task)
+		return
+	}
 	task, abandon := wrapUsageRecordTaskContext(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); mode != service.UsageRecordSubmitModeDroppedStopped {

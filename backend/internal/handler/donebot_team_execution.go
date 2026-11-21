@@ -111,7 +111,11 @@ func (h *DoneBotHandler) TeamExecutionAdmission() gin.HandlerFunc {
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 5*time.Second)
 			defer cancel()
-			if err := h.cloud.Teams().ModelResponseReturned(ctx, execution.ID); err != nil {
+			update := h.cloud.Teams().ModelResponseReturned
+			if service.DoneBotTeamModelCompleted(c.Request.Context()) {
+				update = h.cloud.Teams().ModelCompleted
+			}
+			if err := update(ctx, execution.ID); err != nil {
 				_ = c.Error(err)
 			}
 		}()

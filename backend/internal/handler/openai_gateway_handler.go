@@ -262,7 +262,7 @@ func usageRecordContext(parent context.Context, base context.Context) context.Co
 	if requestID, _ := parent.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
 		base = context.WithValue(base, ctxkey.RequestID, strings.TrimSpace(requestID))
 	}
-	return base
+	return service.CopyDoneBotTeamUsageContext(parent, base)
 }
 
 // wrapUsageRecordTaskContext 包装计费任务：复制请求级 context 值，并接管请求的在途余额预留引用。
@@ -3444,6 +3444,10 @@ func getContextInt64(c *gin.Context, key string) (int64, bool) {
 
 func (h *OpenAIGatewayHandler) submitUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
 	if task == nil {
+		return
+	}
+	if service.DoneBotTeamUsageExecutionID(parent) != "" {
+		h.submitMandatoryUsageRecordTask(parent, task)
 		return
 	}
 	task, abandon := wrapUsageRecordTaskContext(parent, task)

@@ -324,6 +324,8 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	pendingLines := make([]string, 0, 8)
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
 	var terminal openAIRawStreamTerminalState
+	var teamCompletion doneBotChatCompletion
+	teamRequest := DoneBotTeamUsageExecutionID(c.Request.Context()) != ""
 
 	writeLine := func(line string) {
 		if clientDisconnected {
@@ -363,6 +365,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
 			terminal.ObserveDataLine(trimmedPayload)
+			if teamRequest {
+				teamCompletion.observe(trimmedPayload)
+			}
 			if trimmedPayload != "[DONE]" {
 				observer.ObserveOpenAI([]byte(payload), strings.TrimSpace(gjson.Get(payload, "type").String()))
 				usageOnlyChunk := isOpenAIChatUsageOnlyStreamChunk(payload)
@@ -473,6 +478,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		}
 	}
 
+	if scanErr == nil && !clientAborted && teamCompletion.completed() {
+		doneBotTeamModelCompleted(c.Request.Context())
+	}
 	return resultWithUsage(), nil
 }
 
@@ -550,6 +558,13 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 	}
 	respBody = applyOllamaCloudRawChatCompletionsResponse(account, respBody)
 	respBody = s.replaceModelInResponseBody(respBody, upstreamModel, originalModel)
+	if DoneBotTeamUsageExecutionID(c.Request.Context()) != "" {
+		var teamCompletion doneBotChatCompletion
+		teamCompletion.observe(string(respBody))
+		if teamCompletion.completed() {
+			doneBotTeamModelCompleted(c.Request.Context())
+		}
+	}
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -23,7 +24,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/donebotteam"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -32,6 +32,26 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
+
+type teamModelFixtureUpstream struct{ service.HTTPUpstream }
+
+func (teamModelFixtureUpstream) Do(r *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+	return http.DefaultClient.Do(r)
+}
+
+func fullTeamUsagePool(t *testing.T) *service.UsageRecordWorkerPool {
+	t.Helper()
+	pool := service.NewUsageRecordWorkerPoolWithOptions(service.UsageRecordWorkerPoolOptions{
+		WorkerCount: 1, QueueSize: 1, TaskTimeout: time.Minute, OverflowPolicy: "drop",
+	})
+	t.Cleanup(pool.Stop)
+	started, release := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	require.Equal(t, service.UsageRecordSubmitModeEnqueued, pool.Submit(func(context.Context) { close(started); <-release }))
+	<-started
+	require.Equal(t, service.UsageRecordSubmitModeEnqueued, pool.Submit(func(context.Context) { <-release }))
+	return pool
+}
 
 func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 	dsn := os.Getenv("DONEBOT_TEAM_TEST_DATABASE_URL")
@@ -65,7 +85,7 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 	CREATE TABLE donebot_cloud_subscriptions(instance_id UUID PRIMARY KEY,team_id UUID,user_id BIGINT,state TEXT,paid_until TIMESTAMPTZ,purge_locked BOOLEAN);
 	ALTER TABLE usage_logs ADD COLUMN account_stats_cost NUMERIC(20,10);`)
 	require.NoError(t, err)
-	for _, name := range []string{"037_add_account_rate_multiplier.sql", "071_add_usage_billing_dedup.sql", "073_add_usage_billing_dedup_archive.sql", "074_add_usage_log_endpoints.sql", "271_donebot_teams.sql", "273_donebot_team_execution_grants.sql", "274_donebot_team_coordinators.sql", "275_donebot_team_billing_keys.sql", "276_donebot_team_model_dispatches.sql"} {
+	for _, name := range []string{"027_usage_billing_consistency.sql", "037_add_account_rate_multiplier.sql", "046_add_usage_log_reasoning_effort.sql", "060_add_usage_log_openai_ws_mode.sql", "061_add_usage_log_request_type.sql", "070_add_usage_log_service_tier.sql", "089_usage_log_image_output_tokens.sql", "179_usage_log_image_input_tokens.sql", "187_add_usage_log_session_id.sql", "231_add_usage_log_native_compaction_v2.sql", "231_add_usage_log_requested_reasoning_effort.sql", "232_add_usage_log_upstream_request_id.sql", "071_add_usage_billing_dedup.sql", "073_add_usage_billing_dedup_archive.sql", "074_add_usage_log_endpoints.sql", "271_donebot_teams.sql", "273_donebot_team_execution_grants.sql", "274_donebot_team_coordinators.sql", "275_donebot_team_billing_keys.sql", "276_donebot_team_model_dispatches.sql", "277_donebot_team_model_settlements.sql"} {
 		b, e := os.ReadFile("../../migrations/" + name)
 		require.NoError(t, e)
 		_, e = db.Exec(string(b))
@@ -82,6 +102,8 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 	_, err = db.Exec(`INSERT INTO settings(key,value,updated_at) VALUES('donebot.group_id',$1,clock_timestamp())`, strconv.FormatInt(group.ID, 10))
 	require.NoError(t, err)
 	cfg := &config.Config{DoneBot: config.DoneBotConfig{Enabled: true, CatalogCurrency: "CNY"}}
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
 	groups := repository.NewGroupRepository(client, db)
 	keys := service.NewAPIKeyService(repository.NewAPIKeyRepository(client, db), repository.NewUserRepository(client, db), groups, nil, nil, nil, cfg)
 	installs := service.NewDoneBotService(repository.NewDoneBotInstallRepository(client), keys, repository.NewSettingRepository(client), groups, cfg)
@@ -105,16 +127,60 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 	coordinator := &donebotteam.Coordinator{TeamID: team.ID, InstanceID: instance, Generation: 1}
 	h := &DoneBotHandler{cloud: cloud, installs: installs}
 	var forwards atomic.Int64
+	var mode atomic.Int32
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		forwards.Add(1)
-		if r.Header.Get("Authorization") != "" {
+		if r.Header.Get("Authorization") != "Bearer fixture-upstream-only" {
 			http.Error(w, "credential forwarded", 500)
 			return
 		}
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"fixture"}}]}`)
+		w.Header().Set("Content-Type", "application/json")
+		switch mode.Load() {
+		case 1:
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"}}]}\n\n")
+		case 2:
+			_, _ = io.WriteString(w, `{"error":{"message":"failed"},"usage":{"prompt_tokens":1000000,"completion_tokens":1000000}}`)
+		case 3:
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1000000,\"completion_tokens\":1000000}}\n\ndata: [DONE]\n\n")
+		case 4:
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"fixture\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000000,\"completion_tokens\":1000000}}\n\ndata: [DONE]\n\n")
+		case 5:
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err == nil {
+				_ = conn.Close()
+			}
+		default:
+			_, _ = io.WriteString(w, `{"id":"fixture","model":"deepseek-flash","choices":[{"index":0,"message":{"role":"assistant","content":"fixture"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000000,"completion_tokens":1000000}}`)
+		}
 	}))
 	t.Cleanup(provider.Close)
 	billing := repository.NewUsageBillingRepository(client, db)
+	billingService := service.NewBillingService(cfg, nil)
+	usageLogs := repository.NewUsageLogRepository(client, db)
+	forwarder := service.NewOpenAIGatewayService(nil, usageLogs, billing,
+		repository.NewUserRepository(client, db), nil, nil, nil, cfg, nil, nil,
+		billingService, nil, nil, teamModelFixtureUpstream{}, &service.DeferredService{},
+		nil, nil, nil, nil, nil, nil, nil)
+	synthetic := &service.Account{ID: account.ID, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		Concurrency: 1, Credentials: map[string]any{"api_key": "fixture-upstream-only", "base_url": provider.URL, "api_protocol": "chat_completions"},
+		Extra: map[string]any{"openai_responses_supported": false}}
+	usageHandler := &OpenAIGatewayHandler{usageRecordWorkerPool: fullTeamUsagePool(t)}
+	var billingCalls atomic.Int64
+	billingErrors := make(chan error, 32)
+	checkBilling := func(t *testing.T) {
+		t.Helper()
+		for range 2 {
+			select {
+			case err := <-billingErrors:
+				require.NoError(t, err)
+			case <-time.After(3 * time.Second):
+				t.Fatal("production billing callback did not finish")
+			}
+		}
+	}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(middleware.ClientRequestID(), h.TeamExecutionCredential(), gin.HandlerFunc(middleware.NewAPIKeyAuthMiddleware(keys, nil, cfg)), middleware.GroupModelAllowlist(), middleware.DoneBotLLMRouting(), middleware.DoneBotReasoningValidation(nil), h.TeamExecutionAdmission())
@@ -124,45 +190,35 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 			c.AbortWithStatus(500)
 			return
 		}
-		res, e := http.Get(provider.URL)
+		body, e := io.ReadAll(c.Request.Body)
 		if e != nil {
-			_ = c.Error(e)
 			c.AbortWithStatus(500)
 			return
 		}
-		defer res.Body.Close()
-		body, e := io.ReadAll(res.Body)
-		if e != nil {
-			_ = c.Error(e)
-			c.AbortWithStatus(500)
-			return
+		result, forwardErr := forwarder.ForwardAsChatCompletions(c.Request.Context(), c, synthetic, body, "", "")
+		if result != nil {
+			usageHandler.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
+				for range 2 {
+					billingCalls.Add(1)
+					billingErrors <- forwarder.RecordUsage(ctx, &service.OpenAIRecordUsageInput{Result: result, APIKey: key, User: key.User, Account: synthetic,
+						InboundEndpoint: "/v1/chat/completions", PricingAt: time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC)})
+				}
+			})
 		}
-		id, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
-		cmd := &service.UsageBillingCommand{RequestID: "client:" + id, APIKeyID: key.ID, UserID: key.UserID, AccountID: account.ID, Model: "deepseek-flash", BalanceCost: .25}
-		for range 2 {
-			if _, e = billing.Apply(c.Request.Context(), cmd); e != nil {
-				_ = c.Error(e)
-				c.AbortWithStatus(500)
-				return
-			}
+		if forwardErr != nil && !c.Writer.Written() {
+			c.AbortWithStatus(502)
 		}
-		_, e = client.UsageLog.Create().SetUserID(key.UserID).SetAPIKeyID(key.ID).SetAccountID(account.ID).SetGroupID(group.ID).SetRequestID(cmd.RequestID).SetModel(cmd.Model).SetActualCost(.25).Save(c.Request.Context())
-		if e != nil {
-			_ = c.Error(e)
-			c.AbortWithStatus(500)
-			return
-		}
-		c.Data(http.StatusOK, "application/json", body)
 	})
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 	const path = "/v1/chat/completions"
 	const body = `{"model":"deepseek-flash","messages":[{"role":"user","content":"fixture"}]}`
-	prepare := func() *donebotteam.ExecutionGrant {
-		grant, e := teams.PrepareExecution(ctx, donebotteam.ExecutionRequest{TeamID: team.ID, Actor: member.ID, Key: uuid.NewString(), NodeKind: "cloud", NodeID: instance, Purpose: "llm", BotID: "bot", ThreadID: "thread", RequestHash: donebotteam.ModelRequestHash("POST", path, []byte(body)), Coordinator: coordinator})
+	prepareBody := func(payload string) *donebotteam.ExecutionGrant {
+		grant, e := teams.PrepareExecution(ctx, donebotteam.ExecutionRequest{TeamID: team.ID, Actor: member.ID, Key: uuid.NewString(), NodeKind: "cloud", NodeID: instance, Purpose: "llm", BotID: "bot", ThreadID: "thread", RequestHash: donebotteam.ModelRequestHash("POST", path, []byte(payload)), Coordinator: coordinator})
 		require.NoError(t, e)
 		return grant
 	}
+	prepare := func() *donebotteam.ExecutionGrant { return prepareBody(body) }
 	call := func(token, route, payload string) (int, string, error) {
 		r, e := http.NewRequest("POST", server.URL+route, strings.NewReader(payload))
 		if e != nil {
@@ -213,12 +269,22 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 	require.Equal(t, int64(1), forwards.Load())
 	statusRecord, err := teams.ModelExecutionStatus(ctx, coordinator, grant.Execution.ID)
 	require.NoError(t, err)
-	require.Equal(t, "uncertain", statusRecord.State)
-	require.Equal(t, "recorded", statusRecord.BillingState)
+	require.Equal(t, "completed", statusRecord.State)
+	require.Equal(t, "settled", statusRecord.BillingState)
 	require.NotNil(t, statusRecord.ActualAmount)
 	amount, e := strconv.ParseFloat(*statusRecord.ActualAmount, 64)
 	require.NoError(t, e)
-	require.Equal(t, .25, amount)
+	expected, err := billingService.CalculateCost("deepseek-flash", service.UsageTokens{InputTokens: 1000000, OutputTokens: 1000000}, 1)
+	require.NoError(t, err)
+	require.Equal(t, service.QuantizeUsageBillingAmount(expected.ActualCost), amount)
+	require.Equal(t, int64(2), billingCalls.Load())
+	checkBilling(t)
+	var usageCount int
+	var loggedAmount float64
+	err = db.QueryRow(`SELECT COUNT(*),COALESCE(SUM(actual_cost),0) FROM usage_logs WHERE request_id=$1`, "client:"+grant.Execution.ID).Scan(&usageCount, &loggedAmount)
+	require.NoError(t, err)
+	require.Equal(t, 1, usageCount, "production RecordUsage must persist exactly one usage log")
+	require.InDelta(t, amount, loggedAmount, 1e-8)
 	serialized, e := json.Marshal(statusRecord)
 	require.NoError(t, e)
 	for _, secret := range []string{"payer", "owner@example.invalid", "balance", "sk-dbteam-"} {
@@ -226,13 +292,27 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 	}
 	updated, err := client.User.Get(ctx, owner.ID)
 	require.NoError(t, err)
-	require.Equal(t, 99.75, updated.Balance)
+	require.InDelta(t, 100-amount, updated.Balance, 1e-8)
 	updated, err = client.User.Get(ctx, member.ID)
 	require.NoError(t, err)
 	require.Zero(t, updated.Balance)
 	restarted := donebotteam.New(db, true)
 	key, err := installs.TeamBillingKey(ctx, team.ID)
 	require.NoError(t, err)
+	billingContext, err := installs.TeamExecutionContext(ctx, grant.Token, grant.Execution)
+	require.NoError(t, err)
+	cancelled, cancel := context.WithCancel(billingContext)
+	cancel()
+	genericUsageHandler := &GatewayHandler{usageRecordWorkerPool: usageHandler.usageRecordWorkerPool}
+	var genericCalled bool
+	genericUsageHandler.submitUsageRecordTask(cancelled, func(worker context.Context) {
+		genericCalled = true
+		require.NoError(t, worker.Err())
+		require.Equal(t, grant.Execution.ID, service.DoneBotTeamUsageExecutionID(worker))
+		_, _, credential := service.DoneBotTeamExecution(worker)
+		require.False(t, credential)
+	})
+	require.True(t, genericCalled, "team usage cannot be dropped when the generic billing pool is full")
 	_, first, err := restarted.AdmitModelExecution(ctx, grant.Token, grant.Execution, key.ID)
 	require.NoError(t, err)
 	require.False(t, first)
@@ -256,6 +336,97 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 	require.Error(t, err)
 	_, err = db.Exec(`DELETE FROM donebot_team_model_dispatches WHERE execution_id=$1::uuid`, grant.Execution.ID)
 	require.Error(t, err)
+	_, err = db.Exec(`UPDATE donebot_team_model_settlements SET actual_amount=0 WHERE execution_id=$1::uuid`, grant.Execution.ID)
+	require.Error(t, err)
+	_, err = db.Exec(`DELETE FROM donebot_team_model_settlements WHERE execution_id=$1::uuid`, grant.Execution.ID)
+	require.Error(t, err)
+	_, err = db.Exec(`DELETE FROM usage_logs WHERE request_id=$1 AND api_key_id=$2`, "client:"+grant.Execution.ID, key.ID)
+	require.NoError(t, err)
+	statusRecord, err = restarted.ModelExecutionStatus(ctx, coordinator, grant.Execution.ID)
+	require.NoError(t, err)
+	require.Equal(t, "settled", statusRecord.BillingState, "log retention cannot erase the settlement receipt")
+	for _, tamper := range []string{"payer", "request", "unadmitted"} {
+		t.Run("billing rollback "+tamper, func(t *testing.T) {
+			pending := prepare()
+			if tamper != "unadmitted" {
+				_, accepted, e := teams.AdmitModelExecution(ctx, pending.Token, pending.Execution, key.ID)
+				require.NoError(t, e)
+				require.True(t, accepted)
+			}
+			scope, e := installs.TeamExecutionContext(ctx, pending.Token, pending.Execution)
+			require.NoError(t, e)
+			cmd := &service.UsageBillingCommand{RequestID: "client:" + pending.Execution.ID, APIKeyID: key.ID, UserID: owner.ID, AccountID: account.ID, Model: "deepseek-flash", BalanceCost: 1}
+			if tamper == "payer" {
+				cmd.UserID = member.ID
+			}
+			if tamper == "request" {
+				cmd.RequestID = "client:" + uuid.NewString()
+			}
+			_, e = billing.Apply(scope, cmd)
+			require.ErrorIs(t, e, service.ErrDoneBotTeamBillingUnavailable)
+			var count int
+			require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM usage_billing_dedup WHERE request_id=$1 AND api_key_id=$2`, cmd.RequestID, key.ID).Scan(&count))
+			require.Zero(t, count, "failed settlement must roll back the billing claim and balance effects")
+			var balance float64
+			require.NoError(t, db.QueryRow(`SELECT balance FROM users WHERE id=$1`, owner.ID).Scan(&balance))
+			require.InDelta(t, 100-amount, balance, 1e-8)
+		})
+	}
+	var totalCharged = amount
+	for _, scenario := range []struct {
+		name   string
+		mode   int32
+		stream bool
+		state  string
+		billed bool
+	}{
+		{"truncated stream", 1, true, "uncertain", true},
+		{"error JSON with usage", 2, false, "uncertain", true},
+		{"usage and done without finish", 3, true, "uncertain", true},
+		{"finished stream", 4, true, "completed", true},
+		{"lost provider response", 5, false, "uncertain", false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			mode.Store(scenario.mode)
+			payload := body
+			if scenario.stream {
+				payload = strings.TrimSuffix(body, "}") + `,"stream":true}`
+			}
+			next := prepareBody(payload)
+			before := forwards.Load()
+			_, _, e := call(next.Token, path, payload)
+			require.NoError(t, e)
+			require.Equal(t, before+1, forwards.Load())
+			require.Eventually(t, func() bool {
+				receipt, e := restarted.ModelExecutionStatus(ctx, coordinator, next.Execution.ID)
+				return e == nil && receipt.State == scenario.state
+			}, time.Second, 10*time.Millisecond)
+			receipt, e := restarted.ModelExecutionStatus(ctx, coordinator, next.Execution.ID)
+			require.NoError(t, e)
+			if scenario.billed {
+				checkBilling(t)
+				require.Equal(t, "settled", receipt.BillingState)
+				charge, e := strconv.ParseFloat(*receipt.ActualAmount, 64)
+				require.NoError(t, e)
+				totalCharged += charge
+			} else {
+				require.Equal(t, "pending", receipt.BillingState)
+				require.Nil(t, receipt.ActualAmount)
+			}
+			code, _, e := call(next.Token, path, payload)
+			require.NoError(t, e)
+			require.Equal(t, 409, code)
+			require.Equal(t, before+1, forwards.Load(), "neither completed nor uncertain operations may be resubmitted")
+		})
+	}
+	updated, err = client.User.Get(ctx, owner.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 100-totalCharged, updated.Balance, 1e-8)
+	updated, err = client.User.Get(ctx, member.ID)
+	require.NoError(t, err)
+	require.Zero(t, updated.Balance)
+	mode.Store(0)
+	finalForwards := forwards.Load()
 	other := *coordinator
 	other.TeamID = uuid.NewString()
 	_, err = teams.ModelExecutionStatus(ctx, &other, grant.Execution.ID)
@@ -267,5 +438,5 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 	require.NotEqual(t, 200, status)
 	_, err = teams.ModelExecutionStatus(ctx, coordinator, grant.Execution.ID)
 	require.Error(t, err)
-	require.Equal(t, int64(1), forwards.Load())
+	require.Equal(t, finalForwards, forwards.Load())
 }

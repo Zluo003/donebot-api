@@ -69,3 +69,15 @@
 ## 稳定操作编号（2026-11-21）
 
 执行请求键接受规范UUID v4或v5；团队、节点和其他资源ID继续仅接受v4。运行服务按不可变会话绑定与原生轮次导出v5，因此本地派发日志丢失不会发行第二笔操作。网关仍匹配原始身份、受众、请求哈希和代次，已受理操作不可再次受理。一次性PostgreSQL和race验证通过，日志 `/tmp/donebot-team-stable-key-race.log`。不改变团队能力默认关闭及生产发布约束。
+
+## 供应商结束与持久结算回执（2026-11-21）
+
+迁移 277 增加不可变的团队模型结算表。结算在既有幂等扣费事务中同时落盘，绑定受理的执行、内部 Key、Owner 付款人及请求指纹；身份、请求编号或受理状态不符时，扣款、限额和幂等占位一同回滚。用量日志清理不删除结算记录。查询的 `billing_state=settled` 表示该事务已提交，`recorded` 仅兼容旧用量记录，`pending` 不表示免费或可以重提。
+
+团队用量任务仅携带执行编号，不携带协调器和执行凭据；队列溢出或停止时使用有界同步回退，不沿用个人用量的可丢弃策略。团队调用拒绝 simple mode、非 CNY、丢失可信来源、订阅计费及无持久仓库的旧扣费路径。该队列仍不是持久 outbox，进程崩溃窗口的待结算恢复尚未实现。
+
+原生 raw Chat Completions 仅在合法响应的所有已观察 choice 都有明确 finish_reason，且流未读错或中断时标记 completed；usage、[DONE]、HTTP 200、错误 JSON 或半截回答不构成结束证明。结束与费用独立，uncertain 也可有 settled 回执，completed 也可能尚待结算。其它供应商协议继续保守返回 uncertain。所有已受理状态都拒绝再次派发。
+
+验证日志 `/tmp/donebot-team-settlement-race.log`：一次性 PostgreSQL、真实 HTTP、生产 ForwardAsChatCompletions、生产 RecordUsage 和真实扣费仓库通过 race 检查。覆盖八路并发仅一次上游、两次记录仅一次扣费及一行真实用量、Owner 付款且成员余额不变、满队列回退、取消后的独立计费 context、不可变回执、清理日志后查询、篡改事务回滚、正常/截断/错误/仅用量流、丢失响应、重启查询及撤权。夹具显式选择合成账号，未覆盖生产处理器的完整调度选路。
+
+`/tmp/donebot-team-settlement-billing-regression.log` 记录用量、原生转发及 worker 相关 service/handler 回归通过；repository 包在该筛选下无匹配测试，真实仓库由上述 PostgreSQL 流程覆盖。`/tmp/donebot-team-settlement-compile.log` 为全部 Go 包仅编译通过。未访问真实供应商、用户数据库或生产网关；媒体、其它协议、持久待结算恢复和真实 Linux 团队执行仍须继续。

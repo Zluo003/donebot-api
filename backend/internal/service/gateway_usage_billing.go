@@ -361,6 +361,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 
 	cmd := buildUsageBillingCommand(requestID, usageLog, p)
 	if cmd == nil || cmd.RequestID == "" || repo == nil {
+		if DoneBotTeamUsageExecutionID(ctx) != "" {
+			return false, ErrDoneBotTeamBillingUnavailable
+		}
 		if p.SimpleModeKeyRateLimitOnly {
 			return false, ErrSimpleModeKeyRateLimitBillingUnavailable
 		}
@@ -771,6 +774,9 @@ func logResponseModelBillingApplied(component string, account *Account, requestI
 
 // recordUsageCore 是 RecordUsage 的核心实现。
 func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsageCoreInput) error {
+	if err := validateDoneBotTeamUsage(ctx, input.APIKey, input.Subscription, s.cfg, s.usageBillingRepo); err != nil {
+		return err
+	}
 	result := input.Result
 	ctx = withTokenPricingRequestedModel(ctx, firstNonEmpty(input.OriginalModel, result.Model))
 	apiKey := input.APIKey
