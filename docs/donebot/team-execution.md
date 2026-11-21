@@ -94,3 +94,11 @@
 `/tmp/donebot-team-pending-race.log`：真实 HTTP、一次性 PostgreSQL 和 Go race 通过。覆盖五条用量提交路径在队列可用时同步落盘、调用取消、保存后扣账前中断、日志失败事务回滚、子进程提交后立即 exit(42)、八路新恢复器并发重放、不可变快照、人民币金额一致、Owner 一次扣费和成员余额不变、个人平台用量不变。恢复和请求重放均未增加模拟供应商计数。服务测试验证余额及专用 Key 限额继续生效、个人请求仍受平台限额约束，以及缓存失败、生命周期取消和停止后不得重启。
 
 已经取得并保存的用量可以恢复；在供应商用量尚未收到、价格计算或首次持久化之前退出，仍属于未核对的执行，禁止自动重新生成。本功能不等于供应商侧对账、所有原生协议结束证明、媒体结算或真实 Linux 团队执行已完成。执行能力仍默认关闭，网关未推送或部署。
+
+## 团队共享文件代理验证（2026-11-21）
+
+`CLOUD_BILLING_PG_FIXTURE=1 CLOUD_BILLING_TEAM_FILES_FIXTURE=1 go test -race -tags=integration ./internal/cloudbilling -run '^TestPostgresTeam(FileProxyCancelsRevokedUploads|ProxySignsActualMemberAndFencesRevocation|NodeConfigurationAndCapabilityRevocation)$' -count=1 -v`
+
+新增跨项目测试自建 PostgreSQL，通过生产 TeamProxy 到 DoneBot 真实隔离文件服务；不接受外部数据库，不访问用户应用或生产网关。合成 worker 只转发路径，不代表实际 worker 或 Linux 容器验收。验证真实成员签名替换伪造 Owner 标头、文件归属、上传上限、模板写入拒绝，以及移除成员后并发新建/覆盖上传的中断和清理：临时流在七秒窗口内消失，新文件不发布、原文件字节保留，后续访问拒绝。既有 SSE 撤权及运行配置回归同时通过，日志 `/tmp/donebot-team-files-proxy-regression.log`。
+
+撤权使用既有三秒监控，不宣称跨服务即时或原子提交。客户端夹具位于 `/Users/zluo/Dev/DoneBot/scripts/testing/team-files-proxy-fixture.ts`，只接受合成配置 stdin，退出后清理临时 home/data。未修改生产代理或开放 shared_files 能力，团队默认关闭。
