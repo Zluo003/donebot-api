@@ -26,6 +26,7 @@ func RegisterAuthRoutes(
 	rateLimiter := middleware.NewRateLimiter(redisClient)
 	if h.DoneBot != nil {
 		v1.POST("/donebot/cloud/nodes/:node/:verb", h.DoneBot.CloudNode)
+		v1.POST("/donebot/cloud/coordinators/:instance/executions", h.DoneBot.TeamPrepareExecution)
 		cloud := v1.Group("/donebot/cloud/billing/instances/:id")
 		cloud.GET("/:action", func(c *gin.Context) {
 			if c.Param("action") != "status" {

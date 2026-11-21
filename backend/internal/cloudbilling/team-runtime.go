@@ -23,8 +23,9 @@ type TeamRuntimeConfiguration struct {
 }
 
 type RuntimeConfiguration struct {
-	Gateway *RuntimeCredential        `json:"gateway,omitempty"`
-	Team    *TeamRuntimeConfiguration `json:"team,omitempty"`
+	Gateway     *RuntimeCredential            `json:"gateway,omitempty"`
+	Team        *TeamRuntimeConfiguration     `json:"team,omitempty"`
+	Coordinator *TeamCoordinatorConfiguration `json:"coordinator,omitempty"`
 }
 
 // Team runtimes receive a pinned membership trust root, never the payer's installation credential.
@@ -51,14 +52,15 @@ func (s *Service) RuntimeConfiguration(ctx context.Context, node, token, id stri
 		return nil, infraerrors.NotFound("TEAMS_DISABLED", "Team workspaces are disabled")
 	}
 	out := &TeamRuntimeConfiguration{Protocol: donebotteam.Protocol, InstanceID: id, TeamID: teamID.String}
+	coordinator := &TeamCoordinatorConfiguration{Protocol: donebotteam.Protocol, InstanceID: id, TeamID: teamID.String}
 	var snapshot []byte
-	err = s.db.QueryRowContext(ctx, `SELECT t.name,i.plan_snapshot FROM donebot_cloud_instances i
+	err = s.db.QueryRowContext(ctx, `SELECT t.name,i.plan_snapshot,i.generation FROM donebot_cloud_instances i
 		JOIN donebot_cloud_subscriptions s ON s.instance_id=i.id JOIN donebot_teams t ON t.id=i.team_id
 		JOIN users u ON u.id=t.owner_id JOIN donebot_cloud_nodes n ON n.id=i.node_id
 		WHERE i.id=$1::uuid AND i.node_id=$2::uuid AND i.deleted_at IS NULL AND i.desired='running'
 		AND t.state='active' AND n.team_protocol=$3 AND n.last_seen>clock_timestamp()-INTERVAL '30 seconds'
 		AND s.state IN ('pending','active') AND s.paid_until>clock_timestamp() AND NOT s.purge_locked
-		AND u.status='active' AND u.deleted_at IS NULL`, id, node, donebotteam.Protocol).Scan(&out.Name, &snapshot)
+		AND u.status='active' AND u.deleted_at IS NULL`, id, node, donebotteam.Protocol).Scan(&out.Name, &snapshot, &coordinator.Generation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, infraerrors.Forbidden("TEAM_RUNTIME_INACTIVE", "Team runtime is not authorized on this node")
 	}
@@ -78,5 +80,9 @@ func (s *Service) RuntimeConfiguration(ctx context.Context, node, token, id stri
 	if err != nil {
 		return nil, err
 	}
-	return &RuntimeConfiguration{Team: out}, nil
+	coordinator.Credential, err = teamCoordinatorCredential(out.TeamID, id, coordinator.Generation)
+	if err != nil {
+		return nil, err
+	}
+	return &RuntimeConfiguration{Team: out, Coordinator: coordinator}, nil
 }

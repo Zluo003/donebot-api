@@ -49,11 +49,11 @@ func newExecutionFixture(t *testing.T) *executionFixture {
 	_, err = db.Exec(`CREATE TABLE users(id BIGINT PRIMARY KEY,email TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',deleted_at TIMESTAMPTZ);
         CREATE TABLE donebot_installs(installation_id UUID UNIQUE NOT NULL,user_id BIGINT NOT NULL,status TEXT NOT NULL DEFAULT 'active',expires_at TIMESTAMPTZ);
         INSERT INTO users(id,email) VALUES(1,'owner@example.invalid'),(2,'admin@example.invalid'),(3,'a@example.invalid'),(4,'b@example.invalid'),(5,'outsider@example.invalid'),(6,'other@example.invalid');
-        CREATE TABLE donebot_cloud_nodes(id UUID PRIMARY KEY,team_protocol TEXT,last_seen TIMESTAMPTZ);
-        CREATE TABLE donebot_cloud_instances(id UUID PRIMARY KEY,team_id UUID,user_id BIGINT,node_id UUID,deleted_at TIMESTAMPTZ,desired TEXT,actual TEXT);
+        CREATE TABLE donebot_cloud_nodes(id UUID PRIMARY KEY,team_protocol TEXT,last_seen TIMESTAMPTZ,enabled BOOLEAN NOT NULL DEFAULT TRUE);
+        CREATE TABLE donebot_cloud_instances(id UUID PRIMARY KEY,team_id UUID,user_id BIGINT,node_id UUID,deleted_at TIMESTAMPTZ,desired TEXT,actual TEXT,generation BIGINT NOT NULL DEFAULT 1);
         CREATE TABLE donebot_cloud_subscriptions(instance_id UUID PRIMARY KEY,team_id UUID,user_id BIGINT,state TEXT,paid_until TIMESTAMPTZ,purge_locked BOOLEAN);`)
 	require.NoError(t, err)
-	for _, file := range []string{"271_donebot_teams.sql", "273_donebot_team_execution_grants.sql"} {
+	for _, file := range []string{"271_donebot_teams.sql", "273_donebot_team_execution_grants.sql", "274_donebot_team_coordinators.sql"} {
 		migration, e := os.ReadFile("../../migrations/" + file)
 		require.NoError(t, e)
 		_, e = db.Exec(string(migration))
@@ -80,9 +80,9 @@ func newExecutionFixture(t *testing.T) *executionFixture {
 	}
 	f.cloud = uuid.NewString()
 	node := uuid.NewString()
-	_, err = db.Exec(`INSERT INTO donebot_cloud_nodes VALUES($1::uuid,$2,clock_timestamp())`, node, Protocol)
+	_, err = db.Exec(`INSERT INTO donebot_cloud_nodes(id,team_protocol,last_seen) VALUES($1::uuid,$2,clock_timestamp())`, node, Protocol)
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO donebot_cloud_instances VALUES($1::uuid,$2::uuid,1,$3::uuid,NULL,'running','running')`, f.cloud, f.team, node)
+	_, err = db.Exec(`INSERT INTO donebot_cloud_instances VALUES($1::uuid,$2::uuid,1,$3::uuid,NULL,'running','running',1)`, f.cloud, f.team, node)
 	require.NoError(t, err)
 	_, err = db.Exec(`INSERT INTO donebot_cloud_subscriptions VALUES($1::uuid,$2::uuid,1,'active',clock_timestamp()+INTERVAL '1 day',FALSE)`, f.cloud, f.team)
 	require.NoError(t, err)
@@ -270,7 +270,7 @@ func TestExecutionConcurrentAdmissionAndUncertainPostgres(t *testing.T) {
 }
 
 func TestExecutionRevocationDoesNotResurrectPostgres(t *testing.T) {
-	for _, change := range []string{"actor-role", "actor-leave", "executor-role", "device-off", "install-revoke", "expire", "cloud-expire", "cloud-stopped", "node-stale", "payer-disabled"} {
+	for _, change := range []string{"actor-role", "actor-leave", "executor-role", "device-off", "install-revoke", "expire", "cloud-expire", "cloud-stopped", "node-stale", "cloud-node-disabled", "payer-disabled"} {
 		t.Run(change, func(t *testing.T) {
 			f := newExecutionFixture(t)
 			in := f.request()
@@ -301,6 +301,8 @@ func TestExecutionRevocationDoesNotResurrectPostgres(t *testing.T) {
 				_, err = f.s.db.Exec(`UPDATE donebot_team_devices SET last_seen=clock_timestamp()-INTERVAL '1 minute'`)
 			case "payer-disabled":
 				_, err = f.s.db.Exec(`UPDATE users SET status='disabled' WHERE id=1`)
+			case "cloud-node-disabled":
+				_, err = f.s.db.Exec(`UPDATE donebot_cloud_nodes SET enabled=FALSE`)
 			}
 			require.NoError(t, err)
 			_, err = f.s.AuthorizeExecution(f.ctx, grant.Token, in)
@@ -319,4 +321,34 @@ func TestExecutionRevocationDoesNotResurrectPostgres(t *testing.T) {
 			require.Equal(t, int64(1), payer)
 		})
 	}
+}
+
+func TestExecutionCoordinatorGenerationPostgres(t *testing.T) {
+	f := newExecutionFixture(t)
+	in := f.request()
+	in.Coordinator = &Coordinator{TeamID: f.team, InstanceID: f.cloud, Generation: 1}
+	grant, err := f.s.PrepareExecution(f.ctx, in)
+	require.NoError(t, err)
+	for _, coordinator := range []*Coordinator{nil, {TeamID: f.other, InstanceID: f.cloud, Generation: 1}, {TeamID: f.team, InstanceID: uuid.NewString(), Generation: 1}, {TeamID: f.team, InstanceID: f.cloud, Generation: 2}} {
+		next := in
+		next.Coordinator = coordinator
+		_, err = f.s.AuthorizeExecution(f.ctx, grant.Token, next)
+		require.Error(t, err)
+		_, err = f.s.PrepareExecution(f.ctx, next)
+		require.Error(t, err)
+	}
+	for _, assignment := range []string{"coordinator_id=NULL,coordinator_generation=NULL", "coordinator_generation=2"} {
+		_, err = f.s.db.Exec(`UPDATE donebot_team_executions SET `+assignment+` WHERE id=$1::uuid`, grant.Execution.ID)
+		require.Error(t, err)
+	}
+	_, err = f.s.db.Exec(`UPDATE donebot_cloud_instances SET generation=2 WHERE id=$1::uuid`, f.cloud)
+	require.NoError(t, err)
+	_, _, err = f.s.AdmitExecution(f.ctx, grant.Token, in)
+	require.Error(t, err)
+	in.Coordinator = &Coordinator{TeamID: f.team, InstanceID: f.cloud, Generation: 2}
+	_, err = f.s.PrepareExecution(f.ctx, in)
+	require.Error(t, err, "an old request key cannot resurrect on a new runtime generation")
+	in.Key = uuid.NewString()
+	_, err = f.s.PrepareExecution(f.ctx, in)
+	require.NoError(t, err)
 }

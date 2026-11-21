@@ -24,27 +24,37 @@ type ExecutionRequest struct {
 	ThreadID    string
 	Private     bool
 	RequestHash string
+	Coordinator *Coordinator
+}
+
+// Only the Cloud control plane authenticates and constructs a coordinator identity.
+type Coordinator struct {
+	TeamID     string
+	InstanceID string
+	Generation int64
 }
 
 // Payer and member versions are derived from locked server records, never from request identity fields.
 type Execution struct {
-	ID              string
-	TeamID          string
-	Key             string
-	PayerID         int64
-	ActorID         int64
-	ActorVersion    int64
-	ExecutorID      int64
-	ExecutorVersion int64
-	NodeKind        string
-	NodeID          string
-	NodeVersion     int64
-	Purpose         string
-	BotID           string
-	ThreadID        string
-	PrivateTo       sql.NullInt64
-	RequestHash     string
-	State           string
+	ID                    string
+	TeamID                string
+	Key                   string
+	PayerID               int64
+	ActorID               int64
+	ActorVersion          int64
+	ExecutorID            int64
+	ExecutorVersion       int64
+	NodeKind              string
+	NodeID                string
+	NodeVersion           int64
+	Purpose               string
+	BotID                 string
+	ThreadID              string
+	PrivateTo             sql.NullInt64
+	RequestHash           string
+	State                 string
+	CoordinatorID         sql.NullString
+	CoordinatorGeneration sql.NullInt64
 }
 
 type ExecutionGrant struct {
@@ -72,11 +82,11 @@ func validExecution(in ExecutionRequest) bool {
 	}
 }
 
-const executionColumns = `e.id::text,e.team_id::text,e.request_key::text,e.payer_id,e.actor_id,e.actor_version,e.executor_id,e.executor_version,e.node_kind,e.node_id::text,e.node_version,e.purpose,e.bot_id,e.thread_id,e.private_to,e.request_hash,e.state`
+const executionColumns = `e.id::text,e.team_id::text,e.request_key::text,e.payer_id,e.actor_id,e.actor_version,e.executor_id,e.executor_version,e.node_kind,e.node_id::text,e.node_version,e.purpose,e.bot_id,e.thread_id,e.private_to,e.request_hash,e.state,e.coordinator_id::text,e.coordinator_generation`
 
 func scanExecution(row interface{ Scan(...any) error }) (*Execution, error) {
 	e := &Execution{}
-	err := row.Scan(&e.ID, &e.TeamID, &e.Key, &e.PayerID, &e.ActorID, &e.ActorVersion, &e.ExecutorID, &e.ExecutorVersion, &e.NodeKind, &e.NodeID, &e.NodeVersion, &e.Purpose, &e.BotID, &e.ThreadID, &e.PrivateTo, &e.RequestHash, &e.State)
+	err := row.Scan(&e.ID, &e.TeamID, &e.Key, &e.PayerID, &e.ActorID, &e.ActorVersion, &e.ExecutorID, &e.ExecutorVersion, &e.NodeKind, &e.NodeID, &e.NodeVersion, &e.Purpose, &e.BotID, &e.ThreadID, &e.PrivateTo, &e.RequestHash, &e.State, &e.CoordinatorID, &e.CoordinatorGeneration)
 	return e, err
 }
 
@@ -84,17 +94,21 @@ func executionDenied() error {
 	return infraerrors.Forbidden("TEAM_EXECUTION_DENIED", "The team execution grant or its membership is no longer authorized")
 }
 
-func executionCloud(ctx context.Context, tx *sql.Tx, teamID string) (payer int64, instance string, err error) {
-	err = tx.QueryRowContext(ctx, `SELECT t.owner_id,i.id::text FROM donebot_teams t
+func executionCloud(ctx context.Context, tx *sql.Tx, teamID string, coordinator *Coordinator) (payer int64, instance string, err error) {
+	var generation int64
+	err = tx.QueryRowContext(ctx, `SELECT t.owner_id,i.id::text,i.generation FROM donebot_teams t
         JOIN users p ON p.id=t.owner_id JOIN donebot_cloud_instances i ON i.team_id=t.id AND i.user_id=t.owner_id
         JOIN donebot_cloud_subscriptions s ON s.instance_id=i.id AND s.team_id=t.id AND s.user_id=t.owner_id
         JOIN donebot_cloud_nodes n ON n.id=i.node_id
         WHERE t.id=$1::uuid AND t.state='active' AND p.status='active' AND p.deleted_at IS NULL
         AND i.deleted_at IS NULL AND i.desired='running' AND i.actual='running'
         AND s.state='active' AND s.paid_until>clock_timestamp() AND NOT s.purge_locked
-        AND n.team_protocol=$2 AND n.last_seen>clock_timestamp()-INTERVAL '30 seconds'
-        FOR SHARE OF p,i,s,n`, teamID, Protocol).Scan(&payer, &instance)
+        AND n.enabled AND n.team_protocol=$2 AND n.last_seen>clock_timestamp()-INTERVAL '30 seconds'
+        FOR SHARE OF p,i,s,n`, teamID, Protocol).Scan(&payer, &instance, &generation)
 	if errors.Is(err, sql.ErrNoRows) {
+		err = executionDenied()
+	}
+	if err == nil && coordinator != nil && (coordinator.TeamID != teamID || coordinator.InstanceID != instance || coordinator.Generation != generation) {
 		err = executionDenied()
 	}
 	return
@@ -138,7 +152,7 @@ func (s *Service) PrepareExecution(ctx context.Context, in ExecutionRequest) (*E
 	if err != nil {
 		return nil, err
 	}
-	payer, cloudID, err := executionCloud(ctx, tx, in.TeamID)
+	payer, cloudID, err := executionCloud(ctx, tx, in.TeamID, in.Coordinator)
 	if err != nil {
 		return nil, err
 	}
@@ -150,9 +164,15 @@ func (s *Service) PrepareExecution(ctx context.Context, in ExecutionRequest) (*E
 	if in.Private {
 		privateTo = sql.NullInt64{Int64: in.Actor, Valid: true}
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO donebot_team_executions(id,team_id,request_key,payer_id,actor_id,actor_version,executor_id,executor_version,node_kind,node_id,node_version,purpose,bot_id,thread_id,private_to,request_hash)
-        VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10::uuid,$11,$12,$13,$14,$15,$16)
-        ON CONFLICT(team_id,request_key) DO NOTHING`, uuid.NewString(), in.TeamID, in.Key, payer, in.Actor, member.MemberVersion, executor, executorVersion, in.NodeKind, in.NodeID, nodeVersion, in.Purpose, in.BotID, in.ThreadID, privateTo, in.RequestHash)
+	var coordinatorID sql.NullString
+	var coordinatorGeneration sql.NullInt64
+	if in.Coordinator != nil {
+		coordinatorID = sql.NullString{String: in.Coordinator.InstanceID, Valid: true}
+		coordinatorGeneration = sql.NullInt64{Int64: in.Coordinator.Generation, Valid: true}
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO donebot_team_executions(id,team_id,request_key,payer_id,actor_id,actor_version,executor_id,executor_version,node_kind,node_id,node_version,purpose,bot_id,thread_id,private_to,request_hash,coordinator_id,coordinator_generation)
+        VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10::uuid,$11,$12,$13,$14,$15,$16,$17::uuid,$18)
+        ON CONFLICT(team_id,request_key) DO NOTHING`, uuid.NewString(), in.TeamID, in.Key, payer, in.Actor, member.MemberVersion, executor, executorVersion, in.NodeKind, in.NodeID, nodeVersion, in.Purpose, in.BotID, in.ThreadID, privateTo, in.RequestHash, coordinatorID, coordinatorGeneration)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +181,7 @@ func (s *Service) PrepareExecution(ctx context.Context, in ExecutionRequest) (*E
 		return nil, err
 	}
 	if e.ActorID != in.Actor || e.ActorVersion != member.MemberVersion || e.PayerID != payer || e.ExecutorID != executor || e.ExecutorVersion != executorVersion ||
-		e.NodeID != in.NodeID || e.NodeKind != in.NodeKind || e.NodeVersion != nodeVersion || e.Purpose != in.Purpose || e.BotID != in.BotID || e.ThreadID != in.ThreadID || e.PrivateTo != privateTo || e.RequestHash != in.RequestHash {
+		e.NodeID != in.NodeID || e.NodeKind != in.NodeKind || e.NodeVersion != nodeVersion || e.Purpose != in.Purpose || e.BotID != in.BotID || e.ThreadID != in.ThreadID || e.PrivateTo != privateTo || e.RequestHash != in.RequestHash || e.CoordinatorID != coordinatorID || e.CoordinatorGeneration != coordinatorGeneration {
 		return nil, infraerrors.Conflict("TEAM_EXECUTION_CONFLICT", "Execution key is already bound to a different request or authorization")
 	}
 	if e.State == "cancelled" {
@@ -210,7 +230,10 @@ func (s *Service) executionGrant(ctx context.Context, tx *sql.Tx, token string, 
 		e.RequestHash != expected.RequestHash || e.PrivateTo.Valid != expected.Private || e.PrivateTo.Valid && e.PrivateTo.Int64 != expected.Actor {
 		return nil, executionDenied()
 	}
-	payer, cloudID, err := executionCloud(ctx, tx, e.TeamID)
+	if e.CoordinatorID.Valid != (expected.Coordinator != nil) || expected.Coordinator != nil && (e.CoordinatorID.String != expected.Coordinator.InstanceID || e.CoordinatorGeneration.Int64 != expected.Coordinator.Generation) {
+		return nil, executionDenied()
+	}
+	payer, cloudID, err := executionCloud(ctx, tx, e.TeamID, expected.Coordinator)
 	if err != nil {
 		return nil, err
 	}

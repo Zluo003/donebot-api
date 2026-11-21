@@ -270,7 +270,11 @@ func TestPostgresTeamNodeConfigurationAndCapabilityRevocation(t *testing.T) {
 	public, err := s.PublicKey()
 	require.NoError(t, err)
 	require.Equal(t, public, config.Team.PublicKey)
-	encoded, err := json.Marshal(config)
+	require.NotNil(t, config.Coordinator)
+	require.Equal(t, teamID, config.Coordinator.TeamID)
+	require.Equal(t, state.InstanceID, config.Coordinator.InstanceID)
+	require.Regexp(t, `^dbtc_[A-Za-z0-9_-]{43}$`, config.Coordinator.Credential)
+	encoded, err := json.Marshal(config.Team)
 	require.NoError(t, err)
 	for _, secret := range []string{"credential", "payer", "user_id", "balance", "sk-donebot"} {
 		require.NotContains(t, string(encoded), secret)

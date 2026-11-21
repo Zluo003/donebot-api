@@ -31,3 +31,15 @@
 `/tmp/donebot-team-execution-cloud-migration.log`：独立启动的 PostgreSQL 集群应用 273 后，既有个人/团队购买、代理撤权和节点配置测试通过；需要真实运行镜像的两个测试明确跳过。`/tmp/donebot-team-execution-compile-all.log`：全部 Go 包编译通过，不等同运行全部测试。
 
 未使用真实数据库、账号、供应商或生产网关。团队执行、实际扣费、Linux 恶意隔离与最终平台验收仍需继续。回退关闭能力并使用兼容版本，保留新增表和归属记录，不降级数据库删除团队数据。
+
+## 可信协调器（2026-11-21）
+
+迁移 274 给执行记录增加不可变的协调实例和运行代次。受信 worker 的 runtime-configuration 响应增加独立 coordinator 字段；其 HMAC 凭据绑定团队、实例和 generation，与成员请求签名及普通 API Key 分离。签名种子只在网关持有，响应使用 no-store。个人实例不获得该字段，团队实例不获得个人安装凭据。
+
+`POST /api/v1/donebot/cloud/coordinators/:instance/executions` 仅接受当前协调器凭据。团队来自实例记录，付款人来自 Owner；发起成员、Bot、会话和受众是可信协调器在读取真实会话后作出的断言，不能从成员请求体直接转发。成员 JWT、个人安装凭据、query 身份及多余 JSON 字段不能替代协调器。幂等键从 Idempotency-Key 取得。响应只有执行 ID、状态、短期 token 和到期时间，不含付款人、个人余额或安装身份。
+
+申请和事务内受理均重新检查 Cloud 的 generation；旧请求键不能在新代次重新绑定。Cloud 节点禁用也立即拒绝协调器和执行授权。Cloud agent 将凭据加密保存在宿主机 metadata，并在启动时原子写入运行容器的 `/run/donebot/team-coordinator.json`（0600），不写入团队卷或容器环境；bot-box 的独立 `/run` 和环境过滤继续适用。
+
+`/tmp/donebot-team-coordinator-accepted-http.log`：真实 HTTP、一次性 PostgreSQL schema 和 race 验证通过，包含八路并发、字段注入、私聊跨成员拒绝、旧代次和禁用节点。`/tmp/donebot-team-coordinator-pg.log`：独立 PostgreSQL 集群的既有团队订阅、节点配置和代理撤权通过。`/tmp/donebot-team-coordinator-accepted-cloud.log`：51 项 Cloud 测试通过，包含真实 HTTP/Unix socket/WebSocket 的合成控制链和配置代次拒绝。
+
+此切片尚未在运行服务接入实际会话到协调器的调用，也未接入供应商派发和团队用量结算。没有新增成员可用的发行授权接口；`cloud_access` 和其他执行能力继续关闭。真实 Linux、生产镜像、实际计费与全平台验收不由上述模拟运行服务测试替代。
