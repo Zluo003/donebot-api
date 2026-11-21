@@ -29,6 +29,9 @@ func teamHTTPFixture(t *testing.T, enabled, login bool) (*gin.Engine, sqlmock.Sq
 	r.GET("/workspaces", h.TeamWorkspaces)
 	r.POST("/teams", h.Teams)
 	r.GET("/teams", h.Teams)
+	r.GET("/teams/:team/devices", h.TeamDevices)
+	r.PUT("/teams/:team/devices", h.TeamDevices)
+	r.DELETE("/teams/:team/devices/:device", h.TeamDeviceRevoke)
 	return r, mock
 }
 func TestTeamsHTTPDisabledAndLogin(t *testing.T) {
@@ -39,6 +42,12 @@ func TestTeamsHTTPDisabledAndLogin(t *testing.T) {
 	}{
 		{false, true, "/workspaces", "GET", 200}, {false, true, "/teams", "POST", 503},
 		{true, false, "/teams", "GET", 401}, {true, false, "/workspaces", "GET", 401},
+		{false, true, "/teams/team/devices", "GET", 503},
+		{false, true, "/teams/team/devices", "PUT", 503},
+		{false, true, "/teams/team/devices/device", "DELETE", 503},
+		{true, false, "/teams/team/devices", "GET", 401},
+		{true, false, "/teams/team/devices", "PUT", 401},
+		{true, false, "/teams/team/devices/device", "DELETE", 401},
 	} {
 		r, _ := teamHTTPFixture(t, test.enabled, test.login)
 		w := httptest.NewRecorder()
@@ -47,6 +56,23 @@ func TestTeamsHTTPDisabledAndLogin(t *testing.T) {
 		if !test.enabled && test.path == "/workspaces" {
 			require.Contains(t, w.Body.String(), `"capabilities":[]`)
 		}
+	}
+}
+
+func TestTeamsHTTPDeviceConsentRequiresExplicitBody(t *testing.T) {
+	r, _ := teamHTTPFixture(t, true, true)
+	for _, body := range []string{
+		`{"installation_id":"x","name":"Mac"}`,
+		`{"installation_id":"x","name":"Mac","enabled":null}`,
+		`{"installation_id":"x","name":"Mac","enabled":"true"}`,
+		`{"installation_id":"x","name":"Mac","enabled":true,"user_id":999}`,
+		`{"installation_id":"x","name":"Mac","enabled":true,"owner_id":999}`,
+		`{"installation_id":"x","name":"Mac","enabled":true,"payer_id":999}`,
+		`{"enabled":true} {}`, `[]`, `null`, `{"name":"` + strings.Repeat("x", 66000) + `"}`,
+	} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("PUT", "/teams/team/devices", strings.NewReader(body)))
+		require.Equal(t, 400, w.Code, body[:min(len(body), 100)])
 	}
 }
 func TestTeamsHTTPRejectsIdentityInjectionAndOversizedBodies(t *testing.T) {

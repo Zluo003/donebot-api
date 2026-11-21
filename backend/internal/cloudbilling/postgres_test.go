@@ -105,7 +105,7 @@ func postgresFixture(t *testing.T) *Service {
 	require.NoError(t, err)
 	_, err = db.Exec(`CREATE TABLE donebot_installs(installation_id UUID PRIMARY KEY,user_id BIGINT REFERENCES users(id))`)
 	require.NoError(t, err)
-	for _, name := range []string{"271_donebot_teams.sql", "272_donebot_team_cloud_instances.sql"} {
+	for _, name := range []string{"271_donebot_teams.sql", "272_donebot_team_cloud_instances.sql", "273_donebot_team_execution_grants.sql"} {
 		migration, err = os.ReadFile("../../migrations/" + name)
 		require.NoError(t, err)
 		_, err = db.Exec(string(migration))

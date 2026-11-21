@@ -172,7 +172,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// Async image task polling only reads data that already belongs to the
 		// authenticated key and must remain available after the completed
 		// generation consumes the key's remaining balance.
-		skipBilling := c.GetBool("donebot_coding_discovery") || (c.Request.Method == http.MethodGet && c.Request.URL.Path == "/v1/models" && c.GetHeader("X-DoneBot-Coding-Engine") != "") || c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isDoneBotRuntimeRead(c.Request.Method, c.Request.URL.Path) || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path) || isSeedanceTaskLookup(c.Request.Method, c.Request.URL.Path) || isAPIMartTaskLookup(c.Request.Method, c.Request.URL.Path) || isVideoTaskRead(c.Request.Method, c.Request.URL.Path)
+		skipBilling := c.GetBool("donebot_coding_discovery") || (c.Request.Method == http.MethodGet && c.Request.URL.Path == "/v1/models" && c.GetHeader("X-DoneBot-Coding-Engine") != "") || c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isDoneBotRuntimeRead(c.Request.Method, c.Request.URL.Path) || isDoneBotTeamHeartbeat(c.Request.Method, c.Request.URL.Path) || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path) || isSeedanceTaskLookup(c.Request.Method, c.Request.URL.Path) || isAPIMartTaskLookup(c.Request.Method, c.Request.URL.Path) || isVideoTaskRead(c.Request.Method, c.Request.URL.Path)
 
 		// ── 4. SimpleMode → early return ─────────────────────────────
 
@@ -345,6 +345,15 @@ func isDoneBotRuntimeRead(method, path string) bool {
 		return false
 	}
 	return path == "/v1/donebot/runtime/models" || path == "/v1/donebot/runtime/account" || path == "/v1/donebot/runtime/templates" || strings.HasPrefix(path, "/v1/donebot/runtime/templates/") || strings.HasPrefix(path, "/v1/donebot/runtime/receipts/")
+}
+
+func isDoneBotTeamHeartbeat(method, path string) bool {
+	if method != http.MethodPost {
+		return false
+	}
+	tail, ok := strings.CutPrefix(path, "/v1/donebot/runtime/teams/")
+	parts := strings.Split(tail, "/")
+	return ok && len(parts) == 4 && parts[0] != "" && parts[1] == "devices" && parts[2] != "" && parts[3] == "heartbeat"
 }
 
 func isAsyncImageTaskRead(method, path string) bool {

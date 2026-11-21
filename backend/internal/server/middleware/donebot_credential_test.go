@@ -136,6 +136,37 @@ func TestDoneBotBalanceStatusMatchesBothNativeAuthProtocols(t *testing.T) {
 	}
 }
 
+func TestDoneBotTeamHeartbeatDoesNotRequirePersonalBalance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	group := &service.Group{ID: 82, Platform: service.PlatformComposite, Status: service.StatusActive, Hydrated: true, SubscriptionType: service.SubscriptionTypeStandard}
+	user := &service.User{ID: 42, Role: service.RoleUser, Status: service.StatusActive}
+	credential := "sk-donebot-empty"
+	key := &service.APIKey{ID: 101, Key: credential, UserID: 42, User: user, GroupID: &group.ID, Group: group, Status: service.StatusActive}
+	repo := &doneBotCredentialRepository{keys: map[string]*service.APIKey{credential: key}}
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	keys := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
+	router := gin.New()
+	router.Use(gin.HandlerFunc(middleware.NewAPIKeyAuthMiddleware(keys, nil, cfg)))
+	router.POST("/v1/donebot/runtime/teams/:team/devices/:device/:action", func(c *gin.Context) { c.Status(204) })
+	for _, tc := range []struct {
+		action string
+		status int
+	}{{"heartbeat", 204}, {"execute", 402}} {
+		request := httptest.NewRequest("POST", "/v1/donebot/runtime/teams/team/devices/device/"+tc.action, nil)
+		request.Header.Set("Authorization", "Bearer "+credential)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		require.Equal(t, tc.status, response.Code)
+	}
+	key.Status = service.StatusAPIKeyDisabled
+	keys.InvalidateAuthCacheByKey(context.Background(), credential)
+	request := httptest.NewRequest("POST", "/v1/donebot/runtime/teams/team/devices/device/heartbeat", nil)
+	request.Header.Set("Authorization", "Bearer "+credential)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	require.Equal(t, 401, response.Code)
+}
+
 func doneBotModelsRouter(keys *service.APIKeyService, cfg *config.Config) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.HandlerFunc(middleware.NewAPIKeyAuthMiddleware(keys, nil, cfg)))
