@@ -38,25 +38,27 @@ func (h *DoneBotHandler) teamCoordinator(c *gin.Context) (*donebotteam.Coordinat
 
 func (h *DoneBotHandler) teamPrepareExecution(c *gin.Context, coordinator *donebotteam.Coordinator) {
 	var in struct {
-		ActorID     string `json:"actor_id"`
-		NodeKind    string `json:"node_kind"`
-		NodeID      string `json:"node_id"`
-		Purpose     string `json:"purpose"`
-		BotID       string `json:"bot_id"`
-		ThreadID    string `json:"thread_id"`
-		Private     *bool  `json:"private"`
-		RequestHash string `json:"request_hash"`
+		ActorID      string `json:"actor_id"`
+		ActorVersion int64  `json:"member_version"`
+		NodeKind     string `json:"node_kind"`
+		NodeID       string `json:"node_id"`
+		NodeVersion  int64  `json:"node_version"`
+		Purpose      string `json:"purpose"`
+		BotID        string `json:"bot_id"`
+		ThreadID     string `json:"thread_id"`
+		Private      *bool  `json:"private"`
+		RequestHash  string `json:"request_hash"`
 	}
 	if !strictTeamBody(c, &in) {
 		return
 	}
 	actor, err := strconv.ParseInt(in.ActorID, 10, 64)
-	if err != nil || actor < 1 || strconv.FormatInt(actor, 10) != in.ActorID || in.Private == nil {
+	if err != nil || actor < 1 || strconv.FormatInt(actor, 10) != in.ActorID || in.Private == nil || in.ActorVersion < 1 || in.NodeVersion < 1 {
 		response.BadRequest(c, "Explicit member and conversation audience required")
 		return
 	}
 	grant, err := h.cloud.Teams().PrepareExecution(c.Request.Context(), donebotteam.ExecutionRequest{
-		TeamID: coordinator.TeamID, Actor: actor, Key: c.GetHeader("Idempotency-Key"), NodeKind: in.NodeKind, NodeID: in.NodeID,
+		TeamID: coordinator.TeamID, Actor: actor, ActorVersion: in.ActorVersion, Key: c.GetHeader("Idempotency-Key"), NodeKind: in.NodeKind, NodeID: in.NodeID, NodeVersion: in.NodeVersion,
 		Purpose: in.Purpose, BotID: in.BotID, ThreadID: in.ThreadID, Private: *in.Private, RequestHash: in.RequestHash, Coordinator: coordinator,
 	})
 	if !response.ErrorFrom(c, err) {

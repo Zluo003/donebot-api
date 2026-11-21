@@ -461,3 +461,16 @@ func (s *UsageService) GetStatsWithFilters(ctx context.Context, filters usagesta
 	}
 	return stats, nil
 }
+
+func (s *UsageService) GetDoneBotPersonalStats(ctx context.Context, userID, groupID int64) (*usagestats.UsageStats, error) {
+	if userID < 1 || groupID < 1 {
+		return nil, ErrUsageLogNotFound
+	}
+	reader, ok := s.usageRepo.(interface {
+		GetDoneBotPersonalStats(context.Context, int64, int64) (*usagestats.UsageStats, error)
+	})
+	if !ok {
+		return nil, infraerrors.ServiceUnavailable("DONEBOT_USAGE_UNAVAILABLE", "Personal usage is unavailable")
+	}
+	return reader.GetDoneBotPersonalStats(ctx, userID, groupID)
+}

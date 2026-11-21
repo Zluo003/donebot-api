@@ -758,6 +758,9 @@ func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, erro
 	if isDoneBotTeamKey(key) {
 		return nil, ErrAPIKeyNotFound
 	}
+	if strings.HasPrefix(key, "dbte_") {
+		return s.teamExecutionKey(ctx, key)
+	}
 	if strings.HasPrefix(key, "sk-donebot-") {
 		// Installation rotations and revocations must take effect across nodes
 		// before the next request, independently of cache invalidation delivery.

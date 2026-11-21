@@ -14,17 +14,19 @@ import (
 )
 
 type ExecutionRequest struct {
-	TeamID      string
-	Actor       int64
-	Key         string
-	NodeKind    string
-	NodeID      string
-	Purpose     string
-	BotID       string
-	ThreadID    string
-	Private     bool
-	RequestHash string
-	Coordinator *Coordinator
+	TeamID       string
+	Actor        int64
+	ActorVersion int64
+	Key          string
+	NodeKind     string
+	NodeID       string
+	NodeVersion  int64
+	Purpose      string
+	BotID        string
+	ThreadID     string
+	Private      bool
+	RequestHash  string
+	Coordinator  *Coordinator
 }
 
 // Only the Cloud control plane authenticates and constructs a coordinator identity.
@@ -152,6 +154,9 @@ func (s *Service) PrepareExecution(ctx context.Context, in ExecutionRequest) (*E
 	if err != nil {
 		return nil, err
 	}
+	if in.ActorVersion != 0 && in.ActorVersion != member.MemberVersion {
+		return nil, executionDenied()
+	}
 	payer, cloudID, err := executionCloud(ctx, tx, in.TeamID, in.Coordinator)
 	if err != nil {
 		return nil, err
@@ -159,6 +164,9 @@ func (s *Service) PrepareExecution(ctx context.Context, in ExecutionRequest) (*E
 	executor, executorVersion, nodeVersion, err := executionNode(ctx, tx, in, member.MemberVersion, cloudID)
 	if err != nil {
 		return nil, err
+	}
+	if in.NodeVersion != 0 && in.NodeVersion != nodeVersion {
+		return nil, executionDenied()
 	}
 	var privateTo sql.NullInt64
 	if in.Private {
@@ -215,14 +223,21 @@ func (s *Service) executionGrant(ctx context.Context, tx *sql.Tx, token string, 
 	if !validExecutionToken(token) || !validExecution(expected) {
 		return nil, executionDenied()
 	}
-	member, err := access(ctx, tx, expected.TeamID, expected.Actor, true)
-	if err != nil {
+	if _, err := access(ctx, tx, expected.TeamID, expected.Actor, true); err != nil {
 		return nil, err
 	}
 	e, err := scanExecution(tx.QueryRowContext(ctx, `SELECT `+executionColumns+` FROM donebot_team_execution_grants g JOIN donebot_team_executions e ON e.id=g.execution_id WHERE g.token_hash=$1 AND e.team_id=$2::uuid AND e.actor_id=$3 AND g.expires_at>clock_timestamp() FOR UPDATE OF e`, tokenHash(token), expected.TeamID, expected.Actor))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, executionDenied()
 	} else if err != nil {
+		return nil, err
+	}
+	return s.authorizeStoredExecution(ctx, tx, e, expected)
+}
+
+func (s *Service) authorizeStoredExecution(ctx context.Context, tx *sql.Tx, e *Execution, expected ExecutionRequest) (*Execution, error) {
+	member, err := access(ctx, tx, expected.TeamID, expected.Actor, true)
+	if err != nil {
 		return nil, err
 	}
 	if e.TeamID != expected.TeamID || e.Key != expected.Key || e.ActorID != expected.Actor || e.ActorVersion != member.MemberVersion ||
@@ -268,6 +283,10 @@ func (s *Service) AuthorizeExecution(ctx context.Context, token string, expected
 
 // A committed acceptance is consumed even if the provider response is lost; retries query the original task.
 func (s *Service) AdmitExecution(ctx context.Context, token string, expected ExecutionRequest) (*Execution, bool, error) {
+	return s.admitExecution(ctx, token, expected, 0)
+}
+
+func (s *Service) admitExecution(ctx context.Context, token string, expected ExecutionRequest, billingKeyID int64) (*Execution, bool, error) {
 	if err := s.available(); err != nil {
 		return nil, false, err
 	}
@@ -281,6 +300,11 @@ func (s *Service) AdmitExecution(ctx context.Context, token string, expected Exe
 		return nil, false, err
 	}
 	first := e.State == "prepared"
+	if billingKeyID > 0 {
+		if err = bindModelDispatch(ctx, tx, e, billingKeyID, first); err != nil {
+			return nil, false, err
+		}
+	}
 	if first {
 		if _, err = tx.ExecContext(ctx, `UPDATE donebot_team_executions SET state='accepted',accepted_at=clock_timestamp() WHERE id=$1::uuid`, e.ID); err != nil {
 			return nil, false, err

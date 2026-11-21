@@ -119,7 +119,7 @@ func TestTeamCoordinatorHTTPPostgres(t *testing.T) {
 	}, h.TeamModels)
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
-	input := map[string]any{"actor_id": "2", "node_kind": "local", "node_id": device.ID, "purpose": "video", "bot_id": "bot-a", "thread_id": "thread-a", "private": false, "request_hash": strings.Repeat("a", 64)}
+	input := map[string]any{"actor_id": "2", "member_version": 1, "node_kind": "local", "node_id": device.ID, "node_version": device.Version, "purpose": "video", "bot_id": "bot-a", "thread_id": "thread-a", "private": false, "request_hash": strings.Repeat("a", 64)}
 	key := uuid.NewString()
 	call := func(credential, path, requestKey string, body any) (int, []byte, error) {
 		bytes, e := json.Marshal(body)
@@ -156,7 +156,7 @@ func TestTeamCoordinatorHTTPPostgres(t *testing.T) {
 		require.NoError(t, e)
 		require.NotEqual(t, 200, status, string(body))
 	}
-	for _, patch := range []map[string]any{{"actor_id": "4"}, {"actor_id": "02"}, {"payer_id": 1}, {"team_id": team.ID}, {"private": nil}, {"private": true}, {"node_id": uuid.NewString()}} {
+	for _, patch := range []map[string]any{{"actor_id": "4"}, {"actor_id": "02"}, {"member_version": 0}, {"member_version": 2}, {"node_version": 0}, {"node_version": device.Version + 1}, {"payer_id": 1}, {"team_id": team.ID}, {"private": nil}, {"private": true}, {"node_id": uuid.NewString()}} {
 		next := map[string]any{}
 		for k, v := range input {
 			next[k] = v

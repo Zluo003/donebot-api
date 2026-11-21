@@ -656,8 +656,19 @@ func (r *usageLogRepository) GetGlobalStats(ctx context.Context, startTime, endT
 
 // GetStatsWithFilters gets usage statistics with optional filters
 func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters UsageLogFilters) (*UsageStats, error) {
+	return r.getStatsWithFilters(ctx, filters, false)
+}
+
+func (r *usageLogRepository) GetDoneBotPersonalStats(ctx context.Context, userID, groupID int64) (*UsageStats, error) {
+	return r.getStatsWithFilters(ctx, UsageLogFilters{UserID: userID, GroupID: groupID}, true)
+}
+
+func (r *usageLogRepository) getStatsWithFilters(ctx context.Context, filters UsageLogFilters, doneBotPersonal bool) (*UsageStats, error) {
 	conditions := make([]string, 0, 9)
 	args := make([]any, 0, 9)
+	if doneBotPersonal {
+		conditions = append(conditions, `NOT EXISTS(SELECT 1 FROM donebot_team_billing_keys b WHERE b.api_key_id=usage_logs.api_key_id)`)
+	}
 
 	if filters.UserID > 0 {
 		conditions = append(conditions, fmt.Sprintf("user_id = $%d", len(args)+1))

@@ -24,7 +24,7 @@ type DoneBotReasoningValidator interface {
 func DoneBotLLMRouting() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key, ok := GetAPIKeyFromContext(c)
-		if ok && key != nil && strings.HasPrefix(key.Key, "sk-donebot-") && c.Request.Method == http.MethodPost {
+		if ok && key != nil && service.IsDoneBotModelKey(c.Request.Context(), key) && c.Request.Method == http.MethodPost {
 			iface, model := doneBotReasoningRequestInterface(c.Request.URL.Path)
 			if c.Request.URL.Path == "/v1/messages/count_tokens" {
 				iface = "anthropic.messages"
@@ -46,7 +46,7 @@ func DoneBotReasoningValidation(validator DoneBotReasoningValidator) gin.Handler
 	}
 	return func(c *gin.Context) {
 		key, authenticated := GetAPIKeyFromContext(c)
-		if !authenticated || key == nil || !strings.HasPrefix(key.Key, "sk-donebot-") || c.Request == nil || c.Request.Method != http.MethodPost {
+		if !authenticated || key == nil || !service.IsDoneBotModelKey(c.Request.Context(), key) || c.Request == nil || c.Request.Method != http.MethodPost {
 			c.Next()
 			return
 		}

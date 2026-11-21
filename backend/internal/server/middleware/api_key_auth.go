@@ -164,7 +164,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			return
 		}
 		ctx := context.WithValue(c.Request.Context(), ctxkey.UserID, apiKey.User.ID)
-		if strings.HasPrefix(apiKey.Key, "sk-donebot-") {
+		if service.IsDoneBotModelKey(c.Request.Context(), apiKey) {
 			ctx = service.WithDoneBotPriority(ctx)
 		}
 		c.Request = c.Request.WithContext(ctx)
@@ -265,7 +265,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
 				if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
 					status := http.StatusForbidden
-					if strings.HasPrefix(apiKey.Key, "sk-donebot-") {
+					if service.IsDoneBotModelKey(c.Request.Context(), apiKey) {
 						status = http.StatusPaymentRequired
 					}
 					AbortWithError(c, status, "INSUFFICIENT_BALANCE", "Insufficient account balance")

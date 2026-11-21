@@ -140,6 +140,9 @@ func RegisterGatewayRoutes(
 	gateway.Use(clientRequestID)
 	gateway.Use(opsErrorLogger)
 	gateway.Use(endpointNorm)
+	if h.DoneBot != nil {
+		gateway.Use(h.DoneBot.TeamExecutionCredential())
+	}
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
 	if h.DoneBot != nil {
 		gateway.Use(h.DoneBot.CodingCredential(apiKeyAuth))
@@ -169,6 +172,9 @@ func RegisterGatewayRoutes(
 	gateway.Use(compositeTarget)
 	gateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot, h.OpenAIGateway))
 	gateway.Use(requireGroupAnthropic)
+	if h.DoneBot != nil {
+		gateway.Use(h.DoneBot.TeamExecutionAdmission())
+	}
 	{
 		// /v1/messages: auto-route based on group platform
 		gateway.POST("/messages", func(c *gin.Context) {
@@ -326,12 +332,18 @@ func RegisterGatewayRoutes(
 	gemini.Use(clientRequestID)
 	gemini.Use(opsErrorLogger)
 	gemini.Use(endpointNorm)
+	if h.DoneBot != nil {
+		gemini.Use(h.DoneBot.TeamExecutionCredential())
+	}
 	gemini.Use(middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg))
 	gemini.Use(groupModelAllowlist)
 	gemini.Use(doneBotLLMRouting)
 	gemini.Use(compositeGeminiTarget)
 	gemini.Use(doneBotReasoning, doneBotReceipt)
 	gemini.Use(requireGroupGoogle)
+	if h.DoneBot != nil {
+		gemini.Use(h.DoneBot.TeamExecutionAdmission())
+	}
 	{
 		gemini.GET("/models", h.Gateway.GeminiV1BetaListModels)
 		gemini.GET("/models/:model", h.Gateway.GeminiV1BetaGetModel)

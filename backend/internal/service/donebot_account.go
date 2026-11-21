@@ -50,6 +50,7 @@ type DoneBotReceipt struct {
 type doneBotUsageReader interface {
 	ListWithFilters(context.Context, pagination.PaginationParams, usagestats.UsageLogFilters) ([]UsageLog, *pagination.PaginationResult, error)
 	GetStatsWithFilters(context.Context, usagestats.UsageLogFilters) (*usagestats.UsageStats, error)
+	GetDoneBotPersonalStats(context.Context, int64, int64) (*usagestats.UsageStats, error)
 }
 
 type DoneBotAccountService struct {
@@ -93,7 +94,7 @@ func (s *DoneBotAccountService) Account(ctx context.Context, userID int64, insta
 	if err != nil {
 		return nil, err
 	}
-	stats, err := s.usage.GetStatsWithFilters(ctx, usagestats.UsageLogFilters{UserID: userID, GroupID: install.GroupID})
+	stats, err := s.usage.GetDoneBotPersonalStats(ctx, userID, install.GroupID)
 	if err != nil {
 		return nil, err
 	}

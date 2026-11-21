@@ -53,3 +53,15 @@
 验证日志：`/tmp/donebot-team-billing-tests.log`（服务并发、身份保护、目录范围及 SQLite 管理过滤），`/tmp/donebot-team-billing-pg.log`（真实 PostgreSQL、八路并发及不可变约束），`/tmp/donebot-team-models-http.log`（真实 HTTP/PostgreSQL、成员与协调器鉴权、撤权和路由继承），`/tmp/donebot-team-billing-compile.log`（全部 Go 包编译）。测试使用独立 schema、合成身份和目录数据，未调用真实供应商。
 
 专用计费身份尚未接入模型派发和实际扣费，运行服务也未消费团队目录。执行、账单隔离、真实 Linux 隔离及平台整体验收继续实施，能力保持关闭。
+
+## 模型请求受理与回执（2026-11-21）
+
+迁移 276 记录执行到内部计费 Key 的不可变派发绑定，禁止修改或删除。协调器申请授权须明确提交 `member_version` 和 `node_version`，过期的成员及设备授权不能获得新令牌。请求哈希固定为 SHA-256(`METHOD + "\n" + RequestURI + "\n" + 原始正文`)，在任何路由、模型别名和思考参数改写前核验。
+
+仅原生 LLM POST 端点接受短期执行令牌：`/v1/messages`、`/v1/responses`、`/v1/chat/completions` 及已登记 Gemini 文本模型的 generateContent/streamGenerateContent。安装、账号、编码凭据、媒体、缓存资源、任意 query 和端点别名不能借此访问。令牌经数据库重新授权后复用标准 API-key 鉴权、余额、模型白名单、原生路由和思考参数校验；内部 Key 不放入 HTTP Authorization 头，也不交给成员。真实供应商处理器之前再事务核验成员、执行端、Cloud 代次和计费 Key，提交受理后最多进入处理器一次。
+
+执行 ID 同时作为稳定的 X-Client-Request-ID 与回执 ID，复用既有 `client:<id>` 计费幂等。已受理、响应丢失或不确定的重放返回 409，不再次派发。HTTP 返回只标记 uncertain，不把传输完成当作供应商结果或结算已完成。协调器通过 `GET /api/v1/donebot/cloud/coordinators/:instance/executions/:execution` 查询原执行和仅该团队/付款人/Key/分组/回执匹配的用量；`billing_state=recorded` 只表示用量已记录。个人 DoneBot Account 用量汇总排除团队计费身份，保留多个个人安装的汇总行为。
+
+该链路还需显式设置 `DONEBOT_TEAM_EXECUTION_ENABLED=1`，默认关闭，不扩大对外声明的 identity 能力。测试日志 `/tmp/donebot-team-model-current-grants.log`、`/tmp/donebot-team-model-finance.log`、`/tmp/donebot-team-model-boundaries.log` 和 `/tmp/donebot-team-model-routes.log` 均通过。验证包括真实 HTTP、一次性 PostgreSQL、真实 Key 鉴权和扣费事务、八路重放仅一次模拟供应商调用、Owner 一次扣费/成员零余额不变、重复扣费命令幂等、重启不重派、错误请求拒绝、撤权和个人用量隔离。`/tmp/donebot-team-model-compile-all.log` 为全部 Go 包编译通过。
+
+模拟供应商处理器手动调用既有扣费仓库，不证明生产供应商协议及其异步用量链完整可用。运行服务尚未把规范会话身份、任务受众和请求重试接到这条链路；媒体、终态确认、跨位置执行与真实 Linux 隔离继续实施。不得启用生产团队执行。

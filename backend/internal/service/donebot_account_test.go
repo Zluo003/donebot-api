@@ -18,9 +18,15 @@ func (doneBotAccountConcurrencyUser) GetByID(_ context.Context, id int64) (*User
 }
 
 type doneBotAccountUsageStub struct {
-	filters usagestats.UsageLogFilters
-	rows    []UsageLog
-	calls   int
+	filters  usagestats.UsageLogFilters
+	rows     []UsageLog
+	calls    int
+	personal bool
+}
+
+func (s *doneBotAccountUsageStub) GetDoneBotPersonalStats(ctx context.Context, userID, groupID int64) (*usagestats.UsageStats, error) {
+	s.personal = true
+	return s.GetStatsWithFilters(ctx, usagestats.UsageLogFilters{UserID: userID, GroupID: groupID})
 }
 
 func (s *doneBotAccountUsageStub) ListWithFilters(_ context.Context, _ pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]UsageLog, *pagination.PaginationResult, error) {
@@ -81,6 +87,7 @@ func TestDoneBotAccountSummarizesOnlyItsUserAndDoneBotGroupInCNY(t *testing.T) {
 	account, err := s.Account(ctx, 42, claim.Install.InstallationID)
 	require.NoError(t, err)
 	require.Equal(t, usagestats.UsageLogFilters{UserID: 42, GroupID: 9}, usage.filters)
+	require.True(t, usage.personal)
 	require.Equal(t, 18, account.Concurrency)
 	require.Equal(t, "CNY", account.Currency)
 	require.Equal(t, int64(2), account.Usage.Requests)
