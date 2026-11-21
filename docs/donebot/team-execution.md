@@ -43,3 +43,13 @@
 `/tmp/donebot-team-coordinator-accepted-http.log`：真实 HTTP、一次性 PostgreSQL schema 和 race 验证通过，包含八路并发、字段注入、私聊跨成员拒绝、旧代次和禁用节点。`/tmp/donebot-team-coordinator-pg.log`：独立 PostgreSQL 集群的既有团队订阅、节点配置和代理撤权通过。`/tmp/donebot-team-coordinator-accepted-cloud.log`：51 项 Cloud 测试通过，包含真实 HTTP/Unix socket/WebSocket 的合成控制链和配置代次拒绝。
 
 此切片尚未在运行服务接入实际会话到协调器的调用，也未接入供应商派发和团队用量结算。没有新增成员可用的发行授权接口；`cloud_access` 和其他执行能力继续关闭。真实 Linux、生产镜像、实际计费与全平台验收不由上述模拟运行服务测试替代。
+
+## 团队计费身份与模型目录（2026-11-21）
+
+迁移 275 保存团队、Owner 付款账号、DoneBot 分组和专用计费 Key 的不可变绑定。并发首次读取只创建一个身份，不创建个人安装。专用 Key 仅在网关内部持有，普通 API 鉴权、Key 详情、列表、搜索、修改、删除和批量分组迁移均不能取得或改动它。停用或删除后拒绝调用，不自动换 Key、更换付款人或重新绑定分组。
+
+成员通过 `GET /api/v1/donebot/teams/:team/models` 读取授权团队模型；受信运行服务使用 `GET /api/v1/donebot/cloud/coordinators/:instance/models`。目录复用现有启用模型、分组准入与人民币价格计算，团队有独立 catalog_scope_id，不返回 Owner 余额、身份或凭据。移除成员后立即拒绝后续读取。
+
+验证日志：`/tmp/donebot-team-billing-tests.log`（服务并发、身份保护、目录范围及 SQLite 管理过滤），`/tmp/donebot-team-billing-pg.log`（真实 PostgreSQL、八路并发及不可变约束），`/tmp/donebot-team-models-http.log`（真实 HTTP/PostgreSQL、成员与协调器鉴权、撤权和路由继承），`/tmp/donebot-team-billing-compile.log`（全部 Go 包编译）。测试使用独立 schema、合成身份和目录数据，未调用真实供应商。
+
+专用计费身份尚未接入模型派发和实际扣费，运行服务也未消费团队目录。执行、账单隔离、真实 Linux 隔离及平台整体验收继续实施，能力保持关闭。

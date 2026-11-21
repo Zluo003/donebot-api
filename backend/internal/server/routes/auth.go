@@ -27,6 +27,7 @@ func RegisterAuthRoutes(
 	if h.DoneBot != nil {
 		v1.POST("/donebot/cloud/nodes/:node/:verb", h.DoneBot.CloudNode)
 		v1.POST("/donebot/cloud/coordinators/:instance/executions", h.DoneBot.TeamPrepareExecution)
+		v1.GET("/donebot/cloud/coordinators/:instance/models", h.DoneBot.TeamCoordinatorModels)
 		cloud := v1.Group("/donebot/cloud/billing/instances/:id")
 		cloud.GET("/:action", func(c *gin.Context) {
 			if c.Param("action") != "status" {

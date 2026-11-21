@@ -27,4 +27,16 @@ func TestCloudNodeAndUserRoutesHaveSeparateAuthentication(t *testing.T) {
 		r.ServeHTTP(w, httptest.NewRequest("POST", "/api/v1/donebot/cloud/nodes/any/"+verb, nil))
 		require.Equal(t, 503, w.Code, verb)
 	}
+	for _, route := range []struct {
+		method, path string
+		status       int
+	}{
+		{"GET", "/api/v1/donebot/teams/any/models", 401},
+		{"GET", "/api/v1/donebot/cloud/coordinators/any/models", 503},
+		{"POST", "/api/v1/donebot/cloud/coordinators/any/executions", 503},
+	} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(route.method, route.path, nil))
+		require.Equal(t, route.status, w.Code, route.path)
+	}
 }

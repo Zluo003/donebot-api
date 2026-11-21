@@ -16,6 +16,7 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 		authenticated.GET("/donebot/teams/:team", h.DoneBot.Team)
 		authenticated.PATCH("/donebot/teams/:team", h.DoneBot.Team)
 		authenticated.GET("/donebot/teams/:team/members", h.DoneBot.TeamMembers)
+		authenticated.GET("/donebot/teams/:team/models", h.DoneBot.TeamModels)
 		authenticated.GET("/donebot/teams/:team/devices", h.DoneBot.TeamDevices)
 		authenticated.PUT("/donebot/teams/:team/devices", h.DoneBot.TeamDevices)
 		authenticated.DELETE("/donebot/teams/:team/devices/:device", h.DoneBot.TeamDeviceRevoke)

@@ -495,6 +495,11 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	if err := validateCreateAPIKeyRequest(req); err != nil {
 		return nil, err
 	}
+	if req.CustomKey != nil && isDoneBotTeamKey(*req.CustomKey) {
+		if trusted, _ := ctx.Value(doneBotTeamKeyContext{}).(bool); !trusted {
+			return nil, ErrAPIKeyNotFound
+		}
+	}
 	// 验证用户存在
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -735,6 +740,9 @@ func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) 
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
 	}
+	if apiKey != nil && !mayManageDoneBotTeamKey(ctx, apiKey.Key) {
+		return nil, ErrAPIKeyNotFound
+	}
 	s.compileAPIKeyIPRules(apiKey)
 	if apiKey != nil {
 		apiKey.CurrentConcurrency = s.currentConcurrencyForAPIKey(ctx, apiKey.ID)
@@ -745,6 +753,9 @@ func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) 
 // GetByKey 根据Key字符串获取API Key（用于认证）
 func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, error) {
 	if len(key) == 0 || len(key) > MaxAPIKeyCredentialBytes {
+		return nil, ErrAPIKeyNotFound
+	}
+	if isDoneBotTeamKey(key) {
 		return nil, ErrAPIKeyNotFound
 	}
 	if strings.HasPrefix(key, "sk-donebot-") {
@@ -819,6 +830,9 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	apiKey, err := s.apiKeyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
+	}
+	if !mayManageDoneBotTeamKey(ctx, apiKey.Key) {
+		return nil, ErrAPIKeyNotFound
 	}
 
 	// 验证所有权
@@ -976,6 +990,9 @@ func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) erro
 	key, ownerID, err := s.apiKeyRepo.GetKeyAndOwnerID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get api key: %w", err)
+	}
+	if !mayManageDoneBotTeamKey(ctx, key) {
+		return ErrAPIKeyNotFound
 	}
 
 	// 验证当前用户是否为该 API Key 的所有者

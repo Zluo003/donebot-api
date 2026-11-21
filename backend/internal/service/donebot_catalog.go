@@ -137,7 +137,19 @@ func (s *DoneBotCatalogService) Models(ctx context.Context, userID int64, instal
 	if err != nil || key == nil || key.UserID != userID || key.GroupID == nil || *key.GroupID != install.GroupID || !key.IsActive() || key.IsExpired() {
 		return nil, ErrDoneBotInstallInactive
 	}
-	inputs, err := s.loadCatalog(ctx, install.GroupID)
+	return s.modelsForScope(ctx, install.GroupID, userID, install.InstallationID)
+}
+
+func (s *DoneBotCatalogService) TeamModels(ctx context.Context, teamID string) (*DoneBotCatalogResult, error) {
+	key, err := s.installs.TeamBillingKey(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	return s.modelsForScope(ctx, *key.GroupID, 0, "team:"+teamID)
+}
+
+func (s *DoneBotCatalogService) modelsForScope(ctx context.Context, groupID, userID int64, scope string) (*DoneBotCatalogResult, error) {
+	inputs, err := s.loadCatalog(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +159,7 @@ func (s *DoneBotCatalogService) Models(ctx context.Context, userID int64, instal
 			return nil, err
 		}
 	}
-	return buildDoneBotPublicCatalog(inputs.group, userID, install.InstallationID, inputs.rows, inputs.accounts, inputs.routes, inputs.capabilities)
+	return buildDoneBotPublicCatalog(inputs.group, userID, scope, inputs.rows, inputs.accounts, inputs.routes, inputs.capabilities)
 }
 
 func doneBotRowsWithoutUnavailableImageTasks(inputs *doneBotCatalogInputs) ([]DoneBotModel, error) {

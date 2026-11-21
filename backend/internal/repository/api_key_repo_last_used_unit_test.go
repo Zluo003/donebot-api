@@ -269,6 +269,7 @@ func TestAPIKeyRepositoryBulkGroupChangesPreserveDoneBotInstallBindings(t *testi
 	}
 	installed := makeKey("installed")
 	ordinary := makeKey("ordinary")
+	team := makeKey("dbteam-bulk-fixture")
 	_, err = client.ExecContext(ctx, `INSERT INTO donebot_installs (id, api_key_id) VALUES (1, ?)`, installed.ID)
 	require.NoError(t, err)
 
@@ -278,6 +279,9 @@ func TestAPIKeyRepositoryBulkGroupChangesPreserveDoneBotInstallBindings(t *testi
 	gotInstalled, err := client.APIKey.Get(ctx, installed.ID)
 	require.NoError(t, err)
 	require.Equal(t, oldGroup.ID, *gotInstalled.GroupID)
+	gotTeam, err := client.APIKey.Get(ctx, team.ID)
+	require.NoError(t, err)
+	require.Equal(t, oldGroup.ID, *gotTeam.GroupID)
 	gotOrdinary, err := client.APIKey.Get(ctx, ordinary.ID)
 	require.NoError(t, err)
 	require.Equal(t, newGroup.ID, *gotOrdinary.GroupID)
@@ -288,4 +292,32 @@ func TestAPIKeyRepositoryBulkGroupChangesPreserveDoneBotInstallBindings(t *testi
 	gotInstalled, err = client.APIKey.Get(ctx, installed.ID)
 	require.NoError(t, err)
 	require.Equal(t, oldGroup.ID, *gotInstalled.GroupID)
+	gotTeam, err = client.APIKey.Get(ctx, team.ID)
+	require.NoError(t, err)
+	require.Equal(t, oldGroup.ID, *gotTeam.GroupID)
+}
+
+func TestAPIKeyRepositoryHidesTeamBillingKeysFromManagement(t *testing.T) {
+	repo, client := newAPIKeyRepoSQLite(t)
+	ctx := context.Background()
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "team-billing-keys@example.invalid")
+	for _, credential := range []string{"sk-ordinary", "sk-dbteam-fixture"} {
+		require.NoError(t, repo.Create(ctx, &service.APIKey{UserID: user.ID, Key: credential, Name: "Team", Status: service.StatusActive}))
+	}
+	listed, page, err := repo.ListByUserID(ctx, user.ID, pagination.PaginationParams{Page: 1, PageSize: 20}, service.APIKeyListFilters{})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.Total)
+	require.Len(t, listed, 1)
+	require.Equal(t, "sk-ordinary", listed[0].Key)
+	found, err := repo.SearchAPIKeys(ctx, user.ID, "Team", 20)
+	require.NoError(t, err)
+	require.Equal(t, listed[0].ID, found[0].ID)
+	require.Len(t, found, 1)
+	var teamID int64
+	entity, err := client.APIKey.Query().Where(func(s *entsql.Selector) { s.Where(entsql.EQ(s.C("key"), "sk-dbteam-fixture")) }).Only(ctx)
+	require.NoError(t, err)
+	teamID = entity.ID
+	managed, err := repo.IsDoneBotInstallKey(ctx, teamID)
+	require.NoError(t, err)
+	require.True(t, managed)
 }

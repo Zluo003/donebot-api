@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -19,11 +20,23 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/donebotteam"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
+
+type teamModelsHTTPFixture struct {
+	doneBotCatalogHandlerStub
+	team string
+}
+
+func (s *teamModelsHTTPFixture) TeamModels(_ context.Context, teamID string) (*service.DoneBotCatalogResult, error) {
+	s.team = teamID
+	return &service.DoneBotCatalogResult{CatalogScopeID: "team-fixture", CatalogVersion: "fixture", ETag: `"fixture"`, Models: []service.DoneBotCatalogModel{{ID: "tts-fixture", Pricing: service.DoneBotCatalogPricing{Currency: "CNY"}}}}, nil
+}
 
 func TestTeamCoordinatorHTTPPostgres(t *testing.T) {
 	dsn := os.Getenv("DONEBOT_TEAM_TEST_DATABASE_URL")
@@ -91,10 +104,19 @@ func TestTeamCoordinatorHTTPPostgres(t *testing.T) {
 	mac := hmac.New(sha256.New, seed)
 	_, _ = mac.Write([]byte("donebot.team.coordinator.v1\n" + team.ID + "\n" + instance + "\n7"))
 	token := "dbtc_" + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	h := &DoneBotHandler{cloud: cloud}
+	models := &teamModelsHTTPFixture{}
+	h := &DoneBotHandler{cloud: cloud, catalog: models}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.POST("/coordinators/:instance/executions", h.TeamPrepareExecution)
+	router.GET("/coordinators/:instance/models", h.TeamCoordinatorModels)
+	router.GET("/teams/:team/models", func(c *gin.Context) {
+		actor, _ := strconv.ParseInt(c.GetHeader("X-Fixture-Actor"), 10, 64)
+		if actor > 0 {
+			c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: actor})
+		}
+		c.Next()
+	}, h.TeamModels)
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 	input := map[string]any{"actor_id": "2", "node_kind": "local", "node_id": device.ID, "purpose": "video", "bot_id": "bot-a", "thread_id": "thread-a", "private": false, "request_hash": strings.Repeat("a", 64)}
@@ -182,6 +204,40 @@ func TestTeamCoordinatorHTTPPostgres(t *testing.T) {
 	require.Equal(t, int64(2), actor)
 	require.Equal(t, int64(3), executor)
 	require.Equal(t, int64(7), generation)
+	for _, actor := range []string{"1", "2", "3", "4", ""} {
+		r, e := http.NewRequest("GET", server.URL+"/teams/"+team.ID+"/models?payer_id=999", nil)
+		require.NoError(t, e)
+		r.Header.Set("X-Fixture-Actor", actor)
+		res, e := server.Client().Do(r)
+		require.NoError(t, e)
+		bytes, e := io.ReadAll(res.Body)
+		res.Body.Close()
+		require.NoError(t, e)
+		if actor == "4" || actor == "" {
+			require.NotEqual(t, 200, res.StatusCode)
+			continue
+		}
+		require.Equal(t, 200, res.StatusCode, string(bytes))
+		require.Equal(t, team.ID, models.team)
+		require.Equal(t, "no-store", res.Header.Get("Cache-Control"))
+		for _, secret := range []string{token, "payer_id", "balance", "owner@example.invalid"} {
+			require.NotContains(t, string(bytes), secret)
+		}
+	}
+	for _, credential := range []string{token, "jwt-fixture", "sk-donebot-fixture"} {
+		r, e := http.NewRequest("GET", server.URL+"/coordinators/"+instance+"/models", nil)
+		require.NoError(t, e)
+		r.Header.Set("Authorization", "Bearer "+credential)
+		res, e := server.Client().Do(r)
+		require.NoError(t, e)
+		res.Body.Close()
+		if credential == token {
+			require.Equal(t, 200, res.StatusCode)
+			require.Equal(t, team.ID, models.team)
+		} else {
+			require.NotEqual(t, 200, res.StatusCode)
+		}
+	}
 	coordinator, e := cloud.TeamCoordinator(ctx, instance, token)
 	require.NoError(t, e)
 	expected := donebotteam.ExecutionRequest{TeamID: team.ID, Actor: 2, Key: key, NodeKind: "local", NodeID: device.ID, Purpose: "video", BotID: "bot-a", ThreadID: "thread-a", RequestHash: strings.Repeat("a", 64), Coordinator: coordinator}
@@ -197,6 +253,14 @@ func TestTeamCoordinatorHTTPPostgres(t *testing.T) {
 	var state string
 	require.NoError(t, db.QueryRow(`SELECT state FROM donebot_team_executions WHERE id=$1::uuid`, executionID).Scan(&state))
 	require.Equal(t, "prepared", state)
+	require.NoError(t, teams.ChangeMember(ctx, team.ID, 1, 3, donebotteam.Member, true))
+	r, e := http.NewRequest("GET", server.URL+"/teams/"+team.ID+"/models", nil)
+	require.NoError(t, e)
+	r.Header.Set("X-Fixture-Actor", "3")
+	res, e := server.Client().Do(r)
+	require.NoError(t, e)
+	res.Body.Close()
+	require.Equal(t, http.StatusNotFound, res.StatusCode)
 	t.Setenv("DONEBOT_TEAMS_ENABLED", "0")
 	_, err = cloud.TeamCoordinator(ctx, instance, token)
 	require.Error(t, err)

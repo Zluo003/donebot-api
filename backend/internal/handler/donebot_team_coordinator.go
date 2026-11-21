@@ -12,19 +12,31 @@ import (
 // Only the authenticated Cloud coordinator may attest the audience it resolved from its canonical conversation.
 func (h *DoneBotHandler) TeamPrepareExecution(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
+	coordinator, ok := h.teamCoordinator(c)
+	if !ok {
+		return
+	}
+	h.teamPrepareExecution(c, coordinator)
+}
+
+func (h *DoneBotHandler) teamCoordinator(c *gin.Context) (*donebotteam.Coordinator, bool) {
 	if h.cloud == nil {
 		response.Error(c, 503, "Team coordinator unavailable")
-		return
+		return nil, false
 	}
 	authorization := c.GetHeader("Authorization")
 	if !strings.HasPrefix(authorization, "Bearer ") || len(c.Request.URL.RawQuery) > 0 || c.GetHeader("X-API-Key") != "" || c.GetHeader("X-Goog-API-Key") != "" {
 		response.Unauthorized(c, "Team coordinator credential required")
-		return
+		return nil, false
 	}
 	coordinator, err := h.cloud.TeamCoordinator(c.Request.Context(), c.Param("instance"), strings.TrimPrefix(authorization, "Bearer "))
 	if response.ErrorFrom(c, err) {
-		return
+		return nil, false
 	}
+	return coordinator, true
+}
+
+func (h *DoneBotHandler) teamPrepareExecution(c *gin.Context, coordinator *donebotteam.Coordinator) {
 	var in struct {
 		ActorID     string `json:"actor_id"`
 		NodeKind    string `json:"node_kind"`
