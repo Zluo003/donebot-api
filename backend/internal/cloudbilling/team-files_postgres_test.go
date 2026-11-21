@@ -84,7 +84,14 @@ func launchTeamFileRuntime(t *testing.T, script string, configuration any) teamF
 	return runtime
 }
 
-func TestPostgresTeamFileProxyCancelsRevokedUploads(t *testing.T) {
+type teamFileProxyRequest struct {
+	method  string
+	path    string
+	context context.Context
+}
+
+func teamFileProxyFixture(t *testing.T, limits map[string]any) (*Service, string, teamFileRuntime, *httptest.Server, <-chan teamFileProxyRequest) {
+	t.Helper()
 	if os.Getenv("CLOUD_BILLING_TEAM_FILES_FIXTURE") != "1" {
 		t.Skip("set CLOUD_BILLING_TEAM_FILES_FIXTURE=1 to run the real isolated DoneBot file service")
 	}
@@ -97,6 +104,7 @@ func TestPostgresTeamFileProxyCancelsRevokedUploads(t *testing.T) {
 	seed := []byte(newToken())[:ed25519.SeedSize]
 	t.Setenv("DONEBOT_CLOUD_SIGNING_SEED", base64.StdEncoding.EncodeToString(seed))
 	var target atomic.Pointer[url.URL]
+	seen := make(chan teamFileProxyRequest, 64)
 	workerProxy := &httputil.ReverseProxy{Rewrite: func(pr *httputil.ProxyRequest) {
 		upstream := target.Load()
 		pr.Out.URL.Scheme, pr.Out.URL.Host = upstream.Scheme, upstream.Host
@@ -109,6 +117,7 @@ func TestPostgresTeamFileProxyCancelsRevokedUploads(t *testing.T) {
 			http.Error(w, "fixture worker refused request", 401)
 			return
 		}
+		seen <- teamFileProxyRequest{r.Method, r.URL.Path, r.Context()}
 		workerProxy.ServeHTTP(w, r)
 	}))
 	t.Cleanup(worker.Close)
@@ -126,23 +135,35 @@ func TestPostgresTeamFileProxyCancelsRevokedUploads(t *testing.T) {
 	require.NoError(t, err)
 	runtime := launchTeamFileRuntime(t, script, map[string]any{
 		"id": teamID, "name": "File proxy fixture", "instanceId": instance.InstanceID, "publicKey": public,
-		"files": map[string]int{"cap": 128, "uploadMax": 64},
+		"files": limits,
 	})
 	runtimeURL, err := url.Parse(runtime.URL)
 	require.NoError(t, err)
 	target.Store(runtimeURL)
+	identities := map[string]int64{"owner-fixture": 101, "admin-fixture": 202, "member-fixture": 303}
 	s.liveCheck = func(_ context.Context, token string, actor int64) error {
-		if token != "member-fixture" || actor != 303 {
+		if identities[token] != actor || actor == 0 {
 			return infraerrors.Unauthorized("FIXTURE", "Invalid fixture identity")
 		}
 		return nil
 	}
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := s.TeamProxy(w, r, teamID, 303, r.URL.Path); err != nil {
+		actor := identities[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
+		if actor == 0 {
+			http.Error(w, "invalid fixture identity", 401)
+			return
+		}
+		if err := s.TeamProxy(w, r, teamID, actor, r.URL.Path); err != nil {
 			http.Error(w, err.Error(), 403)
 		}
 	}))
 	t.Cleanup(proxy.Close)
+	return s, teamID, runtime, proxy, seen
+}
+
+func TestPostgresTeamFileProxyCancelsRevokedUploads(t *testing.T) {
+	s, teamID, runtime, proxy, _ := teamFileProxyFixture(t, map[string]any{"cap": 128, "uploadMax": 64})
+	ctx := context.Background()
 	client := &http.Client{Timeout: 12 * time.Second}
 	request := func(method, path string, body io.Reader) (*http.Response, error) {
 		r, e := http.NewRequest(method, proxy.URL+path, body)
@@ -191,7 +212,7 @@ func TestPostgresTeamFileProxyCancelsRevokedUploads(t *testing.T) {
 				_ = response.Body.Close()
 			}
 		}(i, name)
-		_, err = writers[i].Write([]byte("staged"))
+		_, err := writers[i].Write([]byte("staged"))
 		require.NoError(t, err)
 	}
 	staged := func() int {
