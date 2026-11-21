@@ -12,6 +12,10 @@ func recordDoneBotTeamModelSettlement(ctx context.Context, tx *sql.Tx, cmd *serv
 	if id == "" {
 		return nil
 	}
+	return recordDoneBotTeamModelSettlementForExecution(ctx, tx, id, cmd)
+}
+
+func recordDoneBotTeamModelSettlementForExecution(ctx context.Context, tx *sql.Tx, id string, cmd *service.UsageBillingCommand) error {
 	if cmd.RequestID != "client:"+id || cmd.SubscriptionID != nil || cmd.SubscriptionCost != 0 {
 		return service.ErrDoneBotTeamBillingUnavailable
 	}

@@ -375,6 +375,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 
 	billingCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
+	if DoneBotTeamUsageExecutionID(ctx) != "" {
+		return applyDoneBotTeamUsage(billingCtx, cmd, usageLog, p, deps, repo)
+	}
 
 	result, err := repo.Apply(billingCtx, cmd)
 	if err != nil {
@@ -903,6 +906,9 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	}, s.billingDeps(), s.usageBillingRepo)
 
 	if billingErr != nil {
+		if DoneBotTeamUsageExecutionID(ctx) != "" {
+			return billingErr
+		}
 		usageLog.ActualCost = 0
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 		return billingErr

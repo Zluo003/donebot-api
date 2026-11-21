@@ -3447,7 +3447,7 @@ func (h *OpenAIGatewayHandler) submitUsageRecordTask(parent context.Context, tas
 		return
 	}
 	if service.DoneBotTeamUsageExecutionID(parent) != "" {
-		h.submitMandatoryUsageRecordTask(parent, task)
+		runTeamUsageRecordTask(parent, task)
 		return
 	}
 	task, abandon := wrapUsageRecordTaskContext(parent, task)
@@ -3479,6 +3479,10 @@ func (h *OpenAIGatewayHandler) submitUsageRecordTask(parent context.Context, tas
 }
 
 func (h *OpenAIGatewayHandler) submitOpenAIUsageRecordTask(parent context.Context, result *service.OpenAIForwardResult, task service.UsageRecordTask) {
+	if service.DoneBotTeamUsageExecutionID(parent) != "" {
+		runTeamUsageRecordTask(parent, task)
+		return
+	}
 	// Money-critical bills never drop on pool overflow: media, search surcharge, voice.
 	if result != nil && (result.ImageCount > 0 || result.VideoCount > 0 ||
 		strings.HasPrefix(result.ResponseID, "seedance:") ||
@@ -3491,6 +3495,10 @@ func (h *OpenAIGatewayHandler) submitOpenAIUsageRecordTask(parent context.Contex
 
 func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
 	if task == nil {
+		return
+	}
+	if service.DoneBotTeamUsageExecutionID(parent) != "" {
+		runTeamUsageRecordTask(parent, task)
 		return
 	}
 	if parent != nil {

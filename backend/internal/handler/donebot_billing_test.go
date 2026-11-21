@@ -15,6 +15,7 @@ func TestDoneBotBillingErrorsPreserveProtocolAndRateLimits(t *testing.T) {
 	for _, credential := range []string{"sk-donebot-fixture", "sk-personal-fixture"} {
 		for _, err := range []error{service.ErrInsufficientBalance, service.ErrGroupRPMExceeded, service.ErrBillingServiceUnavailable} {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 			c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{Key: credential})
 			status, code, message, retry := billingErrorDetailsForRequest(c, err)
 			baseline, expectedCode, expectedMessage, _ := billingErrorDetails(err)

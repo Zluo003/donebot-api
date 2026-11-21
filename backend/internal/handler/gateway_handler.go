@@ -2566,7 +2566,7 @@ func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task serv
 		return
 	}
 	if service.DoneBotTeamUsageExecutionID(parent) != "" {
-		h.submitMandatoryUsageRecordTask(parent, task)
+		runTeamUsageRecordTask(parent, task)
 		return
 	}
 	task, abandon := wrapUsageRecordTaskContext(parent, task)
@@ -2600,6 +2600,10 @@ func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task serv
 // submitMandatoryUsageRecordTask never silently drops billing work on pool overflow.
 func (h *GatewayHandler) submitMandatoryUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
 	if task == nil {
+		return
+	}
+	if service.DoneBotTeamUsageExecutionID(parent) != "" {
+		runTeamUsageRecordTask(parent, task)
 		return
 	}
 	task, _ = wrapUsageRecordTaskContext(parent, task)

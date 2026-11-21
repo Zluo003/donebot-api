@@ -789,8 +789,8 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 		}
 	}
 
-	// user × platform quota 仅在 standard（余额）模式生效；订阅模式豁免
-	if !isSubscriptionMode {
+	// Team usage is separate from the payer's personal platform allowance.
+	if !isSubscriptionMode && DoneBotTeamUsageExecutionID(ctx) == "" {
 		if err := s.checkUserPlatformQuotaEligibility(ctx, user.ID, platform); err != nil {
 			return err
 		}

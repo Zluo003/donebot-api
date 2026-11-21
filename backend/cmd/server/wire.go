@@ -111,6 +111,7 @@ func provideCleanup(
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	teamBillingRecovery *service.DoneBotTeamBillingRecovery,
 	subscriptionService *service.SubscriptionService,
 	oauth *service.OAuthService,
 	openaiOAuth *service.OpenAIOAuthService,
@@ -144,6 +145,7 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{name: "teamBillingRecovery", fn: func() error { teamBillingRecovery.Stop(); return nil }},
 			{"AssetService", func() error {
 				if assetService != nil {
 					assetService.Stop()

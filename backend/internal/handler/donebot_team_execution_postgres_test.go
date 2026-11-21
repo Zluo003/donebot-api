@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +36,37 @@ import (
 )
 
 type teamModelFixtureUpstream struct{ service.HTTPUpstream }
+
+var errTeamBillingCrash = errors.New("fixture interrupted before settlement")
+
+type interruptedTeamBilling struct {
+	service.UsageBillingRepository
+	service.DoneBotTeamUsageRepository
+	interrupt atomic.Bool
+}
+
+func (r *interruptedTeamBilling) ApplyTeamUsage(ctx context.Context, id string) (*service.DoneBotTeamPendingUsage, *service.UsageBillingApplyResult, error) {
+	if r.interrupt.Load() {
+		return nil, nil, errTeamBillingCrash
+	}
+	return r.DoneBotTeamUsageRepository.ApplyTeamUsage(ctx, id)
+}
+
+func TestTeamBillingCrashHelper(t *testing.T) {
+	if os.Getenv("DONEBOT_TEAM_BILLING_CRASH_HELPER") != "1" {
+		return
+	}
+	db, err := sql.Open("postgres", os.Getenv("DONEBOT_TEAM_BILLING_CRASH_DATABASE"))
+	if err != nil {
+		os.Exit(41)
+	}
+	repo := repository.NewUsageBillingRepository(nil, db).(service.DoneBotTeamUsageRepository)
+	_, _, err = repo.ApplyTeamUsage(context.Background(), os.Getenv("DONEBOT_TEAM_BILLING_CRASH_EXECUTION"))
+	if err != nil {
+		os.Exit(41)
+	}
+	os.Exit(42)
+}
 
 func (teamModelFixtureUpstream) Do(r *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
 	return http.DefaultClient.Do(r)
@@ -85,7 +118,7 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 	CREATE TABLE donebot_cloud_subscriptions(instance_id UUID PRIMARY KEY,team_id UUID,user_id BIGINT,state TEXT,paid_until TIMESTAMPTZ,purge_locked BOOLEAN);
 	ALTER TABLE usage_logs ADD COLUMN account_stats_cost NUMERIC(20,10);`)
 	require.NoError(t, err)
-	for _, name := range []string{"027_usage_billing_consistency.sql", "037_add_account_rate_multiplier.sql", "046_add_usage_log_reasoning_effort.sql", "060_add_usage_log_openai_ws_mode.sql", "061_add_usage_log_request_type.sql", "070_add_usage_log_service_tier.sql", "089_usage_log_image_output_tokens.sql", "179_usage_log_image_input_tokens.sql", "187_add_usage_log_session_id.sql", "231_add_usage_log_native_compaction_v2.sql", "231_add_usage_log_requested_reasoning_effort.sql", "232_add_usage_log_upstream_request_id.sql", "071_add_usage_billing_dedup.sql", "073_add_usage_billing_dedup_archive.sql", "074_add_usage_log_endpoints.sql", "271_donebot_teams.sql", "273_donebot_team_execution_grants.sql", "274_donebot_team_coordinators.sql", "275_donebot_team_billing_keys.sql", "276_donebot_team_model_dispatches.sql", "277_donebot_team_model_settlements.sql"} {
+	for _, name := range []string{"027_usage_billing_consistency.sql", "037_add_account_rate_multiplier.sql", "046_add_usage_log_reasoning_effort.sql", "060_add_usage_log_openai_ws_mode.sql", "061_add_usage_log_request_type.sql", "070_add_usage_log_service_tier.sql", "089_usage_log_image_output_tokens.sql", "179_usage_log_image_input_tokens.sql", "187_add_usage_log_session_id.sql", "231_add_usage_log_native_compaction_v2.sql", "231_add_usage_log_requested_reasoning_effort.sql", "232_add_usage_log_upstream_request_id.sql", "071_add_usage_billing_dedup.sql", "073_add_usage_billing_dedup_archive.sql", "074_add_usage_log_endpoints.sql", "271_donebot_teams.sql", "273_donebot_team_execution_grants.sql", "274_donebot_team_coordinators.sql", "275_donebot_team_billing_keys.sql", "276_donebot_team_model_dispatches.sql", "277_donebot_team_model_settlements.sql", "278_donebot_team_pending_usage.sql"} {
 		b, e := os.ReadFile("../../migrations/" + name)
 		require.NoError(t, e)
 		_, e = db.Exec(string(b))
@@ -157,7 +190,8 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 		}
 	}))
 	t.Cleanup(provider.Close)
-	billing := repository.NewUsageBillingRepository(client, db)
+	rawBilling := repository.NewUsageBillingRepository(client, db)
+	billing := &interruptedTeamBilling{UsageBillingRepository: rawBilling, DoneBotTeamUsageRepository: rawBilling.(service.DoneBotTeamUsageRepository)}
 	billingService := service.NewBillingService(cfg, nil)
 	usageLogs := repository.NewUsageLogRepository(client, db)
 	forwarder := service.NewOpenAIGatewayService(nil, usageLogs, billing,
@@ -201,7 +235,7 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 				for range 2 {
 					billingCalls.Add(1)
 					billingErrors <- forwarder.RecordUsage(ctx, &service.OpenAIRecordUsageInput{Result: result, APIKey: key, User: key.User, Account: synthetic,
-						InboundEndpoint: "/v1/chat/completions", PricingAt: time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC)})
+						InboundEndpoint: "/v1/chat/completions", QuotaPlatform: service.PlatformOpenAI, PricingAt: time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC)})
 				}
 			})
 		}
@@ -313,6 +347,29 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 		require.False(t, credential)
 	})
 	require.True(t, genericCalled, "team usage cannot be dropped when the generic billing pool is full")
+	t.Run("stages before an available queue", func(t *testing.T) {
+		pool := service.NewUsageRecordWorkerPoolWithOptions(service.UsageRecordWorkerPoolOptions{WorkerCount: 1, QueueSize: 8, TaskTimeout: time.Minute})
+		t.Cleanup(pool.Stop)
+		started, release := make(chan struct{}), make(chan struct{})
+		t.Cleanup(func() { close(release) })
+		pool.Submit(func(context.Context) { close(started); <-release })
+		<-started
+		generic := &GatewayHandler{usageRecordWorkerPool: pool}
+		openai := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
+		for _, submit := range []func(context.Context, service.UsageRecordTask){generic.submitUsageRecordTask, generic.submitMandatoryUsageRecordTask, openai.submitUsageRecordTask, openai.submitMandatoryUsageRecordTask, func(ctx context.Context, task service.UsageRecordTask) {
+			openai.submitOpenAIUsageRecordTask(ctx, &service.OpenAIForwardResult{ImageCount: 1}, task)
+		}} {
+			var called atomic.Bool
+			submit(cancelled, func(ctx context.Context) {
+				require.NoError(t, ctx.Err())
+				require.Equal(t, grant.Execution.ID, service.DoneBotTeamUsageExecutionID(ctx))
+				_, _, credential := service.DoneBotTeamExecution(ctx)
+				require.False(t, credential)
+				called.Store(true)
+			})
+			require.True(t, called.Load(), "team billing must not remain in an otherwise available in-memory queue")
+		}
+	})
 	_, first, err := restarted.AdmitModelExecution(ctx, grant.Token, grant.Execution, key.ID)
 	require.NoError(t, err)
 	require.False(t, first)
@@ -426,6 +483,106 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, updated.Balance)
 	mode.Store(0)
+	_, err = client.UserPlatformQuota.Create().SetUserID(owner.ID).SetPlatform(service.PlatformOpenAI).SetDailyLimitUsd(1000).SetDailyUsageUsd(7).SetWeeklyUsageUsd(8).SetMonthlyUsageUsd(9).Save(ctx)
+	require.NoError(t, err)
+	for _, phase := range []string{"before debit", "after committed debit"} {
+		t.Run("durable recovery "+phase, func(t *testing.T) {
+			billing.interrupt.Store(true)
+			next := prepare()
+			before := forwards.Load()
+			code, _, e := call(next.Token, path, body)
+			require.NoError(t, e)
+			require.Equal(t, 200, code)
+			for range 2 {
+				select {
+				case e := <-billingErrors:
+					require.ErrorIs(t, e, errTeamBillingCrash)
+				case <-time.After(3 * time.Second):
+					t.Fatal("billing did not reach durable staging")
+				}
+			}
+			billing.interrupt.Store(false)
+			var commandJSON, usageJSON string
+			require.NoError(t, db.QueryRow(`SELECT command::text,usage_log::text FROM donebot_team_pending_usage WHERE execution_id=$1::uuid`, next.Execution.ID).Scan(&commandJSON, &usageJSON))
+			for _, secret := range []string{"fixture-upstream-only", key.Key, next.Token, "Credentials", "PasswordHash"} {
+				require.NotContains(t, commandJSON+usageJSON, secret)
+			}
+			var command service.UsageBillingCommand
+			require.NoError(t, json.Unmarshal([]byte(commandJSON), &command))
+			var snapshot service.DoneBotTeamUsageSnapshot
+			require.NoError(t, json.Unmarshal([]byte(usageJSON), &snapshot))
+			scope, e := installs.TeamExecutionContext(ctx, next.Token, next.Execution)
+			require.NoError(t, e)
+			changed := command
+			changed.BalanceCost++
+			require.ErrorIs(t, billing.StageTeamUsage(scope, &service.DoneBotTeamPendingUsage{ExecutionID: next.Execution.ID, Command: changed, Usage: snapshot, Platform: service.PlatformOpenAI}), service.ErrUsageBillingRequestConflict)
+			for _, statement := range []string{`UPDATE donebot_team_pending_usage SET command='{}'::jsonb WHERE execution_id=$1::uuid`, `UPDATE donebot_team_pending_usage SET usage_log='{}'::jsonb WHERE execution_id=$1::uuid`, `DELETE FROM donebot_team_pending_usage WHERE execution_id=$1::uuid`} {
+				_, e = db.Exec(statement, next.Execution.ID)
+				require.Error(t, e)
+			}
+			var count int
+			require.NoError(t, db.QueryRow(`SELECT count(*) FROM usage_logs WHERE request_id=$1`, command.RequestID).Scan(&count))
+			require.Zero(t, count, "failed settlement cannot leave a zero-cost log blocking recovery")
+			var settled bool
+			require.NoError(t, db.QueryRow(`SELECT settled_at IS NOT NULL FROM donebot_team_pending_usage WHERE execution_id=$1::uuid`, next.Execution.ID).Scan(&settled))
+			require.False(t, settled)
+			_, e = db.Exec(`UPDATE donebot_team_pending_usage SET next_attempt_at=NOW() WHERE execution_id=$1::uuid`, next.Execution.ID)
+			require.NoError(t, e)
+			if phase == "before debit" {
+				_, e = db.Exec(`CREATE FUNCTION fixture_reject_usage() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture log failure'; END; $$;
+				CREATE TRIGGER fixture_reject_usage BEFORE INSERT ON usage_logs FOR EACH ROW EXECUTE FUNCTION fixture_reject_usage()`)
+				require.NoError(t, e)
+				recovery := service.NewDoneBotTeamBillingRecovery(repository.NewUsageBillingRepository(nil, db), nil, nil, nil)
+				require.Error(t, recovery.Recover(ctx))
+				require.NoError(t, db.QueryRow(`SELECT count(*) FROM usage_billing_dedup WHERE request_id=$1`, command.RequestID).Scan(&count))
+				require.Zero(t, count)
+				var balance float64
+				require.NoError(t, db.QueryRow(`SELECT balance FROM users WHERE id=$1`, owner.ID).Scan(&balance))
+				require.InDelta(t, 100-totalCharged, balance, 1e-8, "log failure must roll back the debit")
+				_, e = db.Exec(`DROP TRIGGER fixture_reject_usage ON usage_logs; DROP FUNCTION fixture_reject_usage()`)
+				require.NoError(t, e)
+			} else {
+				child := exec.Command(os.Args[0], "-test.run=^TestTeamBillingCrashHelper$")
+				child.Env = append(os.Environ(), "DONEBOT_TEAM_BILLING_CRASH_HELPER=1", "DONEBOT_TEAM_BILLING_CRASH_DATABASE="+u.String(), "DONEBOT_TEAM_BILLING_CRASH_EXECUTION="+next.Execution.ID)
+				e = child.Run()
+				var exit *exec.ExitError
+				require.ErrorAs(t, e, &exit)
+				require.Equal(t, 42, exit.ExitCode(), "child must exit abruptly after commit and before cache completion")
+			}
+			_, e = db.Exec(`UPDATE donebot_team_pending_usage SET next_attempt_at=NOW() WHERE execution_id=$1::uuid`, next.Execution.ID)
+			require.NoError(t, e)
+			errors := make(chan error, 8)
+			for range 8 {
+				wg.Go(func() {
+					recovery := service.NewDoneBotTeamBillingRecovery(repository.NewUsageBillingRepository(nil, db), nil, nil, nil)
+					errors <- recovery.Recover(ctx)
+				})
+			}
+			wg.Wait()
+			close(errors)
+			for e := range errors {
+				require.NoError(t, e)
+			}
+			require.NoError(t, db.QueryRow(`SELECT count(*),COALESCE(sum(actual_cost),0) FROM usage_logs WHERE request_id=$1`, command.RequestID).Scan(&count, &loggedAmount))
+			require.Equal(t, 1, count)
+			require.InDelta(t, command.BalanceCost, loggedAmount, 1e-8)
+			var daily, weekly, monthly float64
+			require.NoError(t, db.QueryRow(`SELECT daily_usage_usd,weekly_usage_usd,monthly_usage_usd FROM user_platform_quotas WHERE user_id=$1 AND platform=$2 AND deleted_at IS NULL`, owner.ID, service.PlatformOpenAI).Scan(&daily, &weekly, &monthly))
+			require.Equal(t, []float64{7, 8, 9}, []float64{daily, weekly, monthly}, "team settlement must preserve the payer personal platform usage")
+			receipt, e := restarted.ModelExecutionStatus(ctx, coordinator, next.Execution.ID)
+			require.NoError(t, e)
+			require.Equal(t, "settled", receipt.BillingState)
+			require.Equal(t, before+1, forwards.Load(), "recovery must never contact the model")
+			code, _, e = call(next.Token, path, body)
+			require.NoError(t, e)
+			require.Equal(t, 409, code)
+			require.Equal(t, before+1, forwards.Load())
+			totalCharged += command.BalanceCost
+			var balance float64
+			require.NoError(t, db.QueryRow(`SELECT balance FROM users WHERE id=$1`, owner.ID).Scan(&balance))
+			require.InDelta(t, 100-totalCharged, balance, 1e-8)
+		})
+	}
 	finalForwards := forwards.Load()
 	other := *coordinator
 	other.TeamID = uuid.NewString()

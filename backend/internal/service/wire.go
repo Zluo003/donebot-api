@@ -44,6 +44,12 @@ func ProvidePricingService(cfg *config.Config, remoteClient PricingRemoteClient)
 	return svc, nil
 }
 
+func ProvideDoneBotTeamBillingRecovery(repo UsageBillingRepository, cache *BillingCacheService, auth *APIKeyService, deferred *DeferredService) *DoneBotTeamBillingRecovery {
+	svc := NewDoneBotTeamBillingRecovery(repo, cache, auth, deferred)
+	svc.Start()
+	return svc
+}
+
 // ProvideUpdateService creates UpdateService with BuildInfo
 func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, buildInfo BuildInfo) *UpdateService {
 	return NewUpdateService(cache, githubClient, buildInfo.Version, buildInfo.BuildType)
@@ -992,6 +998,7 @@ var ProviderSet = wire.NewSet(
 	ProvideConcurrencyService,
 	ProvideUserMessageQueueService,
 	NewUsageRecordWorkerPool,
+	ProvideDoneBotTeamBillingRecovery,
 	ProvideSchedulerSnapshotService,
 	NewIdentityService,
 	NewCRSSyncService,
