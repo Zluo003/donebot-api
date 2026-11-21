@@ -65,3 +65,7 @@
 该链路还需显式设置 `DONEBOT_TEAM_EXECUTION_ENABLED=1`，默认关闭，不扩大对外声明的 identity 能力。测试日志 `/tmp/donebot-team-model-current-grants.log`、`/tmp/donebot-team-model-finance.log`、`/tmp/donebot-team-model-boundaries.log` 和 `/tmp/donebot-team-model-routes.log` 均通过。验证包括真实 HTTP、一次性 PostgreSQL、真实 Key 鉴权和扣费事务、八路重放仅一次模拟供应商调用、Owner 一次扣费/成员零余额不变、重复扣费命令幂等、重启不重派、错误请求拒绝、撤权和个人用量隔离。`/tmp/donebot-team-model-compile-all.log` 为全部 Go 包编译通过。
 
 模拟供应商处理器手动调用既有扣费仓库，不证明生产供应商协议及其异步用量链完整可用。运行服务尚未把规范会话身份、任务受众和请求重试接到这条链路；媒体、终态确认、跨位置执行与真实 Linux 隔离继续实施。不得启用生产团队执行。
+
+## 稳定操作编号（2026-11-21）
+
+执行请求键接受规范UUID v4或v5；团队、节点和其他资源ID继续仅接受v4。运行服务按不可变会话绑定与原生轮次导出v5，因此本地派发日志丢失不会发行第二笔操作。网关仍匹配原始身份、受众、请求哈希和代次，已受理操作不可再次受理。一次性PostgreSQL和race验证通过，日志 `/tmp/donebot-team-stable-key-race.log`。不改变团队能力默认关闭及生产发布约束。

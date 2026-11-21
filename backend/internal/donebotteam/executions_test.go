@@ -114,6 +114,36 @@ func TestExecutionValidationAndDisabled(t *testing.T) {
 	}
 }
 
+func TestExecutionKeyValidation(t *testing.T) {
+	key := uuid.NewSHA1(uuid.NameSpaceURL, []byte("donebot.team.model.v1:fixture")).String()
+	require.True(t, validExecutionKey(key))
+	require.True(t, validExecutionKey(uuid.NewString()))
+	require.False(t, validID(key))
+	for _, value := range []string{"", strings.ToUpper(key), "urn:uuid:" + key, strings.ReplaceAll(key, "-", ""), uuid.Nil.String()} {
+		require.False(t, validExecutionKey(value))
+	}
+}
+
+func TestExecutionStableOperationPostgres(t *testing.T) {
+	f := newExecutionFixture(t)
+	in := f.request()
+	in.Key = uuid.NewSHA1(uuid.NameSpaceURL, []byte("donebot.team.model.v1:fixture")).String()
+	first, err := f.s.PrepareExecution(f.ctx, in)
+	require.NoError(t, err)
+	_, admitted, err := f.s.AdmitExecution(f.ctx, first.Token, in)
+	require.NoError(t, err)
+	require.True(t, admitted)
+	recovered, err := f.s.PrepareExecution(f.ctx, in)
+	require.NoError(t, err)
+	require.Equal(t, first.Execution.ID, recovered.Execution.ID)
+	_, admitted, err = f.s.AdmitExecution(f.ctx, recovered.Token, in)
+	require.NoError(t, err)
+	require.False(t, admitted)
+	in.RequestHash = strings.Repeat("b", 64)
+	_, err = f.s.PrepareExecution(f.ctx, in)
+	require.Error(t, err)
+}
+
 func TestExecutionDeviceConsentPostgres(t *testing.T) {
 	f := newExecutionFixture(t)
 	for _, actor := range []int64{1, 2, 3, 6} {

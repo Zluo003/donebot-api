@@ -68,8 +68,13 @@ type ExecutionGrant struct {
 var executionPart = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,120}$`)
 var executionHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+func validExecutionKey(key string) bool {
+	v, err := uuid.Parse(key)
+	return err == nil && (v.Version() == 4 || v.Version() == 5) && v.String() == key
+}
+
 func validExecution(in ExecutionRequest) bool {
-	if !validID(in.TeamID) || !validID(in.Key) || !validID(in.NodeID) || in.Actor < 1 ||
+	if !validID(in.TeamID) || !validExecutionKey(in.Key) || !validID(in.NodeID) || in.Actor < 1 ||
 		!executionPart.MatchString(in.BotID) || !executionPart.MatchString(in.ThreadID) || !executionHash.MatchString(in.RequestHash) {
 		return false
 	}
