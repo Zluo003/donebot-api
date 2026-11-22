@@ -17,7 +17,7 @@ const (
 	MaxGroupMembers      = 100
 )
 
-var inlineAvatarDataURL = regexp.MustCompile(`^data:image/(?:png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$`)
+var inlineAvatarDataURL = regexp.MustCompile(`^data:image/(?:png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$`)
 
 func validateAvatarDataURL(raw string) (string, error) {
 	v := strings.TrimSpace(raw)
@@ -25,7 +25,7 @@ func validateAvatarDataURL(raw string) (string, error) {
 		return "", nil
 	}
 	if len(v) > MaxCollabAvatarChars || !inlineAvatarDataURL.MatchString(v) {
-		return "", infraerrors.BadRequest("COLLAB_AVATAR_INVALID", "头像仅支持 512 KB 以内的 PNG、JPEG 或 WebP 图片。")
+		return "", infraerrors.BadRequest("COLLAB_AVATAR_INVALID", "头像仅支持 512 KB 以内的 PNG、JPEG、WebP 或 GIF 图片。")
 	}
 	return v, nil
 }

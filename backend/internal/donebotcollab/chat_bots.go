@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -16,38 +18,128 @@ import (
 const (
 	MaxBotsPerChat    = 20
 	MaxMentionsPerMsg = 3
+	MaxSyncChatBots   = 50
 )
 
+var (
+	botMascotBodyRe       = regexp.MustCompile(`^[a-z0-9_-]{1,40}$`)
+	botMascotExpressionRe = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
+)
+
+func sanitizeBotMascotBody(raw string) string {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	if botMascotBodyRe.MatchString(v) {
+		return v
+	}
+	return ""
+}
+
+func sanitizeBotMascotFaceColor(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "white", "black":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
+	}
+}
+
+func sanitizeBotMascotExpression(raw string) string {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	if botMascotExpressionRe.MatchString(v) {
+		return v
+	}
+	return ""
+}
+
+func sanitizeBotAvatarCrop(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "mascot", "circle", "rounded", "square":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
+	}
+}
+
+func clampBotAvatarZoom(v *float64) float64 {
+	if v == nil || math.IsNaN(*v) || math.IsInf(*v, 0) {
+		return 1
+	}
+	clamped := math.Max(1, math.Min(3, *v))
+	return math.Round(clamped*100) / 100
+}
+
+func clampBotAvatarFocus(v *float64) float64 {
+	if v == nil || math.IsNaN(*v) || math.IsInf(*v, 0) {
+		return 0.5
+	}
+	clamped := math.Max(0, math.Min(1, *v))
+	return math.Round(clamped*1000) / 1000
+}
+
 type ChatBot struct {
-	ID              string    `json:"id"`
-	ScopeType       string    `json:"scope_type"` // "team" | "group"
-	TargetID        string    `json:"target_id"`
-	OwnerUserID     int64     `json:"owner_user_id"`
-	OwnerEmail      string    `json:"owner_email"`
-	OwnerNickname   string    `json:"owner_nickname,omitempty"`
-	OwnerAvatarURL  string    `json:"owner_avatar_url,omitempty"`
-	OwnerRemark     string    `json:"owner_remark,omitempty"`
-	InstallationID  string    `json:"installation_id"`
-	LocalBotID      string    `json:"local_bot_id"`
-	BotName         string    `json:"bot_name"`
-	BotColor        string    `json:"bot_color"`
-	BotAvatarURL    string    `json:"bot_avatar_url,omitempty"`
-	BotTitle        string    `json:"bot_title,omitempty"`
-	AllowAllMembers bool      `json:"allow_all_members"`
-	AllowedUserIDs  []int64   `json:"allowed_user_ids"`
-	CanInvoke       bool      `json:"can_invoke"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID                  string    `json:"id"`
+	ScopeType           string    `json:"scope_type"` // "team" | "group"
+	TargetID            string    `json:"target_id"`
+	OwnerUserID         int64     `json:"owner_user_id"`
+	OwnerEmail          string    `json:"owner_email"`
+	OwnerNickname       string    `json:"owner_nickname,omitempty"`
+	OwnerAvatarURL      string    `json:"owner_avatar_url,omitempty"`
+	OwnerRemark         string    `json:"owner_remark,omitempty"`
+	InstallationID      string    `json:"installation_id"`
+	LocalBotID          string    `json:"local_bot_id"`
+	BotName             string    `json:"bot_name"`
+	BotColor            string    `json:"bot_color"`
+	BotAvatarURL        string    `json:"bot_avatar_url,omitempty"`
+	BotMascotBody       string    `json:"bot_mascot_body,omitempty"`
+	BotMascotFaceColor  string    `json:"bot_mascot_face_color,omitempty"`
+	BotMascotExpression string    `json:"bot_mascot_expression,omitempty"`
+	BotAvatarCrop       string    `json:"bot_avatar_crop,omitempty"`
+	BotAvatarZoom       float64   `json:"bot_avatar_zoom"`
+	BotAvatarFocusX     float64   `json:"bot_avatar_focus_x"`
+	BotAvatarFocusY     float64   `json:"bot_avatar_focus_y"`
+	BotTitle            string    `json:"bot_title,omitempty"`
+	AllowAllMembers     bool      `json:"allow_all_members"`
+	AllowedUserIDs      []int64   `json:"allowed_user_ids"`
+	CanInvoke           bool      `json:"can_invoke"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 type AddChatBotInput struct {
-	InstallationID  string  `json:"installation_id"`
-	LocalBotID      string  `json:"local_bot_id"`
-	BotName         string  `json:"bot_name"`
-	BotColor        string  `json:"bot_color"`
-	BotAvatarURL    string  `json:"bot_avatar_url"`
-	BotTitle        string  `json:"bot_title"`
-	AllowAllMembers bool    `json:"allow_all_members"`
-	AllowedUserIDs  []int64 `json:"allowed_user_ids"`
+	InstallationID      string   `json:"installation_id"`
+	LocalBotID          string   `json:"local_bot_id"`
+	BotName             string   `json:"bot_name"`
+	BotColor            string   `json:"bot_color"`
+	BotAvatarURL        string   `json:"bot_avatar_url"`
+	BotMascotBody       string   `json:"bot_mascot_body"`
+	BotMascotFaceColor  string   `json:"bot_mascot_face_color"`
+	BotMascotExpression string   `json:"bot_mascot_expression"`
+	BotAvatarCrop       string   `json:"bot_avatar_crop"`
+	BotAvatarZoom       *float64 `json:"bot_avatar_zoom"`
+	BotAvatarFocusX     *float64 `json:"bot_avatar_focus_x"`
+	BotAvatarFocusY     *float64 `json:"bot_avatar_focus_y"`
+	BotTitle            string   `json:"bot_title"`
+	AllowAllMembers     bool     `json:"allow_all_members"`
+	AllowedUserIDs      []int64  `json:"allowed_user_ids"`
+}
+
+type SyncChatBotProfileItem struct {
+	LocalBotID          string   `json:"local_bot_id"`
+	BotName             string   `json:"bot_name"`
+	BotColor            string   `json:"bot_color"`
+	BotAvatarURL        string   `json:"bot_avatar_url"`
+	BotMascotBody       string   `json:"bot_mascot_body"`
+	BotMascotFaceColor  string   `json:"bot_mascot_face_color"`
+	BotMascotExpression string   `json:"bot_mascot_expression"`
+	BotAvatarCrop       string   `json:"bot_avatar_crop"`
+	BotAvatarZoom       *float64 `json:"bot_avatar_zoom"`
+	BotAvatarFocusX     *float64 `json:"bot_avatar_focus_x"`
+	BotAvatarFocusY     *float64 `json:"bot_avatar_focus_y"`
+	BotTitle            string   `json:"bot_title"`
+}
+
+type SyncChatBotsInput struct {
+	InstallationID string                   `json:"installation_id"`
+	Bots           []SyncChatBotProfileItem `json:"bots"`
 }
 
 type UpdateChatBotGrantsInput struct {
@@ -118,7 +210,10 @@ func (s *Service) ListChatBots(ctx context.Context, actor int64, scopeType, targ
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT b.id::text, b.scope_type, b.scope_key, b.owner_user_id,
 		u.email, COALESCE(u.username, ''), COALESCE(ua.url, ''), COALESCE(rm.remark, ''),
-		b.installation_id::text, b.local_bot_id, b.bot_name, b.bot_color, COALESCE(b.bot_avatar_url, ''), COALESCE(b.bot_title, ''),
+		b.installation_id::text, b.local_bot_id, b.bot_name, b.bot_color, COALESCE(b.bot_avatar_url, ''),
+		COALESCE(b.bot_mascot_body, ''), COALESCE(b.bot_mascot_face_color, ''), COALESCE(b.bot_mascot_expression, ''),
+		COALESCE(b.bot_avatar_crop, ''), b.bot_avatar_zoom, b.bot_avatar_focus_x, b.bot_avatar_focus_y,
+		COALESCE(b.bot_title, ''),
 		b.allow_all_members, b.created_at
 		FROM donebot_collab_chat_bots b
 		JOIN users u ON u.id = b.owner_user_id AND u.deleted_at IS NULL AND u.status = 'active'
@@ -138,7 +233,10 @@ func (s *Service) ListChatBots(ctx context.Context, actor int64, scopeType, targ
 		if err = rows.Scan(
 			&item.ID, &item.ScopeType, &item.TargetID, &item.OwnerUserID,
 			&item.OwnerEmail, &item.OwnerNickname, &item.OwnerAvatarURL, &item.OwnerRemark,
-			&item.InstallationID, &item.LocalBotID, &item.BotName, &item.BotColor, &item.BotAvatarURL, &item.BotTitle,
+			&item.InstallationID, &item.LocalBotID, &item.BotName, &item.BotColor, &item.BotAvatarURL,
+			&item.BotMascotBody, &item.BotMascotFaceColor, &item.BotMascotExpression,
+			&item.BotAvatarCrop, &item.BotAvatarZoom, &item.BotAvatarFocusX, &item.BotAvatarFocusY,
+			&item.BotTitle,
 			&item.AllowAllMembers, &item.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -213,10 +311,20 @@ func (s *Service) AddChatBot(ctx context.Context, actor int64, scopeType, target
 	if botColor == "" || len(botColor) > 32 {
 		botColor = "blue"
 	}
+	botAvatarCrop := sanitizeBotAvatarCrop(in.BotAvatarCrop)
 	botAvatar, err := validateAvatarDataURL(in.BotAvatarURL)
 	if err != nil {
 		return nil, err
 	}
+	if botAvatarCrop == "mascot" {
+		botAvatar = ""
+	}
+	botMascotBody := sanitizeBotMascotBody(in.BotMascotBody)
+	botMascotFaceColor := sanitizeBotMascotFaceColor(in.BotMascotFaceColor)
+	botMascotExpression := sanitizeBotMascotExpression(in.BotMascotExpression)
+	botAvatarZoom := clampBotAvatarZoom(in.BotAvatarZoom)
+	botAvatarFocusX := clampBotAvatarFocus(in.BotAvatarFocusX)
+	botAvatarFocusY := clampBotAvatarFocus(in.BotAvatarFocusY)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -240,16 +348,31 @@ func (s *Service) AddChatBot(ctx context.Context, actor int64, scopeType, target
 		id = uuid.NewString()
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO donebot_collab_chat_bots(
-			id, scope_type, scope_key, owner_user_id, installation_id, local_bot_id, bot_name, bot_color, bot_avatar_url, bot_title, allow_all_members
-		) VALUES($1::uuid, $2, $3, $4, $5::uuid, $6, $7, $8, $9, $10, $11)
+			id, scope_type, scope_key, owner_user_id, installation_id, local_bot_id,
+			bot_name, bot_color, bot_avatar_url,
+			bot_mascot_body, bot_mascot_face_color, bot_mascot_expression,
+			bot_avatar_crop, bot_avatar_zoom, bot_avatar_focus_x, bot_avatar_focus_y,
+			bot_title, allow_all_members
+		) VALUES($1::uuid, $2, $3, $4, $5::uuid, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT(scope_type, scope_key, owner_user_id, local_bot_id) DO UPDATE
 		SET installation_id = EXCLUDED.installation_id,
 		    bot_name = EXCLUDED.bot_name,
 		    bot_color = EXCLUDED.bot_color,
 		    bot_avatar_url = EXCLUDED.bot_avatar_url,
+		    bot_mascot_body = EXCLUDED.bot_mascot_body,
+		    bot_mascot_face_color = EXCLUDED.bot_mascot_face_color,
+		    bot_mascot_expression = EXCLUDED.bot_mascot_expression,
+		    bot_avatar_crop = EXCLUDED.bot_avatar_crop,
+		    bot_avatar_zoom = EXCLUDED.bot_avatar_zoom,
+		    bot_avatar_focus_x = EXCLUDED.bot_avatar_focus_x,
+		    bot_avatar_focus_y = EXCLUDED.bot_avatar_focus_y,
 		    bot_title = EXCLUDED.bot_title,
 		    allow_all_members = EXCLUDED.allow_all_members`,
-		id, normType, scopeKey, actor, in.InstallationID, localBotID, botName, botColor, botAvatar, botTitle, in.AllowAllMembers); err != nil {
+		id, normType, scopeKey, actor, in.InstallationID, localBotID,
+		botName, botColor, botAvatar,
+		botMascotBody, botMascotFaceColor, botMascotExpression,
+		botAvatarCrop, botAvatarZoom, botAvatarFocusX, botAvatarFocusY,
+		botTitle, in.AllowAllMembers); err != nil {
 		return nil, err
 	}
 	if err = s.replaceChatBotGrants(ctx, tx, id, normType, scopeKey, actor, in.AllowedUserIDs); err != nil {
@@ -269,6 +392,94 @@ func (s *Service) AddChatBot(ctx context.Context, actor int64, scopeType, target
 		}
 	}
 	return nil, infraerrors.NotFound("COLLAB_CHAT_BOT_NOT_FOUND", "机器人添加失败。")
+}
+
+// SyncChatBots refreshes the stored appearance and profile metadata for bots owned by actor on an installation.
+func (s *Service) SyncChatBots(ctx context.Context, actor int64, in SyncChatBotsInput) (int, error) {
+	if err := s.available(); err != nil {
+		return 0, err
+	}
+	if actor <= 0 {
+		return 0, infraerrors.Unauthorized("COLLAB_UNAUTHORIZED", "请先登录。")
+	}
+	if !validUUID(in.InstallationID) {
+		return 0, infraerrors.BadRequest("COLLAB_INSTALL_INVALID", "无效的客户端安装标识。")
+	}
+	if len(in.Bots) == 0 {
+		return 0, nil
+	}
+	if len(in.Bots) > MaxSyncChatBots {
+		return 0, infraerrors.BadRequest("COLLAB_SYNC_TOO_MANY_BOTS", "单次最多同步 50 个机器人资料。")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	updated := 0
+	for _, item := range in.Bots {
+		localBotID, err := cleanText(item.LocalBotID, 128, "COLLAB_BOT_ID_INVALID", "无效的机器人标识。")
+		if err != nil {
+			return 0, err
+		}
+		botName, err := cleanText(item.BotName, 120, "COLLAB_BOT_NAME_INVALID", "机器人名称需为 1-120 个字符。")
+		if err != nil {
+			return 0, err
+		}
+		botTitle, err := cleanOptionalText(item.BotTitle, 200, "COLLAB_BOT_TITLE_INVALID", "机器人简介不能超过 200 个字符。")
+		if err != nil {
+			return 0, err
+		}
+		botColor := strings.TrimSpace(item.BotColor)
+		if botColor == "" || len(botColor) > 32 {
+			botColor = "blue"
+		}
+		botAvatarCrop := sanitizeBotAvatarCrop(item.BotAvatarCrop)
+		botAvatar, err := validateAvatarDataURL(item.BotAvatarURL)
+		if err != nil {
+			return 0, err
+		}
+		if botAvatarCrop == "mascot" {
+			botAvatar = ""
+		}
+		botMascotBody := sanitizeBotMascotBody(item.BotMascotBody)
+		botMascotFaceColor := sanitizeBotMascotFaceColor(item.BotMascotFaceColor)
+		botMascotExpression := sanitizeBotMascotExpression(item.BotMascotExpression)
+		botAvatarZoom := clampBotAvatarZoom(item.BotAvatarZoom)
+		botAvatarFocusX := clampBotAvatarFocus(item.BotAvatarFocusX)
+		botAvatarFocusY := clampBotAvatarFocus(item.BotAvatarFocusY)
+
+		res, execErr := tx.ExecContext(ctx, `UPDATE donebot_collab_chat_bots
+			SET bot_name = $4,
+			    bot_color = $5,
+			    bot_avatar_url = $6,
+			    bot_mascot_body = $7,
+			    bot_mascot_face_color = $8,
+			    bot_mascot_expression = $9,
+			    bot_avatar_crop = $10,
+			    bot_avatar_zoom = $11,
+			    bot_avatar_focus_x = $12,
+			    bot_avatar_focus_y = $13,
+			    bot_title = $14
+			WHERE owner_user_id = $1 AND installation_id = $2::uuid AND local_bot_id = $3`,
+			actor, in.InstallationID, localBotID,
+			botName, botColor, botAvatar,
+			botMascotBody, botMascotFaceColor, botMascotExpression,
+			botAvatarCrop, botAvatarZoom, botAvatarFocusX, botAvatarFocusY,
+			botTitle)
+		if execErr != nil {
+			return 0, execErr
+		}
+		if rowsAffected, _ := res.RowsAffected(); rowsAffected > 0 {
+			updated += int(rowsAffected)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	return updated, nil
 }
 
 // UpdateChatBotGrants updates which members of a team/group are authorized to @invoke the owner's bot.
@@ -539,13 +750,20 @@ func (s *Service) CompleteBotInvocation(ctx context.Context, actor int64, invoca
 	defer func() { _ = tx.Rollback() }()
 
 	var chatBotID, scopeType, scopeKey, botName, botColor, botAvatar, status string
+	var botMascotBody, botMascotFaceColor, botMascotExpression, botAvatarCrop string
+	var botAvatarZoom, botAvatarFocusX, botAvatarFocusY float64
 	var ownerID int64
 	err = tx.QueryRowContext(ctx, `SELECT i.chat_bot_id::text, i.scope_type, i.scope_key, i.owner_user_id, i.status,
-		b.bot_name, b.bot_color, COALESCE(b.bot_avatar_url, '')
+		b.bot_name, b.bot_color, COALESCE(b.bot_avatar_url, ''),
+		COALESCE(b.bot_mascot_body, ''), COALESCE(b.bot_mascot_face_color, ''), COALESCE(b.bot_mascot_expression, ''),
+		COALESCE(b.bot_avatar_crop, ''), b.bot_avatar_zoom, b.bot_avatar_focus_x, b.bot_avatar_focus_y
 		FROM donebot_collab_bot_invocations i
 		JOIN donebot_collab_chat_bots b ON b.id = i.chat_bot_id
 		WHERE i.id = $1::uuid FOR UPDATE OF i`, invocationID).Scan(
-		&chatBotID, &scopeType, &scopeKey, &ownerID, &status, &botName, &botColor, &botAvatar,
+		&chatBotID, &scopeType, &scopeKey, &ownerID, &status,
+		&botName, &botColor, &botAvatar,
+		&botMascotBody, &botMascotFaceColor, &botMascotExpression,
+		&botAvatarCrop, &botAvatarZoom, &botAvatarFocusX, &botAvatarFocusY,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, infraerrors.NotFound("COLLAB_INVOCATION_NOT_FOUND", "机器人调用记录不存在。")
@@ -588,9 +806,17 @@ func (s *Service) CompleteBotInvocation(ctx context.Context, actor int64, invoca
 
 	var msgID int64
 	if err = tx.QueryRowContext(ctx, `INSERT INTO donebot_collab_messages(
-			scope_type, scope_key, sender_id, sender_kind, sender_bot_id, sender_bot_name, sender_bot_color, sender_bot_avatar_url, kind, body
-		) VALUES($1, $2, $3, 'bot', $4::uuid, $5, $6, $7, 'text', $8) RETURNING id`,
-		scopeType, scopeKey, actor, chatBotID, botName, botColor, botAvatar, reply).Scan(&msgID); err != nil {
+			scope_type, scope_key, sender_id, sender_kind, sender_bot_id,
+			sender_bot_name, sender_bot_color, sender_bot_avatar_url,
+			sender_bot_mascot_body, sender_bot_mascot_face_color, sender_bot_mascot_expression,
+			sender_bot_avatar_crop, sender_bot_avatar_zoom, sender_bot_avatar_focus_x, sender_bot_avatar_focus_y,
+			kind, body
+		) VALUES($1, $2, $3, 'bot', $4::uuid, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'text', $15) RETURNING id`,
+		scopeType, scopeKey, actor, chatBotID,
+		botName, botColor, botAvatar,
+		botMascotBody, botMascotFaceColor, botMascotExpression,
+		botAvatarCrop, botAvatarZoom, botAvatarFocusX, botAvatarFocusY,
+		reply).Scan(&msgID); err != nil {
 		return nil, err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE donebot_collab_bot_invocations SET status = 'done', error_text = '', completed_at = NOW() WHERE id = $1::uuid`, invocationID); err != nil {

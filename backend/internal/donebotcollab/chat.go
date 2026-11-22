@@ -42,11 +42,18 @@ type ChatMessage struct {
 	SenderNickname     string    `json:"sender_nickname,omitempty"`
 	SenderAvatarURL    string    `json:"sender_avatar_url,omitempty"`
 	SenderRemark       string    `json:"sender_remark,omitempty"`
-	SenderBotID        string    `json:"sender_bot_id,omitempty"`
-	SenderBotName      string    `json:"sender_bot_name,omitempty"`
-	SenderBotColor     string    `json:"sender_bot_color,omitempty"`
-	SenderBotAvatarURL string    `json:"sender_bot_avatar_url,omitempty"`
-	Kind               string    `json:"kind"` // "text" | "file"
+	SenderBotID               string    `json:"sender_bot_id,omitempty"`
+	SenderBotName             string    `json:"sender_bot_name,omitempty"`
+	SenderBotColor            string    `json:"sender_bot_color,omitempty"`
+	SenderBotAvatarURL        string    `json:"sender_bot_avatar_url,omitempty"`
+	SenderBotMascotBody       string    `json:"sender_bot_mascot_body,omitempty"`
+	SenderBotMascotFaceColor  string    `json:"sender_bot_mascot_face_color,omitempty"`
+	SenderBotMascotExpression string    `json:"sender_bot_mascot_expression,omitempty"`
+	SenderBotAvatarCrop       string    `json:"sender_bot_avatar_crop,omitempty"`
+	SenderBotAvatarZoom       *float64  `json:"sender_bot_avatar_zoom,omitempty"`
+	SenderBotAvatarFocusX     *float64  `json:"sender_bot_avatar_focus_x,omitempty"`
+	SenderBotAvatarFocusY     *float64  `json:"sender_bot_avatar_focus_y,omitempty"`
+	Kind                      string    `json:"kind"` // "text" | "file"
 	Body               string    `json:"body"`
 	FileID             string    `json:"file_id,omitempty"`
 	FileName           string    `json:"file_name,omitempty"`
@@ -285,15 +292,28 @@ func (s *Service) upsertChatRead(ctx context.Context, q queryExecer, actor int64
 }
 
 const chatMessageSelectCols = `m.id, m.scope_type, m.sender_id, COALESCE(m.sender_kind, 'user'), u.email, COALESCE(u.username, ''), COALESCE(ua.url, ''), COALESCE(rm.remark, ''),
-		m.sender_bot_id::text, COALESCE(m.sender_bot_name, ''), COALESCE(m.sender_bot_color, ''), COALESCE(m.sender_bot_avatar_url, ''),
+		m.sender_bot_id::text,
+		CASE WHEN cb.id IS NOT NULL THEN cb.bot_name ELSE COALESCE(m.sender_bot_name, '') END,
+		CASE WHEN cb.id IS NOT NULL THEN cb.bot_color ELSE COALESCE(m.sender_bot_color, '') END,
+		CASE WHEN cb.id IS NOT NULL THEN COALESCE(cb.bot_avatar_url, '') ELSE COALESCE(m.sender_bot_avatar_url, '') END,
+		CASE WHEN cb.id IS NOT NULL THEN COALESCE(cb.bot_mascot_body, '') ELSE COALESCE(m.sender_bot_mascot_body, '') END,
+		CASE WHEN cb.id IS NOT NULL THEN COALESCE(cb.bot_mascot_face_color, '') ELSE COALESCE(m.sender_bot_mascot_face_color, '') END,
+		CASE WHEN cb.id IS NOT NULL THEN COALESCE(cb.bot_mascot_expression, '') ELSE COALESCE(m.sender_bot_mascot_expression, '') END,
+		CASE WHEN cb.id IS NOT NULL THEN COALESCE(cb.bot_avatar_crop, '') ELSE COALESCE(m.sender_bot_avatar_crop, '') END,
+		CASE WHEN cb.id IS NOT NULL THEN cb.bot_avatar_zoom ELSE m.sender_bot_avatar_zoom END,
+		CASE WHEN cb.id IS NOT NULL THEN cb.bot_avatar_focus_x ELSE m.sender_bot_avatar_focus_x END,
+		CASE WHEN cb.id IS NOT NULL THEN cb.bot_avatar_focus_y ELSE m.sender_bot_avatar_focus_y END,
 		m.kind, m.body, m.file_id::text, m.file_name, m.file_mime, m.file_size, m.file_sha256, m.created_at`
 
 func scanChatMessage(scanner interface{ Scan(...any) error }, targetID string) (ChatMessage, error) {
 	var msg ChatMessage
 	var fileID, botID sql.NullString
+	var botZoom, botFocusX, botFocusY float64
 	err := scanner.Scan(
 		&msg.ID, &msg.ScopeType, &msg.SenderID, &msg.SenderKind, &msg.SenderEmail, &msg.SenderNickname, &msg.SenderAvatarURL, &msg.SenderRemark,
 		&botID, &msg.SenderBotName, &msg.SenderBotColor, &msg.SenderBotAvatarURL,
+		&msg.SenderBotMascotBody, &msg.SenderBotMascotFaceColor, &msg.SenderBotMascotExpression,
+		&msg.SenderBotAvatarCrop, &botZoom, &botFocusX, &botFocusY,
 		&msg.Kind, &msg.Body, &fileID, &msg.FileName, &msg.FileMime, &msg.FileSize, &msg.FileSha256, &msg.CreatedAt,
 	)
 	if err != nil {
@@ -302,6 +322,12 @@ func scanChatMessage(scanner interface{ Scan(...any) error }, targetID string) (
 	msg.TargetID = targetID
 	if msg.SenderKind == "" {
 		msg.SenderKind = "user"
+	}
+	if msg.SenderKind == "bot" {
+		z, fx, fy := botZoom, botFocusX, botFocusY
+		msg.SenderBotAvatarZoom = &z
+		msg.SenderBotAvatarFocusX = &fx
+		msg.SenderBotAvatarFocusY = &fy
 	}
 	if botID.Valid {
 		msg.SenderBotID = botID.String
@@ -318,6 +344,7 @@ func (s *Service) fetchChatMessageByID(ctx context.Context, actor int64, id int6
 		JOIN users u ON u.id = m.sender_id
 		LEFT JOIN user_avatars ua ON ua.user_id = u.id
 		LEFT JOIN donebot_friend_remarks rm ON rm.owner_id = $1 AND rm.friend_id = u.id
+		LEFT JOIN donebot_collab_chat_bots cb ON cb.id = m.sender_bot_id
 		WHERE m.id = $2`, actor, id)
 	msg, err := scanChatMessage(row, targetID)
 	if err != nil {
@@ -478,6 +505,7 @@ func (s *Service) ListChatMessages(ctx context.Context, actor int64, scopeType, 
 			JOIN users u ON u.id = m.sender_id
 			LEFT JOIN user_avatars ua ON ua.user_id = u.id
 			LEFT JOIN donebot_friend_remarks rm ON rm.owner_id = $1 AND rm.friend_id = u.id
+			LEFT JOIN donebot_collab_chat_bots cb ON cb.id = m.sender_bot_id
 			WHERE m.scope_type = $2 AND m.scope_key = $3 AND m.id > $4
 			ORDER BY m.id ASC
 			LIMIT $5`, actor, normType, scopeKey, afterID, limit)
@@ -488,6 +516,7 @@ func (s *Service) ListChatMessages(ctx context.Context, actor int64, scopeType, 
 			JOIN users u ON u.id = m.sender_id
 			LEFT JOIN user_avatars ua ON ua.user_id = u.id
 			LEFT JOIN donebot_friend_remarks rm ON rm.owner_id = $1 AND rm.friend_id = u.id
+			LEFT JOIN donebot_collab_chat_bots cb ON cb.id = m.sender_bot_id
 			WHERE m.scope_type = $2 AND m.scope_key = $3 AND m.id < $4
 			ORDER BY m.id DESC
 			LIMIT $5`, actor, normType, scopeKey, beforeID, limit)
@@ -498,6 +527,7 @@ func (s *Service) ListChatMessages(ctx context.Context, actor int64, scopeType, 
 			JOIN users u ON u.id = m.sender_id
 			LEFT JOIN user_avatars ua ON ua.user_id = u.id
 			LEFT JOIN donebot_friend_remarks rm ON rm.owner_id = $1 AND rm.friend_id = u.id
+			LEFT JOIN donebot_collab_chat_bots cb ON cb.id = m.sender_bot_id
 			WHERE m.scope_type = $2 AND m.scope_key = $3
 			ORDER BY m.id DESC
 			LIMIT $4`, actor, normType, scopeKey, limit)
@@ -543,6 +573,7 @@ func (s *Service) ListChatFiles(ctx context.Context, actor int64, scopeType, tar
 		JOIN users u ON u.id = m.sender_id
 		LEFT JOIN user_avatars ua ON ua.user_id = u.id
 		LEFT JOIN donebot_friend_remarks rm ON rm.owner_id = $1 AND rm.friend_id = u.id
+		LEFT JOIN donebot_collab_chat_bots cb ON cb.id = m.sender_bot_id
 		WHERE m.scope_type = $2 AND m.scope_key = $3 AND m.kind = 'file' AND m.file_id IS NOT NULL
 		ORDER BY m.id DESC
 		LIMIT $4`, actor, normType, scopeKey, limit)

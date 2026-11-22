@@ -81,6 +81,7 @@ func TestCollabChatPostgres(t *testing.T) {
 		"../../migrations/281_donebot_friend_remarks.sql",
 		"../../migrations/282_donebot_collab_messages.sql",
 		"../../migrations/283_donebot_collab_groups_and_bots.sql",
+		"../../migrations/284_donebot_collab_bot_appearance.sql",
 	} {
 		sqlBytes, readErr := os.ReadFile(file)
 		require.NoError(t, readErr)
@@ -172,14 +173,33 @@ func TestCollabChatPostgres(t *testing.T) {
 
 	// Alice adds her local bot to the friend group without granting Bob yet.
 	installID := uuid.NewString()
+	zoom15 := 1.5
+	focusZero := 0.0
+	focus75 := 0.75
 	bot, err := collab.AddChatBot(ctx, 1, "group", grp.ID, AddChatBotInput{
-		InstallationID: installID,
-		LocalBotID:     "bot-duobao",
-		BotName:        "多宝",
-		BotColor:       "blue",
+		InstallationID:      installID,
+		LocalBotID:          "bot-duobao",
+		BotName:             "多宝",
+		BotColor:            "chrome",
+		BotAvatarURL:        "data:image/png;base64,iVBORw0KGgo=",
+		BotMascotBody:       "circle",
+		BotMascotFaceColor:  "black",
+		BotMascotExpression: "happy",
+		BotAvatarCrop:       "rounded",
+		BotAvatarZoom:       &zoom15,
+		BotAvatarFocusX:     &focusZero,
+		BotAvatarFocusY:     &focus75,
 	})
 	require.NoError(t, err)
 	require.True(t, bot.CanInvoke)
+	require.Equal(t, "chrome", bot.BotColor)
+	require.Equal(t, "circle", bot.BotMascotBody)
+	require.Equal(t, "black", bot.BotMascotFaceColor)
+	require.Equal(t, "happy", bot.BotMascotExpression)
+	require.Equal(t, "rounded", bot.BotAvatarCrop)
+	require.Equal(t, 1.5, bot.BotAvatarZoom)
+	require.Equal(t, 0.0, bot.BotAvatarFocusX)
+	require.Equal(t, 0.75, bot.BotAvatarFocusY)
 
 	// Bob is NOT authorized yet -> @多宝 is denied and creates zero invocations.
 	deniedMsg, err := collab.SendChatMessage(ctx, 2, "group", grp.ID, "@多宝 帮我查一下")
@@ -210,4 +230,63 @@ func TestCollabChatPostgres(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "bot", reply.SenderKind)
 	require.Equal(t, "多宝", reply.SenderBotName)
+	require.Equal(t, "circle", reply.SenderBotMascotBody)
+	require.Equal(t, "rounded", reply.SenderBotAvatarCrop)
+	require.NotNil(t, reply.SenderBotAvatarFocusX)
+	require.Equal(t, 0.0, *reply.SenderBotAvatarFocusX)
+
+	// Sync updated appearance (switch from custom photo to star mascot) -> updates both roster and live messages.
+	updatedCount, err := collab.SyncChatBots(ctx, 1, SyncChatBotsInput{
+		InstallationID: installID,
+		Bots: []SyncChatBotProfileItem{{
+			LocalBotID:          "bot-duobao",
+			BotName:             "多宝",
+			BotColor:            "purple",
+			BotAvatarURL:        "data:image/png;base64,iVBORw0KGgo=",
+			BotMascotBody:       "star",
+			BotMascotFaceColor:  "white",
+			BotMascotExpression: "focused",
+			BotAvatarCrop:       "mascot",
+		}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, updatedCount)
+
+	botsAfter, err := collab.ListChatBots(ctx, 2, "group", grp.ID)
+	require.NoError(t, err)
+	require.Len(t, botsAfter, 1)
+	require.Equal(t, "purple", botsAfter[0].BotColor)
+	require.Equal(t, "star", botsAfter[0].BotMascotBody)
+	require.Equal(t, "white", botsAfter[0].BotMascotFaceColor)
+	require.Equal(t, "focused", botsAfter[0].BotMascotExpression)
+	require.Equal(t, "mascot", botsAfter[0].BotAvatarCrop)
+	require.Empty(t, botsAfter[0].BotAvatarURL)
+
+	msgsAfter, err := collab.ListChatMessages(ctx, 2, "group", grp.ID, 0, 0, 20)
+	require.NoError(t, err)
+	var syncedBotMsg *ChatMessage
+	for i := range msgsAfter {
+		if msgsAfter[i].ID == reply.ID {
+			syncedBotMsg = &msgsAfter[i]
+		}
+	}
+	require.NotNil(t, syncedBotMsg)
+	require.Equal(t, "purple", syncedBotMsg.SenderBotColor)
+	require.Equal(t, "star", syncedBotMsg.SenderBotMascotBody)
+	require.Equal(t, "mascot", syncedBotMsg.SenderBotAvatarCrop)
+	require.Empty(t, syncedBotMsg.SenderBotAvatarURL)
+
+	// Removing bot preserves original snapshot on historical messages.
+	require.NoError(t, collab.RemoveChatBot(ctx, 1, "group", grp.ID, bot.ID))
+	msgsRemoved, err := collab.ListChatMessages(ctx, 2, "group", grp.ID, 0, 0, 20)
+	require.NoError(t, err)
+	var removedBotMsg *ChatMessage
+	for i := range msgsRemoved {
+		if msgsRemoved[i].ID == reply.ID {
+			removedBotMsg = &msgsRemoved[i]
+		}
+	}
+	require.NotNil(t, removedBotMsg)
+	require.Equal(t, "circle", removedBotMsg.SenderBotMascotBody)
+	require.Equal(t, "rounded", removedBotMsg.SenderBotAvatarCrop)
 }

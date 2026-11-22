@@ -60,6 +60,7 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 		authenticated.PUT("/donebot/collab/chats/:scope_type/:target_id/bots/:bot_id/grants", h.DoneBot.CollabChatBotGrantsUpdate)
 		authenticated.DELETE("/donebot/collab/chats/:scope_type/:target_id/bots/:bot_id", h.DoneBot.CollabChatBotRemove)
 		authenticated.POST("/donebot/collab/chat-bots/claim", h.DoneBot.CollabChatBotClaim)
+		authenticated.POST("/donebot/collab/chat-bots/sync", h.DoneBot.CollabChatBotsSync)
 		authenticated.POST("/donebot/collab/chat-bots/invocations/:id/reply", h.DoneBot.CollabChatBotReply)
 		authenticated.GET("/donebot/collab/groups", h.DoneBot.CollabGroupsList)
 		authenticated.POST("/donebot/collab/groups", h.DoneBot.CollabGroupCreate)

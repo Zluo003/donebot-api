@@ -382,3 +382,21 @@ func (h *DoneBotHandler) CollabChatBotReply(c *gin.Context) {
 		response.Success(c, gin.H{"message": out})
 	}
 }
+
+func (h *DoneBotHandler) CollabChatBotsSync(c *gin.Context) {
+	svc, actor, ok := h.collabActor(c)
+	if !ok {
+		return
+	}
+	var in donebotcollab.SyncChatBotsInput
+	if !strictCollabBody(c, 4<<20, &in) {
+		return
+	}
+	if in.InstallationID == "" {
+		in.InstallationID = c.GetHeader("X-DoneBot-Installation")
+	}
+	updated, err := svc.SyncChatBots(c.Request.Context(), actor, in)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, gin.H{"updated": updated})
+	}
+}
