@@ -62,6 +62,14 @@ type Invitation struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	Token     string    `json:"token,omitempty"`
 }
+type IncomingInvitation struct {
+	ID             string    `json:"id"`
+	TeamID         string    `json:"team_id"`
+	TeamName       string    `json:"team_name"`
+	Role           Role      `json:"role"`
+	InvitedByEmail string    `json:"invited_by_email"`
+	ExpiresAt      time.Time `json:"expires_at"`
+}
 
 func validID(id string) bool {
 	v, err := uuid.Parse(id)
@@ -382,6 +390,189 @@ func (s *Service) RevokeInvitation(ctx context.Context, id string, actor int64, 
 	}
 	if n == 0 {
 		return notFound()
+	}
+	return tx.Commit()
+}
+
+func (s *Service) TeamInvitations(ctx context.Context, id string, actor int64) ([]Invitation, error) {
+	if err := s.available(); err != nil {
+		return nil, err
+	}
+	t, err := s.Access(ctx, id, actor)
+	if err != nil {
+		return nil, err
+	}
+	if !canManage(t.Role) {
+		return nil, infraerrors.Forbidden("TEAM_ADMIN_REQUIRED", "Team admin required")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT i.id::text,i.email,i.role,i.expires_at
+		FROM donebot_team_invitations i
+		JOIN donebot_team_members inviter ON inviter.team_id=i.team_id AND inviter.user_id=i.invited_by AND inviter.removed_at IS NULL
+		JOIN users u ON u.id=inviter.user_id AND u.deleted_at IS NULL AND u.status='active'
+		WHERE i.team_id=$1::uuid AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at>clock_timestamp()
+		AND ($2='owner' OR i.role='member')
+		ORDER BY i.created_at DESC,i.id`, id, t.Role)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Invitation{}
+	for rows.Next() {
+		var inv Invitation
+		if err = rows.Scan(&inv.ID, &inv.Email, &inv.Role, &inv.ExpiresAt); err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
+	}
+	return out, rows.Err()
+}
+
+func (s *Service) IncomingInvitations(ctx context.Context, actor int64) ([]IncomingInvitation, error) {
+	if err := s.available(); err != nil {
+		return nil, err
+	}
+	if actor <= 0 {
+		return nil, notFound()
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT i.id::text,i.team_id::text,t.name,i.role,iu.email,i.expires_at
+		FROM donebot_team_invitations i
+		JOIN donebot_teams t ON t.id=i.team_id AND t.state='active'
+		JOIN users me ON me.id=$1 AND me.deleted_at IS NULL AND me.status='active'
+		JOIN donebot_team_members inviter ON inviter.team_id=i.team_id AND inviter.user_id=i.invited_by AND inviter.removed_at IS NULL
+		JOIN users iu ON iu.id=inviter.user_id AND iu.deleted_at IS NULL AND iu.status='active'
+		WHERE i.email=lower(me.email) AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at>clock_timestamp()
+		AND (inviter.role='owner' OR (inviter.role='admin' AND i.role='member'))
+		ORDER BY i.created_at DESC,i.id`, actor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []IncomingInvitation{}
+	for rows.Next() {
+		var inv IncomingInvitation
+		if err = rows.Scan(&inv.ID, &inv.TeamID, &inv.TeamName, &inv.Role, &inv.InvitedByEmail, &inv.ExpiresAt); err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
+	}
+	return out, rows.Err()
+}
+
+func (s *Service) AcceptInvitation(ctx context.Context, actor int64, invitationID string) (*Team, error) {
+	if err := s.available(); err != nil {
+		return nil, err
+	}
+	if !validID(invitationID) || actor <= 0 {
+		return nil, notFound()
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var teamID string
+	if err = tx.QueryRowContext(ctx, `SELECT team_id::text FROM donebot_team_invitations WHERE id=$1::uuid`, invitationID).Scan(&teamID); errors.Is(err, sql.ErrNoRows) {
+		return nil, notFound()
+	} else if err != nil {
+		return nil, err
+	}
+	var state string
+	if err = tx.QueryRowContext(ctx, `SELECT state FROM donebot_teams WHERE id=$1::uuid FOR UPDATE`, teamID).Scan(&state); err != nil {
+		return nil, err
+	}
+	if state != "active" {
+		return nil, notFound()
+	}
+	var email string
+	var role Role
+	var accepted sql.NullInt64
+	var active bool
+	err = tx.QueryRowContext(ctx, `SELECT i.email,i.role,i.accepted_by,(i.revoked_at IS NULL AND i.expires_at>clock_timestamp())
+		FROM donebot_team_invitations i
+		JOIN donebot_team_members inviter ON inviter.team_id=i.team_id AND inviter.user_id=i.invited_by AND inviter.removed_at IS NULL
+		JOIN users u ON u.id=inviter.user_id AND u.deleted_at IS NULL AND u.status='active'
+		WHERE i.id=$1::uuid AND (inviter.role='owner' OR inviter.role='admin' AND i.role='member')
+		FOR UPDATE OF i`, invitationID).Scan(&email, &role, &accepted, &active)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, notFound()
+	} else if err != nil {
+		return nil, err
+	}
+	var actual string
+	if err = tx.QueryRowContext(ctx, `SELECT lower(email) FROM users WHERE id=$1 AND deleted_at IS NULL AND status='active'`, actor).Scan(&actual); err != nil {
+		return nil, notFound()
+	}
+	if actual != email || !active || (accepted.Valid && accepted.Int64 != actor) {
+		return nil, notFound()
+	}
+	if !accepted.Valid {
+		_, err = tx.ExecContext(ctx, `INSERT INTO donebot_team_members(team_id,user_id,role) VALUES($1::uuid,$2,$3)
+			ON CONFLICT(team_id,user_id) DO UPDATE SET role=EXCLUDED.role,removed_at=NULL,version=donebot_team_members.version+1,joined_at=NOW()
+			WHERE donebot_team_members.removed_at IS NOT NULL`, teamID, actor, role)
+		if err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE donebot_team_invitations SET accepted_by=$2,accepted_at=NOW() WHERE id=$1::uuid`, invitationID, actor); err != nil {
+			return nil, err
+		}
+	}
+	out, err := access(ctx, tx, teamID, actor, false)
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Service) DeclineInvitation(ctx context.Context, actor int64, invitationID string) error {
+	if err := s.available(); err != nil {
+		return err
+	}
+	if !validID(invitationID) || actor <= 0 {
+		return notFound()
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE donebot_team_invitations i SET revoked_at=NOW()
+		FROM users me WHERE i.id=$1::uuid AND me.id=$2 AND me.deleted_at IS NULL AND me.status='active'
+		AND i.email=lower(me.email) AND i.accepted_at IS NULL AND i.revoked_at IS NULL`, invitationID, actor)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return notFound()
+	}
+	return nil
+}
+
+func (s *Service) Leave(ctx context.Context, id string, actor int64) error {
+	if err := s.available(); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	t, err := access(ctx, tx, id, actor, true)
+	if err != nil {
+		return err
+	}
+	if t.Role == Owner {
+		return infraerrors.Forbidden("TEAM_OWNER_CANNOT_LEAVE", "Team owner cannot leave the team")
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE donebot_team_members SET removed_at=NOW(),version=version+1 WHERE team_id=$1::uuid AND user_id=$2`, id, actor); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE donebot_team_devices SET enabled=FALSE,revoked_at=NOW() WHERE team_id=$1::uuid AND user_id=$2`, id, actor); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE donebot_team_invitations SET revoked_at=NOW() WHERE team_id=$1::uuid AND invited_by=$2 AND accepted_at IS NULL AND revoked_at IS NULL`, id, actor); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

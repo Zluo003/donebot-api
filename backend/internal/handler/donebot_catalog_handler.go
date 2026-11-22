@@ -11,6 +11,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/donebotcollab"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -33,6 +34,7 @@ func ProvideDoneBotUserHandler(installs *service.DoneBotService, settings servic
 	if cfg != nil && cfg.DoneBot.Enabled {
 		h.mobile = doneBotMobileService(db, auth, mobileSettings)
 		h.mobileAuth = auth
+		h.collab = donebotcollab.New(db, true)
 	}
 	h.catalog, h.account = catalog, account
 	h.media = media

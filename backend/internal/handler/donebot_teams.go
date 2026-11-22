@@ -171,9 +171,65 @@ func (h *DoneBotHandler) TeamWorkspaces(c *gin.Context) {
 	out, err := teams.List(c.Request.Context(), actor)
 	if !response.ErrorFrom(c, err) {
 		capabilities := []string{"identity", "local_execution", "shared_files"}
+		if h.collab != nil && h.collab.Enabled() {
+			capabilities = append(capabilities, "collaboration")
+		}
 		if cfg, cfgErr := h.cloud.BrowserConfig(); cfgErr == nil && cfg != nil {
 			capabilities = append(capabilities, "cloud_access")
 		}
 		response.Success(c, gin.H{"protocol": donebotteam.Protocol, "capabilities": capabilities, "workspaces": out})
+	}
+}
+
+func (h *DoneBotHandler) TeamInvitations(c *gin.Context) {
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	out, err := teams.TeamInvitations(c.Request.Context(), c.Param("team"), actor)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+
+func (h *DoneBotHandler) TeamIncomingInvitations(c *gin.Context) {
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	out, err := teams.IncomingInvitations(c.Request.Context(), actor)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+
+func (h *DoneBotHandler) TeamAcceptInvitation(c *gin.Context) {
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	out, err := teams.AcceptInvitation(c.Request.Context(), actor, c.Param("invitation"))
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+
+func (h *DoneBotHandler) TeamDeclineInvitation(c *gin.Context) {
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	if !response.ErrorFrom(c, teams.DeclineInvitation(c.Request.Context(), actor, c.Param("invitation"))) {
+		response.Success(c, gin.H{"ok": true})
+	}
+}
+
+func (h *DoneBotHandler) TeamLeave(c *gin.Context) {
+	teams, actor, ok := h.teamActor(c)
+	if !ok {
+		return
+	}
+	if !response.ErrorFrom(c, teams.Leave(c.Request.Context(), c.Param("team"), actor)) {
+		response.Success(c, gin.H{"ok": true})
 	}
 }
