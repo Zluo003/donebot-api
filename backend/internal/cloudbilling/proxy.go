@@ -87,8 +87,19 @@ func (s *Service) proxy(w http.ResponseWriter, r *http.Request, id string, owner
 		func(ctx context.Context) (*Instance, *url.URL, error) { return s.proxyTarget(ctx, id, owner) }, identity, nil)
 }
 
+type proxyOptions struct {
+	botLinkToken          string
+	responseHeaderTimeout time.Duration
+	modifyResponse        func(*http.Response) error
+}
+
 func (s *Service) proxyAuthorized(w http.ResponseWriter, r *http.Request, id, path, browserMaster string,
 	targetFor func(context.Context) (*Instance, *url.URL, error), identity func(context.Context) error, team *teamProxyGrant) error {
+	return s.proxyAuthorizedWithOptions(w, r, id, path, browserMaster, targetFor, identity, team, proxyOptions{})
+}
+
+func (s *Service) proxyAuthorizedWithOptions(w http.ResponseWriter, r *http.Request, id, path, browserMaster string,
+	targetFor func(context.Context) (*Instance, *url.URL, error), identity func(context.Context) error, team *teamProxyGrant, opts proxyOptions) error {
 	if !strings.HasPrefix(path, "/") || strings.Contains(path, "\\") || strings.Contains(path, "%") || strings.Contains(path, "..") || strings.HasPrefix(path, "//") {
 		return infraerrors.BadRequest("CLOUD_PROXY_PATH", "Invalid instance path")
 	}
@@ -139,7 +150,11 @@ func (s *Service) proxyAuthorized(w http.ResponseWriter, r *http.Request, id, pa
 	if v.PaidUntil.Unix() < expires {
 		expires = v.PaidUntil.Unix()
 	}
-	payload, _ := json.Marshal(map[string]any{"node_id": v.NodeID, "instance_id": id, "expires": expires, "request_hash": tokenHash(r.Method + "\n" + uri)})
+	grantClaims := map[string]any{"node_id": v.NodeID, "instance_id": id, "expires": expires, "request_hash": tokenHash(r.Method + "\n" + uri)}
+	if opts.botLinkToken != "" {
+		grantClaims["bot_link_token_hash"] = tokenHash(opts.botLinkToken)
+	}
+	payload, _ := json.Marshal(grantClaims)
 	grant := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(key, payload))
 	memberGrant := ""
 	if team != nil {
@@ -165,13 +180,16 @@ func (s *Service) proxyAuthorized(w http.ResponseWriter, r *http.Request, id, pa
 	if strings.HasPrefix(path, "/v1/instances/"+id+"/proxy/api/cloud/backups") {
 		transport.ResponseHeaderTimeout = 300 * time.Second
 	}
+	if opts.responseHeaderTimeout > 0 {
+		transport.ResponseHeaderTimeout = opts.responseHeaderTimeout
+	}
 	proxy := &httputil.ReverseProxy{Transport: transport, FlushInterval: -1, Rewrite: func(pr *httputil.ProxyRequest) {
 		pr.Out.URL.Scheme = target.Scheme
 		pr.Out.URL.Host = target.Host
 		pr.Out.URL.Path = path
 		pr.Out.URL.RawPath = ""
 		pr.Out.Host = target.Host
-		for _, h := range []string{"Authorization", "Cookie", "Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Real-IP", "X-User-Id", "X-Donebot-Companion-Auth", "X-Donebot-Owner", "X-Donebot-Team-Grant", "X-Cloud-Grant", "X-Cloud-Origin"} {
+		for _, h := range []string{"Authorization", "Cookie", "Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Real-IP", "X-User-Id", "X-Donebot-Companion-Auth", "X-Donebot-Owner", "X-Donebot-Team-Grant", "X-Donebot-Bot-Link-Token", "X-Cloud-Grant", "X-Cloud-Origin"} {
 			pr.Out.Header.Del(h)
 		}
 		pr.Out.Header.Set("X-Cloud-Grant", grant)
@@ -179,7 +197,15 @@ func (s *Service) proxyAuthorized(w http.ResponseWriter, r *http.Request, id, pa
 		if memberGrant != "" {
 			pr.Out.Header.Set("X-Donebot-Team-Grant", memberGrant)
 		}
+		if opts.botLinkToken != "" {
+			pr.Out.Header.Set("X-Donebot-Bot-Link-Token", opts.botLinkToken)
+		}
 	}, ModifyResponse: func(res *http.Response) error {
+		if opts.modifyResponse != nil {
+			if err := opts.modifyResponse(res); err != nil {
+				return err
+			}
+		}
 		res.Header.Del("Set-Cookie")
 		res.Header.Del("Access-Control-Allow-Origin")
 		res.Header.Set("Cache-Control", "no-store")

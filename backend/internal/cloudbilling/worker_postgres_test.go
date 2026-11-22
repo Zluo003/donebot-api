@@ -29,6 +29,9 @@ import (
 func TestPostgresWithTwoNodeWorkers(t *testing.T) {
 	runPostgresWorkers(t, "master-worker.mjs")
 }
+func TestPostgresBotLinkWithRealDoneBot(t *testing.T) {
+	runPostgresWorkers(t, "bot-link-worker.mjs")
+}
 func TestPostgresBrowserWithDoneBot(t *testing.T) {
 	if os.Getenv("CLOUD_BILLING_BROWSER_FIXTURE") != "1" {
 		t.Skip("set CLOUD_BILLING_BROWSER_FIXTURE=1 and CLOUD_DONEBOT_STATIC_DIR to test real DoneBot browser access")
@@ -266,11 +269,17 @@ func runPostgresWorkers(t *testing.T, scriptName string) {
 	require.NoError(t, err, string(out))
 	if scriptName == "master-worker.mjs" {
 		require.Contains(t, string(out), "two_workers_passed")
+	} else if scriptName == "bot-link-worker.mjs" {
+		require.Contains(t, string(out), "bot_link_cloud_e2e_passed")
 	} else {
 		require.Contains(t, string(out), "donebot_browser_passed")
 	}
 	t.Log(strings.TrimSpace(string(out)))
 	var count int
 	require.NoError(t, s.db.QueryRow(`SELECT COUNT(*) FROM donebot_cloud_money_events WHERE event='charge'`).Scan(&count))
-	require.Equal(t, 2, count)
+	expectedCharges := 2
+	if scriptName == "bot-link-worker.mjs" {
+		expectedCharges = 1
+	}
+	require.Equal(t, expectedCharges, count)
 }

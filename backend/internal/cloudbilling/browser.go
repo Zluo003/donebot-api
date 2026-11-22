@@ -322,6 +322,14 @@ func (s *Service) ServeBrowser(w http.ResponseWriter, r *http.Request, cfg *Brow
 		}
 		return
 	}
+	if r.URL.EscapedPath() == r.URL.Path && isBotLinkDataPath(r.Method, r.URL.Path) {
+		if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer "+botLinkOuterPrefix) {
+			if err := s.serveBotLinkData(w, r, cfg, id, strings.TrimPrefix(authHeader, "Bearer ")); err != nil {
+				fail(err)
+			}
+			return
+		}
+	}
 	cookie, err := r.Cookie(browserCookie(cfg))
 	if err != nil {
 		if navigation {
@@ -350,10 +358,17 @@ func (s *Service) ServeBrowser(w http.ResponseWriter, r *http.Request, cfg *Brow
 		http.NotFound(w, r)
 		return
 	}
+	identity := func(ctx context.Context) error { _, e := s.browserCredential(ctx, r, cfg, id, cookie.Value); return e }
+	if r.URL.Path == "/api/bot-link/pair" {
+		if err = s.serveBotLinkPair(w, r, cfg, id, credential, identity); err != nil {
+			fail(err)
+		}
+		return
+	}
 	r = r.Clone(r.Context())
 	r.Header = r.Header.Clone()
 	r.Header.Set("Authorization", "Bearer "+credential.Token)
-	if err = s.proxy(w, r, id, credential.Owner, r.URL.Path, cfg.Master.String(), func(ctx context.Context) error { _, e := s.browserCredential(ctx, r, cfg, id, cookie.Value); return e }); err != nil {
+	if err = s.proxy(w, r, id, credential.Owner, r.URL.Path, cfg.Master.String(), identity); err != nil {
 		fail(err)
 	}
 }
