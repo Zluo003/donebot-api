@@ -37,6 +37,13 @@ func signedTeamProxyGrant(key ed25519.PrivateKey, member teamProxyGrant, instanc
 
 // A team proxy never lends the payer's personal runtime session to a member.
 func (s *Service) TeamProxy(w http.ResponseWriter, r *http.Request, teamID string, actor int64, path string) error {
+	jwt := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return s.teamProxy(w, r, teamID, actor, path, "", func(ctx context.Context) error {
+		return s.liveIdentity(ctx, jwt, actor)
+	})
+}
+
+func (s *Service) teamProxy(w http.ResponseWriter, r *http.Request, teamID string, actor int64, path, browserMaster string, baseIdentity func(context.Context) error) error {
 	v, member, err := s.teamInstance(r.Context(), teamID, actor)
 	if err != nil {
 		return err
@@ -49,9 +56,8 @@ func (s *Service) TeamProxy(w http.ResponseWriter, r *http.Request, teamID strin
 		return err
 	}
 	grant := &teamProxyGrant{teamID, actor, email, member.Role, member.MemberVersion}
-	jwt := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	identity := func(ctx context.Context) error {
-		if err := s.liveIdentity(ctx, jwt, actor); err != nil {
+		if err := baseIdentity(ctx); err != nil {
 			return err
 		}
 		current, err := s.Teams().Access(ctx, teamID, actor)
@@ -71,7 +77,7 @@ func (s *Service) TeamProxy(w http.ResponseWriter, r *http.Request, teamID strin
 		if current == nil || current.ID != v.ID {
 			return nil, nil, infraerrors.NotFound("CLOUD_NOT_FOUND", "Team Cloud changed")
 		}
-		return s.instanceProxyTarget(ctx, current)
+		return s.teamInstanceProxyTarget(ctx, current)
 	}
-	return s.proxyAuthorized(w, r, v.ID, path, "", target, identity, grant)
+	return s.proxyAuthorized(w, r, v.ID, path, browserMaster, target, identity, grant)
 }

@@ -129,7 +129,10 @@ func (s *Service) createLaunch(ctx context.Context, r *http.Request, id string, 
 	if _, _, err = s.proxyTarget(ctx, id, owner); err != nil {
 		return nil, err
 	}
-	if err = s.liveIdentity(ctx, token, owner); err != nil {
+	return s.insertLaunch(ctx, cfg, id, owner, token, binding)
+}
+func (s *Service) insertLaunch(ctx context.Context, cfg *BrowserConfig, id string, owner int64, token, binding string) (*BrowserLaunch, error) {
+	if err := s.liveIdentity(ctx, token, owner); err != nil {
 		return nil, err
 	}
 	claims, err := s.auth.ValidateToken(token)
@@ -255,7 +258,7 @@ func (s *Service) exchangeLaunch(w http.ResponseWriter, r *http.Request, cfg *Br
 	if err != nil {
 		return err
 	}
-	if _, _, err = s.proxyTarget(r.Context(), id, owner); err != nil {
+	if err = s.browserExchangeAccess(r.Context(), id, owner); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
@@ -359,6 +362,25 @@ func (s *Service) ServeBrowser(w http.ResponseWriter, r *http.Request, cfg *Brow
 		return
 	}
 	identity := func(ctx context.Context) error { _, e := s.browserCredential(ctx, r, cfg, id, cookie.Value); return e }
+	teamID, isTeam, err := s.instanceTeamID(r.Context(), id)
+	if err != nil {
+		fail(err)
+		return
+	}
+	if isTeam {
+		if !s.Teams().Enabled() {
+			fail(infraerrors.Forbidden("TEAMS_DISABLED", "Team collaboration is disabled"))
+			return
+		}
+		if r.URL.Path == "/api/bot-link/pair" || strings.HasPrefix(r.URL.Path, "/api/bot-link/") {
+			fail(infraerrors.Forbidden("TEAM_BOT_LINK_FORBIDDEN", "Personal bot links are not allowed on a team Cloud"))
+			return
+		}
+		if err = s.teamProxy(w, r, teamID, credential.Owner, r.URL.Path, cfg.Master.String(), identity); err != nil {
+			fail(err)
+		}
+		return
+	}
 	if r.URL.Path == "/api/bot-link/pair" {
 		if err = s.serveBotLinkPair(w, r, cfg, id, credential, identity); err != nil {
 			fail(err)

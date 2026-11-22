@@ -83,7 +83,7 @@ func validUUID(id string) bool {
 }
 
 // Cloud ownership and provisioning are checked from the existing billing records on every operation.
-const eligible = ` i.status='active' AND k.deleted_at IS NULL AND k.status='active' AND (k.expires_at IS NULL OR k.expires_at>now()) AND u.deleted_at IS NULL AND u.status='active' AND ((c.id IS NULL AND COALESCE(i.fingerprint,'')<>'donebot-cloud') OR (c.user_id=i.user_id AND c.deleted_at IS NULL AND cs.state IN ('pending','active','cancelled') AND cs.paid_until>now() AND NOT cs.purge_locked)) `
+const eligible = ` i.status='active' AND k.deleted_at IS NULL AND k.status='active' AND (k.expires_at IS NULL OR k.expires_at>now()) AND u.deleted_at IS NULL AND u.status='active' AND ((c.id IS NULL AND COALESCE(i.fingerprint,'')<>'donebot-cloud') OR (c.user_id=i.user_id AND c.team_id IS NULL AND c.deleted_at IS NULL AND cs.state IN ('pending','active','cancelled') AND cs.paid_until>now() AND NOT cs.purge_locked)) `
 const hostFrom = ` FROM donebot_mobile_hosts h JOIN donebot_installs i ON i.installation_id=h.installation_id JOIN api_keys k ON k.id=i.api_key_id JOIN users u ON u.id=i.user_id LEFT JOIN donebot_cloud_instances c ON c.id=i.installation_id LEFT JOIN donebot_cloud_subscriptions cs ON cs.instance_id=c.id `
 
 func (s *Service) host(ctx context.Context, owner int64, id string) (string, string, error) {
@@ -101,7 +101,7 @@ func (s *Service) Workspaces(ctx context.Context, owner int64) ([]Workspace, err
 	if err := s.enabled(); err != nil {
 		return nil, err
 	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT h.installation_id::text,h.name,CASE WHEN c.id IS NULL THEN 'computer' ELSE 'cloud' END,h.last_seen>now()-interval '45 seconds' AND h.relay_state='connected'`+hostFrom+`WHERE i.user_id=$1 AND h.user_id=i.user_id AND `+eligible+` UNION ALL SELECT c.id::text,'DoneBot Cloud','cloud',false FROM donebot_cloud_instances c JOIN donebot_cloud_subscriptions cs ON cs.instance_id=c.id JOIN users u ON u.id=c.user_id WHERE c.user_id=$1 AND c.deleted_at IS NULL AND u.status='active' AND u.deleted_at IS NULL AND cs.state IN ('pending','active','cancelled') AND cs.paid_until>now() AND NOT cs.purge_locked AND NOT EXISTS(SELECT 1 FROM donebot_mobile_hosts h WHERE h.installation_id=c.id) ORDER BY 2,1`, owner)
+	rows, err := s.DB.QueryContext(ctx, `SELECT h.installation_id::text,h.name,CASE WHEN c.id IS NULL THEN 'computer' ELSE 'cloud' END,h.last_seen>now()-interval '45 seconds' AND h.relay_state='connected'`+hostFrom+`WHERE i.user_id=$1 AND h.user_id=i.user_id AND `+eligible+` UNION ALL SELECT c.id::text,'DoneBot Cloud','cloud',false FROM donebot_cloud_instances c JOIN donebot_cloud_subscriptions cs ON cs.instance_id=c.id JOIN users u ON u.id=c.user_id WHERE c.user_id=$1 AND c.team_id IS NULL AND c.deleted_at IS NULL AND u.status='active' AND u.deleted_at IS NULL AND cs.state IN ('pending','active','cancelled') AND cs.paid_until>now() AND NOT cs.purge_locked AND NOT EXISTS(SELECT 1 FROM donebot_mobile_hosts h WHERE h.installation_id=c.id) ORDER BY 2,1`, owner)
 	if err != nil {
 		return nil, err
 	}

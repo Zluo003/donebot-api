@@ -25,6 +25,8 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 		authenticated.POST("/donebot/teams/:team/invitations", h.DoneBot.TeamInvite)
 		authenticated.DELETE("/donebot/teams/:team/invitations/:invitation", h.DoneBot.TeamInvite)
 		authenticated.GET("/donebot/teams/:team/cloud", h.DoneBot.TeamCloud)
+		authenticated.POST("/donebot/teams/:team/browser-launch", h.DoneBot.TeamCloudLaunch)
+		authenticated.POST("/donebot/teams/:team/desktop-launch", h.DoneBot.TeamCloudLaunch)
 		authenticated.POST("/donebot/teams/:team/cloud/:action", h.DoneBot.TeamCloud)
 		authenticated.Any("/donebot/teams/:team/cloud/proxy/*path", h.DoneBot.TeamCloudProxy)
 		authenticated.GET("/donebot/devices", h.DoneBot.Devices)

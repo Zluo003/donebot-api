@@ -33,6 +33,8 @@ func TestDoneBotRoutesInheritAuthAndAdminRevokeStepUp(t *testing.T) {
 		{http.MethodGet, "/api/v1/donebot/teams/team/devices", http.StatusUnauthorized},
 		{http.MethodPut, "/api/v1/donebot/teams/team/devices", http.StatusUnauthorized},
 		{http.MethodDelete, "/api/v1/donebot/teams/team/devices/device", http.StatusUnauthorized},
+		{http.MethodPost, "/api/v1/donebot/teams/team/browser-launch", http.StatusUnauthorized},
+		{http.MethodPost, "/api/v1/donebot/teams/team/desktop-launch", http.StatusUnauthorized},
 		{http.MethodPut, "/api/v1/donebot/mobile/session", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/donebot/mobile/workspaces", http.StatusUnauthorized},
 		{http.MethodDelete, "/api/v1/donebot/mobile/workspaces/host", http.StatusUnauthorized},

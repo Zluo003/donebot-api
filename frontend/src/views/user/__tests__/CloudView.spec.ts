@@ -4,6 +4,7 @@ import CloudView from '../CloudView.vue'
 import { cloudAPI, type CloudInstance } from '@/api/cloud'
 
 vi.mock('@/api/cloud', () => ({ cloudAPI: { plan: vi.fn(), instances: vi.fn(), operations: vi.fn(), mutate: vi.fn(), launch: vi.fn(), revoke: vi.fn() } }))
+vi.mock('@/api/teams', () => ({ teamsAPI: { workspaces: vi.fn(async () => ({ protocol: 'donebot.teams.v1', capabilities: [], workspaces: [] })) } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { balance: 20 }, refreshUser: vi.fn(async () => ({})) }) }))
 vi.mock('@/components/layout/AppLayout.vue', () => ({ default: { template: '<main><slot /></main>' } }))
 vi.mock('@/components/common/BaseDialog.vue', () => ({ default: { props: ['title'], template: '<section role="dialog"><h2>{{ title }}</h2><slot /><slot name="footer" /></section>' } }))

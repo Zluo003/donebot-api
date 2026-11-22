@@ -92,6 +92,21 @@ func TestTeamsHTTPDiscoveryUsesAuthenticatedActorOnly(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, 200, w.Code)
 	require.Contains(t, w.Body.String(), `"role":"member"`)
+	require.Contains(t, w.Body.String(), `"identity"`)
+	require.Contains(t, w.Body.String(), `"local_execution"`)
+	require.Contains(t, w.Body.String(), `"shared_files"`)
+	require.NotContains(t, w.Body.String(), `"cloud_access"`)
 	require.NotContains(t, w.Body.String(), "balance")
 	require.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+}
+
+func TestTeamsHTTPDiscoveryAdvertisesCloudAccessWhenBrowserConfigured(t *testing.T) {
+	t.Setenv("DONEBOT_CLOUD_BROWSER_ORIGIN", "https://cloud.donebot.cn")
+	t.Setenv("DONEBOT_CLOUD_MASTER_ORIGIN", "https://donebot.cn")
+	r, mock := teamHTTPFixture(t, true, true)
+	mock.ExpectQuery("SELECT t.id::text,t.name,m.role,m.version,t.created_at").WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "role", "version", "created_at"}))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/workspaces", nil))
+	require.Equal(t, 200, w.Code)
+	require.Contains(t, w.Body.String(), `"cloud_access"`)
 }

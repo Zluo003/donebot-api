@@ -170,6 +170,10 @@ func (h *DoneBotHandler) TeamWorkspaces(c *gin.Context) {
 	}
 	out, err := teams.List(c.Request.Context(), actor)
 	if !response.ErrorFrom(c, err) {
-		response.Success(c, gin.H{"protocol": donebotteam.Protocol, "capabilities": []string{"identity"}, "workspaces": out})
+		capabilities := []string{"identity", "local_execution", "shared_files"}
+		if cfg, cfgErr := h.cloud.BrowserConfig(); cfgErr == nil && cfg != nil {
+			capabilities = append(capabilities, "cloud_access")
+		}
+		response.Success(c, gin.H{"protocol": donebotteam.Protocol, "capabilities": capabilities, "workspaces": out})
 	}
 }
