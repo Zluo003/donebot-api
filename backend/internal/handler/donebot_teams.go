@@ -39,6 +39,23 @@ func strictTeamBody(c *gin.Context, out any) bool {
 	}
 	return true
 }
+func (h *DoneBotHandler) attachTeamAvatars(c *gin.Context, list []donebotteam.Team) {
+	if h.collab == nil || len(list) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(list))
+	for _, t := range list {
+		ids = append(ids, t.ID)
+	}
+	if avatars, err := h.collab.LookupTeamAvatars(c.Request.Context(), ids); err == nil {
+		for i := range list {
+			if url, ok := avatars[list[i].ID]; ok {
+				list[i].AvatarURL = url
+			}
+		}
+	}
+}
+
 func (h *DoneBotHandler) Teams(c *gin.Context) {
 	teams, actor, ok := h.teamActor(c)
 	if !ok {
@@ -59,6 +76,7 @@ func (h *DoneBotHandler) Teams(c *gin.Context) {
 	}
 	out, err := teams.List(c.Request.Context(), actor)
 	if !response.ErrorFrom(c, err) {
+		h.attachTeamAvatars(c, out)
 		response.Success(c, out)
 	}
 }
@@ -186,6 +204,7 @@ func (h *DoneBotHandler) TeamWorkspaces(c *gin.Context) {
 	}
 	out, err := teams.List(c.Request.Context(), actor)
 	if !response.ErrorFrom(c, err) {
+		h.attachTeamAvatars(c, out)
 		capabilities := []string{"identity", "local_execution", "shared_files"}
 		if h.collab != nil && h.collab.Enabled() {
 			capabilities = append(capabilities, "collaboration")

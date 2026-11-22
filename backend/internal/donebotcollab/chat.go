@@ -33,22 +33,29 @@ const (
 )
 
 type ChatMessage struct {
-	ID              int64     `json:"id"`
-	ScopeType       string    `json:"scope_type"`
-	TargetID        string    `json:"target_id"`
-	SenderID        int64     `json:"sender_id"`
-	SenderEmail     string    `json:"sender_email"`
-	SenderNickname  string    `json:"sender_nickname,omitempty"`
-	SenderAvatarURL string    `json:"sender_avatar_url,omitempty"`
-	SenderRemark    string    `json:"sender_remark,omitempty"`
-	Kind            string    `json:"kind"` // "text" | "file"
-	Body            string    `json:"body"`
-	FileID          string    `json:"file_id,omitempty"`
-	FileName        string    `json:"file_name,omitempty"`
-	FileMime        string    `json:"file_mime,omitempty"`
-	FileSize        int64     `json:"file_size,omitempty"`
-	FileSha256      string    `json:"file_sha256,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID                 int64     `json:"id"`
+	ScopeType          string    `json:"scope_type"`
+	TargetID           string    `json:"target_id"`
+	SenderID           int64     `json:"sender_id"`
+	SenderKind         string    `json:"sender_kind"` // "user" | "bot"
+	SenderEmail        string    `json:"sender_email"`
+	SenderNickname     string    `json:"sender_nickname,omitempty"`
+	SenderAvatarURL    string    `json:"sender_avatar_url,omitempty"`
+	SenderRemark       string    `json:"sender_remark,omitempty"`
+	SenderBotID        string    `json:"sender_bot_id,omitempty"`
+	SenderBotName      string    `json:"sender_bot_name,omitempty"`
+	SenderBotColor     string    `json:"sender_bot_color,omitempty"`
+	SenderBotAvatarURL string    `json:"sender_bot_avatar_url,omitempty"`
+	Kind               string    `json:"kind"` // "text" | "file"
+	Body               string    `json:"body"`
+	FileID             string    `json:"file_id,omitempty"`
+	FileName           string    `json:"file_name,omitempty"`
+	FileMime           string    `json:"file_mime,omitempty"`
+	FileSize           int64     `json:"file_size,omitempty"`
+	FileSha256         string    `json:"file_sha256,omitempty"`
+	TriggeredBotIDs    []string  `json:"triggered_bot_ids,omitempty"`
+	DeniedBotNames     []string  `json:"denied_bot_names,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 type ChatSummary struct {
@@ -214,6 +221,15 @@ func (s *Service) authorizeChatScope(ctx context.Context, actor int64, scopeType
 			return "", "", infraerrors.Forbidden("COLLAB_CHAT_FORBIDDEN", "你不是该团队成员，无法访问团队聊天。")
 		}
 		return "team", targetID, nil
+	case "group":
+		ok, err := isGroupMember(ctx, s.db, actor, targetID)
+		if err != nil {
+			return "", "", err
+		}
+		if !ok {
+			return "", "", infraerrors.Forbidden("COLLAB_CHAT_FORBIDDEN", "你不在该好友群聊中，无法访问消息。")
+		}
+		return "group", targetID, nil
 	default:
 		return "", "", infraerrors.BadRequest("COLLAB_CHAT_SCOPE_INVALID", "不支持的聊天类型。")
 	}
@@ -235,6 +251,9 @@ func (s *Service) verifyScopeKeyAccess(ctx context.Context, actor int64, scopeTy
 	case "team":
 		_, _, err := s.authorizeChatScope(ctx, actor, "team", scopeKey)
 		return err
+	case "group":
+		_, _, err := s.authorizeChatScope(ctx, actor, "group", scopeKey)
+		return err
 	default:
 		return infraerrors.Forbidden("COLLAB_CHAT_FORBIDDEN", "无权访问该文件。")
 	}
@@ -252,25 +271,44 @@ func (s *Service) upsertChatRead(ctx context.Context, q queryExecer, actor int64
 	return err
 }
 
-func (s *Service) fetchChatMessageByID(ctx context.Context, actor int64, id int64, targetID string) (*ChatMessage, error) {
+const chatMessageSelectCols = `m.id, m.scope_type, m.sender_id, COALESCE(m.sender_kind, 'user'), u.email, COALESCE(u.username, ''), COALESCE(ua.url, ''), COALESCE(rm.remark, ''),
+		m.sender_bot_id::text, COALESCE(m.sender_bot_name, ''), COALESCE(m.sender_bot_color, ''), COALESCE(m.sender_bot_avatar_url, ''),
+		m.kind, m.body, m.file_id::text, m.file_name, m.file_mime, m.file_size, m.file_sha256, m.created_at`
+
+func scanChatMessage(scanner interface{ Scan(...any) error }, targetID string) (ChatMessage, error) {
 	var msg ChatMessage
-	var fileID sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT m.id, m.scope_type, m.sender_id, u.email, COALESCE(u.username, ''), COALESCE(ua.url, ''), COALESCE(rm.remark, ''),
-		m.kind, m.body, m.file_id::text, m.file_name, m.file_mime, m.file_size, m.file_sha256, m.created_at
+	var fileID, botID sql.NullString
+	err := scanner.Scan(
+		&msg.ID, &msg.ScopeType, &msg.SenderID, &msg.SenderKind, &msg.SenderEmail, &msg.SenderNickname, &msg.SenderAvatarURL, &msg.SenderRemark,
+		&botID, &msg.SenderBotName, &msg.SenderBotColor, &msg.SenderBotAvatarURL,
+		&msg.Kind, &msg.Body, &fileID, &msg.FileName, &msg.FileMime, &msg.FileSize, &msg.FileSha256, &msg.CreatedAt,
+	)
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	msg.TargetID = targetID
+	if msg.SenderKind == "" {
+		msg.SenderKind = "user"
+	}
+	if botID.Valid {
+		msg.SenderBotID = botID.String
+	}
+	if fileID.Valid {
+		msg.FileID = fileID.String
+	}
+	return msg, nil
+}
+
+func (s *Service) fetchChatMessageByID(ctx context.Context, actor int64, id int64, targetID string) (*ChatMessage, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+chatMessageSelectCols+`
 		FROM donebot_collab_messages m
 		JOIN users u ON u.id = m.sender_id
 		LEFT JOIN user_avatars ua ON ua.user_id = u.id
 		LEFT JOIN donebot_friend_remarks rm ON rm.owner_id = $1 AND rm.friend_id = u.id
-		WHERE m.id = $2`, actor, id).Scan(
-		&msg.ID, &msg.ScopeType, &msg.SenderID, &msg.SenderEmail, &msg.SenderNickname, &msg.SenderAvatarURL, &msg.SenderRemark,
-		&msg.Kind, &msg.Body, &fileID, &msg.FileName, &msg.FileMime, &msg.FileSize, &msg.FileSha256, &msg.CreatedAt,
-	)
+		WHERE m.id = $2`, actor, id)
+	msg, err := scanChatMessage(row, targetID)
 	if err != nil {
 		return nil, err
-	}
-	msg.TargetID = targetID
-	if fileID.Valid {
-		msg.FileID = fileID.String
 	}
 	return &msg, nil
 }
@@ -337,6 +375,29 @@ func (s *Service) ChatSummaries(ctx context.Context, actor int64) ([]ChatSummary
 		return nil, err
 	}
 
+	gRows, err := s.db.QueryContext(ctx, `SELECT g.id::text
+		FROM donebot_collab_group_members gm
+		JOIN donebot_collab_groups g ON g.id = gm.group_id
+		WHERE gm.user_id = $1`, actor)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = gRows.Close() }()
+	for gRows.Next() {
+		var groupID string
+		if err = gRows.Scan(&groupID); err != nil {
+			return nil, err
+		}
+		scopes = append(scopes, scopeTarget{
+			scopeType: "group",
+			scopeKey:  groupID,
+			targetID:  groupID,
+		})
+	}
+	if err = gRows.Err(); err != nil {
+		return nil, err
+	}
+
 	if len(scopes) == 0 {
 		return []ChatSummary{}, nil
 	}
@@ -349,7 +410,8 @@ func (s *Service) ChatSummaries(ctx context.Context, actor int64) ([]ChatSummary
 		}
 		var createdAt time.Time
 		err = s.db.QueryRowContext(ctx, `SELECT m.id, m.kind, m.body, m.file_name, m.sender_id,
-			COALESCE(NULLIF(rm.remark, ''), NULLIF(u.username, ''), u.email) AS sender_name,
+			CASE WHEN m.sender_kind = 'bot' AND m.sender_bot_name <> '' THEN m.sender_bot_name
+			     ELSE COALESCE(NULLIF(rm.remark, ''), NULLIF(u.username, ''), u.email) END AS sender_name,
 			m.created_at
 			FROM donebot_collab_messages m
 			JOIN users u ON u.id = m.sender_id
@@ -366,7 +428,7 @@ func (s *Service) ChatSummaries(ctx context.Context, actor int64) ([]ChatSummary
 				LEFT JOIN donebot_collab_reads r
 					ON r.user_id = $1 AND r.scope_type = m.scope_type AND r.scope_key = m.scope_key
 				WHERE m.scope_type = $2 AND m.scope_key = $3
-					AND m.sender_id <> $1
+					AND (m.sender_kind = 'bot' OR m.sender_id <> $1)
 					AND m.id > COALESCE(r.last_read_id, 0)`, actor, sc.scopeType, sc.scopeKey).Scan(&sum.UnreadCount); err != nil {
 				return nil, err
 			}
@@ -398,8 +460,7 @@ func (s *Service) ListChatMessages(ctx context.Context, actor int64, scopeType, 
 	var rows *sql.Rows
 	reverse := false
 	if afterID > 0 {
-		rows, err = s.db.QueryContext(ctx, `SELECT m.id, m.scope_type, m.sender_id, u.email, COALESCE(u.username, ''), COALESCE(ua.url, ''), COALESCE(rm.remark, ''),
-			m.kind, m.body, m.file_id::text, m.file_name, m.file_mime, m.file_size, m.file_sha256, m.created_at
+		rows, err = s.db.QueryContext(ctx, `SELECT `+chatMessageSelectCols+`
 			FROM donebot_collab_messages m
 			JOIN users u ON u.id = m.sender_id
 			LEFT JOIN user_avatars ua ON ua.user_id = u.id
@@ -409,8 +470,7 @@ func (s *Service) ListChatMessages(ctx context.Context, actor int64, scopeType, 
 			LIMIT $5`, actor, normType, scopeKey, afterID, limit)
 	} else if beforeID > 0 {
 		reverse = true
-		rows, err = s.db.QueryContext(ctx, `SELECT m.id, m.scope_type, m.sender_id, u.email, COALESCE(u.username, ''), COALESCE(ua.url, ''), COALESCE(rm.remark, ''),
-			m.kind, m.body, m.file_id::text, m.file_name, m.file_mime, m.file_size, m.file_sha256, m.created_at
+		rows, err = s.db.QueryContext(ctx, `SELECT `+chatMessageSelectCols+`
 			FROM donebot_collab_messages m
 			JOIN users u ON u.id = m.sender_id
 			LEFT JOIN user_avatars ua ON ua.user_id = u.id
@@ -420,8 +480,7 @@ func (s *Service) ListChatMessages(ctx context.Context, actor int64, scopeType, 
 			LIMIT $5`, actor, normType, scopeKey, beforeID, limit)
 	} else {
 		reverse = true
-		rows, err = s.db.QueryContext(ctx, `SELECT m.id, m.scope_type, m.sender_id, u.email, COALESCE(u.username, ''), COALESCE(ua.url, ''), COALESCE(rm.remark, ''),
-			m.kind, m.body, m.file_id::text, m.file_name, m.file_mime, m.file_size, m.file_sha256, m.created_at
+		rows, err = s.db.QueryContext(ctx, `SELECT `+chatMessageSelectCols+`
 			FROM donebot_collab_messages m
 			JOIN users u ON u.id = m.sender_id
 			LEFT JOIN user_avatars ua ON ua.user_id = u.id
@@ -433,21 +492,13 @@ func (s *Service) ListChatMessages(ctx context.Context, actor int64, scopeType, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := make([]ChatMessage, 0)
 	for rows.Next() {
-		var msg ChatMessage
-		var fileID sql.NullString
-		if err = rows.Scan(
-			&msg.ID, &msg.ScopeType, &msg.SenderID, &msg.SenderEmail, &msg.SenderNickname, &msg.SenderAvatarURL, &msg.SenderRemark,
-			&msg.Kind, &msg.Body, &fileID, &msg.FileName, &msg.FileMime, &msg.FileSize, &msg.FileSha256, &msg.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		msg.TargetID = targetID
-		if fileID.Valid {
-			msg.FileID = fileID.String
+		msg, scanErr := scanChatMessage(rows, targetID)
+		if scanErr != nil {
+			return nil, scanErr
 		}
 		out = append(out, msg)
 	}
@@ -462,7 +513,7 @@ func (s *Service) ListChatMessages(ctx context.Context, actor int64, scopeType, 
 	return out, nil
 }
 
-// ListChatFiles lists recent file messages shared inside a friend or team chat (newest first).
+// ListChatFiles lists recent file messages shared inside a friend, team, or group chat (newest first).
 func (s *Service) ListChatFiles(ctx context.Context, actor int64, scopeType, targetID string, limit int) ([]ChatMessage, error) {
 	normType, scopeKey, err := s.authorizeChatScope(ctx, actor, scopeType, targetID)
 	if err != nil {
@@ -474,8 +525,7 @@ func (s *Service) ListChatFiles(ctx context.Context, actor int64, scopeType, tar
 	if limit > maxChatPageLimit {
 		limit = maxChatPageLimit
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.scope_type, m.sender_id, u.email, COALESCE(u.username, ''), COALESCE(ua.url, ''), COALESCE(rm.remark, ''),
-		m.kind, m.body, m.file_id::text, m.file_name, m.file_mime, m.file_size, m.file_sha256, m.created_at
+	rows, err := s.db.QueryContext(ctx, `SELECT `+chatMessageSelectCols+`
 		FROM donebot_collab_messages m
 		JOIN users u ON u.id = m.sender_id
 		LEFT JOIN user_avatars ua ON ua.user_id = u.id
@@ -486,29 +536,21 @@ func (s *Service) ListChatFiles(ctx context.Context, actor int64, scopeType, tar
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := make([]ChatMessage, 0)
 	for rows.Next() {
-		var msg ChatMessage
-		var fileID sql.NullString
-		if err = rows.Scan(
-			&msg.ID, &msg.ScopeType, &msg.SenderID, &msg.SenderEmail, &msg.SenderNickname, &msg.SenderAvatarURL, &msg.SenderRemark,
-			&msg.Kind, &msg.Body, &fileID, &msg.FileName, &msg.FileMime, &msg.FileSize, &msg.FileSha256, &msg.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		msg.TargetID = targetID
-		if fileID.Valid {
-			msg.FileID = fileID.String
+		msg, scanErr := scanChatMessage(rows, targetID)
+		if scanErr != nil {
+			return nil, scanErr
 		}
 		out = append(out, msg)
 	}
 	return out, rows.Err()
 }
 
-// SendChatMessage inserts a text message into a friend or team conversation.
-func (s *Service) SendChatMessage(ctx context.Context, actor int64, scopeType, targetID, rawBody string) (*ChatMessage, error) {
+// SendChatMessage inserts a text message into a friend, team, or group conversation and enqueues authorized @mentioned bots.
+func (s *Service) SendChatMessage(ctx context.Context, actor int64, scopeType, targetID, rawBody string, mentionBotIDs ...[]string) (*ChatMessage, error) {
 	normType, scopeKey, err := s.authorizeChatScope(ctx, actor, scopeType, targetID)
 	if err != nil {
 		return nil, err
@@ -517,16 +559,24 @@ func (s *Service) SendChatMessage(ctx context.Context, actor int64, scopeType, t
 	if err != nil {
 		return nil, err
 	}
+	var explicitBots []string
+	if len(mentionBotIDs) > 0 {
+		explicitBots = mentionBotIDs[0]
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var msgID int64
-	if err = tx.QueryRowContext(ctx, `INSERT INTO donebot_collab_messages(scope_type, scope_key, sender_id, kind, body)
-		VALUES($1, $2, $3, 'text', $4) RETURNING id`, normType, scopeKey, actor, body).Scan(&msgID); err != nil {
+	if err = tx.QueryRowContext(ctx, `INSERT INTO donebot_collab_messages(scope_type, scope_key, sender_id, sender_kind, kind, body)
+		VALUES($1, $2, $3, 'user', 'text', $4) RETURNING id`, normType, scopeKey, actor, body).Scan(&msgID); err != nil {
+		return nil, err
+	}
+	triggered, denied, err := s.enqueueMentionedBots(ctx, tx, actor, normType, scopeKey, msgID, body, explicitBots)
+	if err != nil {
 		return nil, err
 	}
 	if err = s.upsertChatRead(ctx, tx, actor, normType, scopeKey, msgID); err != nil {
@@ -535,7 +585,13 @@ func (s *Service) SendChatMessage(ctx context.Context, actor int64, scopeType, t
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
-	return s.fetchChatMessageByID(ctx, actor, msgID, targetID)
+	msg, err := s.fetchChatMessageByID(ctx, actor, msgID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	msg.TriggeredBotIDs = triggered
+	msg.DeniedBotNames = denied
+	return msg, nil
 }
 
 // SendChatFile stores an uploaded file (up to 100 MiB) and records a chat message in the conversation.

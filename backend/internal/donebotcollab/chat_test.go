@@ -33,6 +33,17 @@ func TestChatHelpers(t *testing.T) {
 	require.True(t, IsSafeInlineChatMime("image/jpeg; charset=binary"))
 	require.False(t, IsSafeInlineChatMime("image/svg+xml"))
 	require.False(t, IsSafeInlineChatMime("text/html"))
+
+	require.True(t, bodyMentionsBot("@多宝 帮我总结一下", "多宝"))
+	require.True(t, bodyMentionsBot("问一下 @多宝，这个怎么写", "多宝"))
+	require.True(t, bodyMentionsBot("你好 @duobao", "DuoBao"))
+	require.False(t, bodyMentionsBot("@多宝宝 你好", "多宝"))
+	require.False(t, bodyMentionsBot("普通消息没有提及", "多宝"))
+
+	_, err := validateAvatarDataURL("data:image/jpeg;base64,/9j/4AAQ")
+	require.NoError(t, err)
+	_, err = validateAvatarDataURL("javascript:alert(1)")
+	require.Error(t, err)
 }
 
 func TestCollabChatPostgres(t *testing.T) {
@@ -69,6 +80,7 @@ func TestCollabChatPostgres(t *testing.T) {
 		"../../migrations/280_donebot_collaboration.sql",
 		"../../migrations/281_donebot_friend_remarks.sql",
 		"../../migrations/282_donebot_collab_messages.sql",
+		"../../migrations/283_donebot_collab_groups_and_bots.sql",
 	} {
 		sqlBytes, readErr := os.ReadFile(file)
 		require.NoError(t, readErr)
@@ -144,4 +156,58 @@ func TestCollabChatPostgres(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, teamMsgs, 1)
 	require.Equal(t, "大家好", teamMsgs[0].Body)
+
+	// Team avatar & Friend group + authorized @bot invocation.
+	avatar, err := collab.SetTeamAvatar(ctx, 1, team.ID, "data:image/png;base64,iVBORw0KGgo=")
+	require.NoError(t, err)
+	require.Equal(t, "data:image/png;base64,iVBORw0KGgo=", avatar)
+	// Member (Carol) cannot change team avatar.
+	_, err = collab.SetTeamAvatar(ctx, 3, team.ID, "data:image/png;base64,iVBORw0KGgo=")
+	require.Error(t, err)
+
+	// Friend group created by Alice with Bob.
+	grp, err := collab.CreateGroup(ctx, 1, "周末计划", []int64{2})
+	require.NoError(t, err)
+	require.Len(t, grp.Members, 2)
+
+	// Alice adds her local bot to the friend group without granting Bob yet.
+	installID := uuid.NewString()
+	bot, err := collab.AddChatBot(ctx, 1, "group", grp.ID, AddChatBotInput{
+		InstallationID: installID,
+		LocalBotID:     "bot-duobao",
+		BotName:        "多宝",
+		BotColor:       "blue",
+	})
+	require.NoError(t, err)
+	require.True(t, bot.CanInvoke)
+
+	// Bob is NOT authorized yet -> @多宝 is denied and creates zero invocations.
+	deniedMsg, err := collab.SendChatMessage(ctx, 2, "group", grp.ID, "@多宝 帮我查一下")
+	require.NoError(t, err)
+	require.Empty(t, deniedMsg.TriggeredBotIDs)
+	require.Equal(t, []string{"多宝"}, deniedMsg.DeniedBotNames)
+	claimedNone, err := collab.ClaimBotInvocation(ctx, 1, installID)
+	require.NoError(t, err)
+	require.Nil(t, claimedNone)
+
+	// Alice authorizes Bob -> Bob's @多宝 triggers an invocation that Alice claims & answers locally!
+	_, err = collab.UpdateChatBotGrants(ctx, 1, "group", grp.ID, bot.ID, UpdateChatBotGrantsInput{
+		AllowAllMembers: false,
+		AllowedUserIDs:  []int64{2},
+	})
+	require.NoError(t, err)
+	allowedMsg, err := collab.SendChatMessage(ctx, 2, "group", grp.ID, "@多宝 帮我总结一下")
+	require.NoError(t, err)
+	require.Equal(t, []string{bot.ID}, allowedMsg.TriggeredBotIDs)
+	require.Empty(t, allowedMsg.DeniedBotNames)
+
+	claimed, err := collab.ClaimBotInvocation(ctx, 1, installID)
+	require.NoError(t, err)
+	require.NotNil(t, claimed)
+	require.Equal(t, "bot-duobao", claimed.LocalBotID)
+
+	reply, err := collab.CompleteBotInvocation(ctx, 1, claimed.ID, "这是本地多宝生成的总结。", "")
+	require.NoError(t, err)
+	require.Equal(t, "bot", reply.SenderKind)
+	require.Equal(t, "多宝", reply.SenderBotName)
 }

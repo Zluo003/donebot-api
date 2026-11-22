@@ -45,6 +45,7 @@ func (s *Service) available() error {
 type Team struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
+	AvatarURL     string    `json:"avatar_url,omitempty"`
 	Role          Role      `json:"role"`
 	MemberVersion int64     `json:"member_version"`
 	CreatedAt     time.Time `json:"created_at"`
