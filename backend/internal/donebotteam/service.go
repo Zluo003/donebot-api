@@ -50,10 +50,13 @@ type Team struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 type TeamMember struct {
-	UserID  int64  `json:"user_id"`
-	Email   string `json:"email"`
-	Role    Role   `json:"role"`
-	Version int64  `json:"version"`
+	UserID    int64  `json:"user_id"`
+	Email     string `json:"email"`
+	Nickname  string `json:"nickname,omitempty"`
+	AvatarURL string `json:"avatar_url,omitempty"`
+	Remark    string `json:"remark,omitempty"`
+	Role      Role   `json:"role"`
+	Version   int64  `json:"version"`
 }
 type Invitation struct {
 	ID        string    `json:"id"`

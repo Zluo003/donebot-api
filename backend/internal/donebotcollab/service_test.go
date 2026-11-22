@@ -68,18 +68,20 @@ func TestCollabPostgres(t *testing.T) {
 
 	installA := uuid.NewString()
 	_, err = db.ExecContext(ctx, `
-		CREATE TABLE users(id BIGINT PRIMARY KEY,email TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',deleted_at TIMESTAMPTZ);
+		CREATE TABLE users(id BIGINT PRIMARY KEY,email TEXT NOT NULL,username TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'active',deleted_at TIMESTAMPTZ);
+		CREATE TABLE user_avatars(user_id BIGINT PRIMARY KEY,url TEXT NOT NULL DEFAULT '');
 		CREATE TABLE donebot_installs(id BIGSERIAL PRIMARY KEY,installation_id UUID UNIQUE NOT NULL,user_id BIGINT NOT NULL,status TEXT NOT NULL DEFAULT 'active',expires_at TIMESTAMPTZ);
-		INSERT INTO users(id,email) VALUES
-			(1,'alice@example.invalid'),
-			(2,'bob@example.invalid'),
-			(3,'carol@example.invalid'),
-			(4,'outsider@example.invalid');
+		INSERT INTO users(id,email,username) VALUES
+			(1,'alice@example.invalid','Alice'),
+			(2,'bob@example.invalid','Bob 昵称'),
+			(3,'carol@example.invalid','Carol'),
+			(4,'outsider@example.invalid','Outsider');
+		INSERT INTO user_avatars(user_id,url) VALUES (2,'data:image/png;base64,iVBORw0KGgo=');
 		INSERT INTO donebot_installs(installation_id,user_id,status) VALUES ($1::uuid,1,'active');
 	`, installA)
 	require.NoError(t, err)
 
-	for _, file := range []string{"../../migrations/271_donebot_teams.sql", "../../migrations/280_donebot_collaboration.sql"} {
+	for _, file := range []string{"../../migrations/271_donebot_teams.sql", "../../migrations/280_donebot_collaboration.sql", "../../migrations/281_donebot_friend_remarks.sql"} {
 		sqlBytes, readErr := os.ReadFile(file)
 		require.NoError(t, readErr)
 		_, err = db.ExecContext(ctx, string(sqlBytes))
@@ -100,6 +102,16 @@ func TestCollabPostgres(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, friends.Friends, 1)
 	require.Equal(t, int64(2), friends.Friends[0].UserID)
+	require.Equal(t, "Bob 昵称", friends.Friends[0].Nickname)
+	require.Equal(t, "data:image/png;base64,iVBORw0KGgo=", friends.Friends[0].AvatarURL)
+
+	// Set and verify friend remark name.
+	remark, err := collab.SetFriendRemark(ctx, 1, 2, "产品老鲍")
+	require.NoError(t, err)
+	require.Equal(t, "产品老鲍", remark)
+	friends, err = collab.ListFriends(ctx, 1)
+	require.NoError(t, err)
+	require.Equal(t, "产品老鲍", friends.Friends[0].Remark)
 
 	// 2. Team flow: Alice creates a team, invites Carol, Carol sees incoming invitation and accepts by ID.
 	team, err := teams.Create(ctx, 1, "研发组", uuid.NewString())

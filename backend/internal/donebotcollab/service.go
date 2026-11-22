@@ -91,21 +91,36 @@ func pairOrder(a, b int64) (int64, int64) {
 
 // --- Friends ---
 
+type UserProfile struct {
+	UserID    int64  `json:"user_id"`
+	Email     string `json:"email"`
+	Nickname  string `json:"nickname,omitempty"`
+	AvatarURL string `json:"avatar_url,omitempty"`
+	Remark    string `json:"remark,omitempty"`
+}
+
 type Friend struct {
 	UserID    int64     `json:"user_id"`
 	Email     string    `json:"email"`
+	Nickname  string    `json:"nickname,omitempty"`
+	AvatarURL string    `json:"avatar_url,omitempty"`
+	Remark    string    `json:"remark,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type FriendRequest struct {
-	ID             string    `json:"id"`
-	RequesterID    int64     `json:"requester_id"`
-	RequesterEmail string    `json:"requester_email"`
-	RecipientID    int64     `json:"recipient_id"`
-	RecipientEmail string    `json:"recipient_email"`
-	Note           string    `json:"note"`
-	Status         string    `json:"status"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID                 string    `json:"id"`
+	RequesterID        int64     `json:"requester_id"`
+	RequesterEmail     string    `json:"requester_email"`
+	RequesterNickname  string    `json:"requester_nickname,omitempty"`
+	RequesterAvatarURL string    `json:"requester_avatar_url,omitempty"`
+	RecipientID        int64     `json:"recipient_id"`
+	RecipientEmail     string    `json:"recipient_email"`
+	RecipientNickname  string    `json:"recipient_nickname,omitempty"`
+	RecipientAvatarURL string    `json:"recipient_avatar_url,omitempty"`
+	Note               string    `json:"note"`
+	Status             string    `json:"status"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 type FriendsSnapshot struct {
@@ -133,18 +148,20 @@ func (s *Service) ListFriends(ctx context.Context, actor int64) (*FriendsSnapsho
 		OutgoingRequests: []FriendRequest{},
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT u.id, u.email, f.created_at
+	rows, err := s.db.QueryContext(ctx, `SELECT u.id, u.email, COALESCE(u.username, ''), COALESCE(ua.url, ''), COALESCE(rm.remark, ''), f.created_at
 		FROM donebot_friends f
 		JOIN users u ON u.id = CASE WHEN f.user_a = $1 THEN f.user_b ELSE f.user_a END
+		LEFT JOIN user_avatars ua ON ua.user_id = u.id
+		LEFT JOIN donebot_friend_remarks rm ON rm.owner_id = $1 AND rm.friend_id = u.id
 		WHERE (f.user_a = $1 OR f.user_b = $1) AND u.deleted_at IS NULL AND u.status = 'active'
-		ORDER BY lower(u.email), u.id`, actor)
+		ORDER BY lower(COALESCE(NULLIF(rm.remark, ''), NULLIF(u.username, ''), u.email)), u.id`, actor)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var f Friend
-		if err = rows.Scan(&f.UserID, &f.Email, &f.CreatedAt); err != nil {
+		if err = rows.Scan(&f.UserID, &f.Email, &f.Nickname, &f.AvatarURL, &f.Remark, &f.CreatedAt); err != nil {
 			return nil, err
 		}
 		out.Friends = append(out.Friends, f)
@@ -153,10 +170,13 @@ func (s *Service) ListFriends(ctx context.Context, actor int64) (*FriendsSnapsho
 		return nil, err
 	}
 
-	reqRows, err := s.db.QueryContext(ctx, `SELECT r.id::text, r.requester_id, ru.email, r.recipient_id, tu.email, r.note, r.status, r.created_at
+	reqRows, err := s.db.QueryContext(ctx, `SELECT r.id::text, r.requester_id, ru.email, COALESCE(ru.username, ''), COALESCE(rua.url, ''),
+		r.recipient_id, tu.email, COALESCE(tu.username, ''), COALESCE(tua.url, ''), r.note, r.status, r.created_at
 		FROM donebot_friend_requests r
 		JOIN users ru ON ru.id = r.requester_id AND ru.deleted_at IS NULL AND ru.status = 'active'
+		LEFT JOIN user_avatars rua ON rua.user_id = ru.id
 		JOIN users tu ON tu.id = r.recipient_id AND tu.deleted_at IS NULL AND tu.status = 'active'
+		LEFT JOIN user_avatars tua ON tua.user_id = tu.id
 		WHERE r.status = 'pending' AND (r.recipient_id = $1 OR r.requester_id = $1)
 		ORDER BY r.created_at DESC, r.id`, actor)
 	if err != nil {
@@ -165,7 +185,8 @@ func (s *Service) ListFriends(ctx context.Context, actor int64) (*FriendsSnapsho
 	defer reqRows.Close()
 	for reqRows.Next() {
 		var req FriendRequest
-		if err = reqRows.Scan(&req.ID, &req.RequesterID, &req.RequesterEmail, &req.RecipientID, &req.RecipientEmail, &req.Note, &req.Status, &req.CreatedAt); err != nil {
+		if err = reqRows.Scan(&req.ID, &req.RequesterID, &req.RequesterEmail, &req.RequesterNickname, &req.RequesterAvatarURL,
+			&req.RecipientID, &req.RecipientEmail, &req.RecipientNickname, &req.RecipientAvatarURL, &req.Note, &req.Status, &req.CreatedAt); err != nil {
 			return nil, err
 		}
 		if req.RecipientID == actor {
@@ -371,6 +392,9 @@ func (s *Service) RemoveFriend(ctx context.Context, actor, friendUserID int64) e
 	if n == 0 {
 		return infraerrors.NotFound("COLLAB_FRIEND_NOT_FOUND", "好友不存在。")
 	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM donebot_friend_remarks WHERE (owner_id=$1 AND friend_id=$2) OR (owner_id=$2 AND friend_id=$1)`, actor, friendUserID); err != nil {
+		return err
+	}
 
 	// If they do not share an active team, drop direct user grants in both directions immediately.
 	var sharedTeam bool
@@ -399,6 +423,86 @@ func (s *Service) RemoveFriend(ctx context.Context, actor, friendUserID int64) e
 		}
 	}
 	return tx.Commit()
+}
+
+// SetFriendRemark updates or clears actor's private remark name for an existing friend.
+func (s *Service) SetFriendRemark(ctx context.Context, actor, friendUserID int64, rawRemark string) (string, error) {
+	if err := s.available(); err != nil {
+		return "", err
+	}
+	if actor <= 0 || friendUserID <= 0 || actor == friendUserID {
+		return "", infraerrors.NotFound("COLLAB_FRIEND_NOT_FOUND", "好友不存在。")
+	}
+	remark, err := cleanOptionalText(rawRemark, 80, "COLLAB_REMARK_INVALID", "备注名称不能超过 80 个字符。")
+	if err != nil {
+		return "", err
+	}
+	if strings.ContainsAny(remark, "\n\r\t") {
+		return "", infraerrors.BadRequest("COLLAB_REMARK_INVALID", "备注名称不能包含换行符。")
+	}
+	a, b := pairOrder(actor, friendUserID)
+	var isFriend bool
+	if err = s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM donebot_friends WHERE user_a=$1 AND user_b=$2)`, a, b).Scan(&isFriend); err != nil {
+		return "", err
+	}
+	if !isFriend {
+		return "", infraerrors.NotFound("COLLAB_FRIEND_NOT_FOUND", "对方还不是你的好友，无法设置备注。")
+	}
+	if remark == "" {
+		if _, err = s.db.ExecContext(ctx, `DELETE FROM donebot_friend_remarks WHERE owner_id=$1 AND friend_id=$2`, actor, friendUserID); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
+	if _, err = s.db.ExecContext(ctx, `INSERT INTO donebot_friend_remarks(owner_id, friend_id, remark, updated_at)
+		VALUES($1, $2, $3, NOW())
+		ON CONFLICT(owner_id, friend_id) DO UPDATE SET remark=EXCLUDED.remark, updated_at=NOW()`, actor, friendUserID, remark); err != nil {
+		return "", err
+	}
+	return remark, nil
+}
+
+// LookupUserProfiles fetches public profile fields (nickname, avatar_url) and actor's private friend remark for a set of users.
+func (s *Service) LookupUserProfiles(ctx context.Context, actor int64, userIDs []int64) (map[int64]UserProfile, error) {
+	out := map[int64]UserProfile{}
+	if !s.Enabled() || actor <= 0 || len(userIDs) == 0 {
+		return out, nil
+	}
+	seen := map[int64]struct{}{}
+	args := []any{actor}
+	placeholders := make([]string, 0, len(userIDs))
+	for _, id := range userIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		args = append(args, id)
+		placeholders = append(placeholders, "$"+strconv.Itoa(len(args)))
+	}
+	if len(placeholders) == 0 {
+		return out, nil
+	}
+	query := `SELECT u.id, u.email, COALESCE(u.username, ''), COALESCE(ua.url, ''), COALESCE(rm.remark, '')
+		FROM users u
+		LEFT JOIN user_avatars ua ON ua.user_id = u.id
+		LEFT JOIN donebot_friend_remarks rm ON rm.owner_id = $1 AND rm.friend_id = u.id
+		WHERE u.id IN (` + strings.Join(placeholders, ",") + `) AND u.deleted_at IS NULL`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p UserProfile
+		if err = rows.Scan(&p.UserID, &p.Email, &p.Nickname, &p.AvatarURL, &p.Remark); err != nil {
+			return out, err
+		}
+		out[p.UserID] = p
+	}
+	return out, rows.Err()
 }
 
 // --- Shared Folders & ACL ---
@@ -434,15 +538,18 @@ type CollabSource struct {
 }
 
 type SharedFolder struct {
-	ID          string         `json:"id"`
-	OwnerUserID int64          `json:"owner_user_id"`
-	OwnerEmail  string         `json:"owner_email"`
-	DeviceName  string         `json:"device_name"`
-	Name        string         `json:"name"`
-	Access      string         `json:"access"` // "read" | "write"
-	Online      bool           `json:"online"`
-	Sources     []CollabSource `json:"sources"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	ID             string         `json:"id"`
+	OwnerUserID    int64          `json:"owner_user_id"`
+	OwnerEmail     string         `json:"owner_email"`
+	OwnerNickname  string         `json:"owner_nickname,omitempty"`
+	OwnerAvatarURL string         `json:"owner_avatar_url,omitempty"`
+	OwnerRemark    string         `json:"owner_remark,omitempty"`
+	DeviceName     string         `json:"device_name"`
+	Name           string         `json:"name"`
+	Access         string         `json:"access"` // "read" | "write"
+	Online         bool           `json:"online"`
+	Sources        []CollabSource `json:"sources"`
+	UpdatedAt      time.Time      `json:"updated_at"`
 }
 
 type FoldersSnapshot struct {
@@ -550,10 +657,11 @@ func (s *Service) ListFolders(ctx context.Context, actor int64) (*FoldersSnapsho
 
 	if len(out.Owned) > 0 {
 		gRows, err := s.db.QueryContext(ctx, `SELECT g.folder_id::text, g.subject_type, g.subject_id, g.access,
-			COALESCE(u.email, t.name, '') AS label
+			COALESCE(NULLIF(rm.remark, ''), NULLIF(u.username, ''), u.email, t.name, '') AS label
 			FROM donebot_collab_folder_grants g
 			JOIN donebot_collab_folders f ON f.id=g.folder_id
 			LEFT JOIN users u ON g.subject_type='user' AND u.id::text=g.subject_id AND u.deleted_at IS NULL AND u.status='active'
+			LEFT JOIN donebot_friend_remarks rm ON g.subject_type='user' AND rm.owner_id=$1 AND rm.friend_id=u.id
 			LEFT JOIN donebot_teams t ON g.subject_type='team' AND t.id::text=g.subject_id AND t.state='active'
 			WHERE f.owner_id=$1 AND (
 				(g.subject_type='user' AND u.id IS NOT NULL)
@@ -561,7 +669,7 @@ func (s *Service) ListFolders(ctx context.Context, actor int64) (*FoldersSnapsho
 					SELECT 1 FROM donebot_team_members m WHERE m.team_id=t.id AND m.user_id=$1 AND m.removed_at IS NULL
 				))
 			)
-			ORDER BY g.subject_type, lower(COALESCE(u.email, t.name, '')), g.subject_id`, actor)
+			ORDER BY g.subject_type, lower(COALESCE(NULLIF(rm.remark, ''), NULLIF(u.username, ''), u.email, t.name, '')), g.subject_id`, actor)
 		if err != nil {
 			return nil, err
 		}
@@ -592,11 +700,14 @@ func (s *Service) ListFolders(ctx context.Context, actor int64) (*FoldersSnapsho
 
 func (s *Service) querySharedFolders(ctx context.Context, actor int64) ([]SharedFolder, error) {
 	actorStr := strconv.FormatInt(actor, 10)
-	rows, err := s.db.QueryContext(ctx, `SELECT f.id::text, f.owner_id, ou.email, f.installation_id::text, f.device_name, f.name, f.updated_at,
+	rows, err := s.db.QueryContext(ctx, `SELECT f.id::text, f.owner_id, ou.email, COALESCE(ou.username, ''), COALESCE(oua.url, ''), COALESCE(rm.remark, ''),
+		f.installation_id::text, f.device_name, f.name, f.updated_at,
 		g.subject_type, g.access, COALESCE(t.id::text, ''), COALESCE(t.name, ''),
 		EXISTS(SELECT 1 FROM donebot_friends fr WHERE fr.user_a=LEAST(f.owner_id,$1) AND fr.user_b=GREATEST(f.owner_id,$1)) AS is_friend
 		FROM donebot_collab_folders f
 		JOIN users ou ON ou.id=f.owner_id AND ou.deleted_at IS NULL AND ou.status='active'
+		LEFT JOIN user_avatars oua ON oua.user_id=ou.id
+		LEFT JOIN donebot_friend_remarks rm ON rm.owner_id=$1 AND rm.friend_id=ou.id
 		JOIN donebot_installs i ON i.installation_id=f.installation_id AND i.user_id=f.owner_id
 			AND i.status='active' AND (i.expires_at IS NULL OR i.expires_at>clock_timestamp())
 		JOIN donebot_collab_folder_grants g ON g.folder_id=f.id
@@ -629,25 +740,28 @@ func (s *Service) querySharedFolders(ctx context.Context, actor int64) ([]Shared
 	order := []string{}
 	byID := map[string]*folderAgg{}
 	for rows.Next() {
-		var id, ownerEmail, installID, deviceName, name, subjectType, access, teamID, teamName string
+		var id, ownerEmail, ownerNickname, ownerAvatarURL, ownerRemark, installID, deviceName, name, subjectType, access, teamID, teamName string
 		var ownerID int64
 		var updatedAt time.Time
 		var isFriend bool
-		if err = rows.Scan(&id, &ownerID, &ownerEmail, &installID, &deviceName, &name, &updatedAt, &subjectType, &access, &teamID, &teamName, &isFriend); err != nil {
+		if err = rows.Scan(&id, &ownerID, &ownerEmail, &ownerNickname, &ownerAvatarURL, &ownerRemark, &installID, &deviceName, &name, &updatedAt, &subjectType, &access, &teamID, &teamName, &isFriend); err != nil {
 			return nil, err
 		}
 		agg, ok := byID[id]
 		if !ok {
 			agg = &folderAgg{
 				item: SharedFolder{
-					ID:          id,
-					OwnerUserID: ownerID,
-					OwnerEmail:  ownerEmail,
-					DeviceName:  deviceName,
-					Name:        name,
-					Access:      "read",
-					Online:      s.relay.IsOnline(ownerID, installID),
-					UpdatedAt:   updatedAt,
+					ID:             id,
+					OwnerUserID:    ownerID,
+					OwnerEmail:     ownerEmail,
+					OwnerNickname:  ownerNickname,
+					OwnerAvatarURL: ownerAvatarURL,
+					OwnerRemark:    ownerRemark,
+					DeviceName:     deviceName,
+					Name:           name,
+					Access:         "read",
+					Online:         s.relay.IsOnline(ownerID, installID),
+					UpdatedAt:      updatedAt,
 				},
 				sources: map[string]CollabSource{},
 			}
@@ -950,16 +1064,19 @@ type OwnedSharedBot struct {
 }
 
 type SharedBot struct {
-	ID          string         `json:"id"`
-	OwnerUserID int64          `json:"owner_user_id"`
-	OwnerEmail  string         `json:"owner_email"`
-	Name        string         `json:"name"`
-	Title       string         `json:"title"`
-	Description string         `json:"description"`
-	SkillCount  int            `json:"skill_count"`
-	HasSoul     bool           `json:"has_soul"`
-	Sources     []CollabSource `json:"sources"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	ID             string         `json:"id"`
+	OwnerUserID    int64          `json:"owner_user_id"`
+	OwnerEmail     string         `json:"owner_email"`
+	OwnerNickname  string         `json:"owner_nickname,omitempty"`
+	OwnerAvatarURL string         `json:"owner_avatar_url,omitempty"`
+	OwnerRemark    string         `json:"owner_remark,omitempty"`
+	Name           string         `json:"name"`
+	Title          string         `json:"title"`
+	Description    string         `json:"description"`
+	SkillCount     int            `json:"skill_count"`
+	HasSoul        bool           `json:"has_soul"`
+	Sources        []CollabSource `json:"sources"`
+	UpdatedAt      time.Time      `json:"updated_at"`
 }
 
 type SharedBotsSnapshot struct {
@@ -1059,10 +1176,11 @@ func (s *Service) ListBots(ctx context.Context, actor int64) (*SharedBotsSnapsho
 
 	if len(out.Owned) > 0 {
 		gRows, err := s.db.QueryContext(ctx, `SELECT g.bot_id::text, g.subject_type, g.subject_id,
-			COALESCE(u.email, t.name, '') AS label
+			COALESCE(NULLIF(rm.remark, ''), NULLIF(u.username, ''), u.email, t.name, '') AS label
 			FROM donebot_collab_bot_grants g
 			JOIN donebot_collab_bots b ON b.id=g.bot_id
 			LEFT JOIN users u ON g.subject_type='user' AND u.id::text=g.subject_id AND u.deleted_at IS NULL AND u.status='active'
+			LEFT JOIN donebot_friend_remarks rm ON g.subject_type='user' AND rm.owner_id=$1 AND rm.friend_id=u.id
 			LEFT JOIN donebot_teams t ON g.subject_type='team' AND t.id::text=g.subject_id AND t.state='active'
 			WHERE b.owner_id=$1 AND (
 				(g.subject_type='user' AND u.id IS NOT NULL)
@@ -1070,7 +1188,7 @@ func (s *Service) ListBots(ctx context.Context, actor int64) (*SharedBotsSnapsho
 					SELECT 1 FROM donebot_team_members m WHERE m.team_id=t.id AND m.user_id=$1 AND m.removed_at IS NULL
 				))
 			)
-			ORDER BY g.subject_type, lower(COALESCE(u.email, t.name, '')), g.subject_id`, actor)
+			ORDER BY g.subject_type, lower(COALESCE(NULLIF(rm.remark, ''), NULLIF(u.username, ''), u.email, t.name, '')), g.subject_id`, actor)
 		if err != nil {
 			return nil, err
 		}
@@ -1091,11 +1209,14 @@ func (s *Service) ListBots(ctx context.Context, actor int64) (*SharedBotsSnapsho
 	}
 
 	actorStr := strconv.FormatInt(actor, 10)
-	sRows, err := s.db.QueryContext(ctx, `SELECT b.id::text, b.owner_id, ou.email, b.name, b.title, b.description, b.skill_count, b.has_soul, b.updated_at,
+	sRows, err := s.db.QueryContext(ctx, `SELECT b.id::text, b.owner_id, ou.email, COALESCE(ou.username, ''), COALESCE(oua.url, ''), COALESCE(rm.remark, ''),
+		b.name, b.title, b.description, b.skill_count, b.has_soul, b.updated_at,
 		g.subject_type, COALESCE(t.id::text, ''), COALESCE(t.name, ''),
 		EXISTS(SELECT 1 FROM donebot_friends fr WHERE fr.user_a=LEAST(b.owner_id,$1) AND fr.user_b=GREATEST(b.owner_id,$1)) AS is_friend
 		FROM donebot_collab_bots b
 		JOIN users ou ON ou.id=b.owner_id AND ou.deleted_at IS NULL AND ou.status='active'
+		LEFT JOIN user_avatars oua ON oua.user_id=ou.id
+		LEFT JOIN donebot_friend_remarks rm ON rm.owner_id=$1 AND rm.friend_id=ou.id
 		JOIN donebot_collab_bot_grants g ON g.bot_id=b.id
 		LEFT JOIN donebot_teams t ON g.subject_type='team' AND t.id::text=g.subject_id AND t.state='active'
 		WHERE b.owner_id<>$1 AND (
@@ -1126,27 +1247,30 @@ func (s *Service) ListBots(ctx context.Context, actor int64) (*SharedBotsSnapsho
 	order := []string{}
 	byID := map[string]*botAgg{}
 	for sRows.Next() {
-		var id, ownerEmail, name, title, description, subjectType, teamID, teamName string
+		var id, ownerEmail, ownerNickname, ownerAvatarURL, ownerRemark, name, title, description, subjectType, teamID, teamName string
 		var ownerID int64
 		var skillCount int
 		var hasSoul, isFriend bool
 		var updatedAt time.Time
-		if err = sRows.Scan(&id, &ownerID, &ownerEmail, &name, &title, &description, &skillCount, &hasSoul, &updatedAt, &subjectType, &teamID, &teamName, &isFriend); err != nil {
+		if err = sRows.Scan(&id, &ownerID, &ownerEmail, &ownerNickname, &ownerAvatarURL, &ownerRemark, &name, &title, &description, &skillCount, &hasSoul, &updatedAt, &subjectType, &teamID, &teamName, &isFriend); err != nil {
 			return nil, err
 		}
 		agg, ok := byID[id]
 		if !ok {
 			agg = &botAgg{
 				item: SharedBot{
-					ID:          id,
-					OwnerUserID: ownerID,
-					OwnerEmail:  ownerEmail,
-					Name:        name,
-					Title:       title,
-					Description: description,
-					SkillCount:  skillCount,
-					HasSoul:     hasSoul,
-					UpdatedAt:   updatedAt,
+					ID:             id,
+					OwnerUserID:    ownerID,
+					OwnerEmail:     ownerEmail,
+					OwnerNickname:  ownerNickname,
+					OwnerAvatarURL: ownerAvatarURL,
+					OwnerRemark:    ownerRemark,
+					Name:           name,
+					Title:          title,
+					Description:    description,
+					SkillCount:     skillCount,
+					HasSoul:        hasSoul,
+					UpdatedAt:      updatedAt,
 				},
 				sources: map[string]CollabSource{},
 			}

@@ -6,9 +6,11 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/donebotcollab"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -163,6 +165,15 @@ func ProvideHTTPServer(cfg *config.Config, router *gin.Engine) *http.Server {
 	return server
 }
 
+func isCollabFileTransferUpload(r *http.Request) bool {
+	p := r.URL.Path
+	if r.Method == http.MethodPut && strings.HasSuffix(p, "/file") &&
+		(strings.HasPrefix(p, "/api/v1/donebot/collab/folders/") || strings.HasPrefix(p, "/v1/donebot/runtime/collab/folders/")) {
+		return true
+	}
+	return r.Method == http.MethodPost && strings.HasPrefix(p, "/v1/donebot/runtime/collab/relay/transfers/") && strings.HasSuffix(p, "/upload")
+}
+
 func limitRequestBody(next http.Handler, globalMaxSize int64) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		maxSize := globalMaxSize
@@ -173,6 +184,15 @@ func limitRequestBody(next http.Handler, globalMaxSize int64) http.Handler {
 			r = r.WithContext(ctx)
 			controller := http.NewResponseController(w)
 			if err := controller.SetReadDeadline(time.Now().Add(time.Hour)); err == nil {
+				defer func() { _ = controller.SetReadDeadline(time.Time{}) }()
+			}
+		} else if isCollabFileTransferUpload(r) {
+			maxSize = donebotcollab.MaxTransferBytes
+			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
+			defer cancel()
+			r = r.WithContext(ctx)
+			controller := http.NewResponseController(w)
+			if err := controller.SetReadDeadline(time.Now().Add(15 * time.Minute)); err == nil {
 				defer func() { _ = controller.SetReadDeadline(time.Time{}) }()
 			}
 		}

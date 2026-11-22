@@ -91,9 +91,25 @@ func (h *DoneBotHandler) TeamMembers(c *gin.Context) {
 		return
 	}
 	out, err := teams.Members(c.Request.Context(), c.Param("team"), actor)
-	if !response.ErrorFrom(c, err) {
-		response.Success(c, out)
+	if response.ErrorFrom(c, err) {
+		return
 	}
+	if h.collab != nil && len(out) > 0 {
+		ids := make([]int64, 0, len(out))
+		for _, member := range out {
+			ids = append(ids, member.UserID)
+		}
+		if profiles, lookupErr := h.collab.LookupUserProfiles(c.Request.Context(), actor, ids); lookupErr == nil {
+			for i := range out {
+				if p, exists := profiles[out[i].UserID]; exists {
+					out[i].Nickname = p.Nickname
+					out[i].AvatarURL = p.AvatarURL
+					out[i].Remark = p.Remark
+				}
+			}
+		}
+	}
+	response.Success(c, out)
 }
 func (h *DoneBotHandler) TeamMember(c *gin.Context) {
 	teams, actor, ok := h.teamActor(c)

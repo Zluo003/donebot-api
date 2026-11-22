@@ -47,21 +47,27 @@ type hostSlot struct {
 
 // Relay forwards ephemeral folder operations between authenticated DoneBot desktops in memory without storing file contents.
 type Relay struct {
-	mu            sync.Mutex
-	hosts         map[string]*hostSlot
-	pollWait      time.Duration
-	onlineTTL     time.Duration
-	invokeTimeout time.Duration
-	now           func() time.Time
+	mu              sync.Mutex
+	hosts           map[string]*hostSlot
+	downloads       map[string]*pendingDownloadTransfer
+	uploads         map[string]*pendingUploadTransfer
+	pollWait        time.Duration
+	onlineTTL       time.Duration
+	invokeTimeout   time.Duration
+	transferTimeout time.Duration
+	now             func() time.Time
 }
 
 func NewRelay() *Relay {
 	return &Relay{
-		hosts:         make(map[string]*hostSlot),
-		pollWait:      defaultPollWait,
-		onlineTTL:     defaultOnlineTTL,
-		invokeTimeout: defaultInvokeTimeout,
-		now:           time.Now,
+		hosts:           make(map[string]*hostSlot),
+		downloads:       make(map[string]*pendingDownloadTransfer),
+		uploads:         make(map[string]*pendingUploadTransfer),
+		pollWait:        defaultPollWait,
+		onlineTTL:       defaultOnlineTTL,
+		invokeTimeout:   defaultInvokeTimeout,
+		transferTimeout: defaultTransferTimeout,
+		now:             time.Now,
 	}
 }
 
@@ -245,6 +251,7 @@ func (r *Relay) DropFolder(ownerID int64, installationID, folderID string) {
 			delete(slot.pending, id)
 		}
 	}
+	cancelledDownloads, cancelledUploads := r.dropFolderTransfersLocked(ownerID, installationID, folderID)
 	r.mu.Unlock()
 
 	revoked := infraerrors.Forbidden("COLLAB_ACCESS_REVOKED", "该共享文件夹权限已被收回或暂停。")
@@ -253,5 +260,14 @@ func (r *Relay) DropFolder(ownerID int64, installationID, folderID string) {
 		case pending.result <- relayOutcome{err: revoked}:
 		default:
 		}
+	}
+	for _, dl := range cancelledDownloads {
+		select {
+		case dl.ready <- downloadStreamReady{err: revoked}:
+		default:
+		}
+	}
+	for _, ul := range cancelledUploads {
+		ul.finishCopy(revoked)
 	}
 }

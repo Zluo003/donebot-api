@@ -3,8 +3,11 @@ package handler
 import (
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
+	"path"
 	"strconv"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/donebotcollab"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -100,6 +103,28 @@ func (h *DoneBotHandler) CollabFriendRemove(c *gin.Context) {
 	}
 	if !response.ErrorFrom(c, svc.RemoveFriend(c.Request.Context(), actor, target)) {
 		response.Success(c, gin.H{"ok": true})
+	}
+}
+
+func (h *DoneBotHandler) CollabFriendRemarkSet(c *gin.Context) {
+	svc, actor, ok := h.collabActor(c)
+	if !ok {
+		return
+	}
+	target, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if err != nil || target < 1 {
+		response.BadRequest(c, "Invalid friend user id")
+		return
+	}
+	var in struct {
+		Remark string `json:"remark"`
+	}
+	if !strictCollabBody(c, 4<<10, &in) {
+		return
+	}
+	remark, err := svc.SetFriendRemark(c.Request.Context(), actor, target, in.Remark)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, gin.H{"user_id": target, "remark": remark})
 	}
 }
 
@@ -227,7 +252,7 @@ func (h *DoneBotHandler) CollabRelayResult(c *gin.Context) {
 		JobID  string          `json:"job_id"`
 		Result json.RawMessage `json:"result"`
 	}
-	if !strictCollabBody(c, 2<<20, &in) {
+	if !strictCollabBody(c, 4<<20, &in) {
 		return
 	}
 	if in.JobID == "" || len(in.Result) == 0 || !json.Valid(in.Result) {
@@ -235,6 +260,202 @@ func (h *DoneBotHandler) CollabRelayResult(c *gin.Context) {
 		return
 	}
 	if !response.ErrorFrom(c, svc.Relay().Complete(actor, installationID, in.JobID, in.Result)) {
+		response.Success(c, gin.H{"ok": true})
+	}
+}
+
+// --- 100 MiB Streaming File Transfer Relay (zero disk persistence on gateway) ---
+
+func cleanTransferRelPath(raw string) (string, bool) {
+	clean := strings.TrimSpace(raw)
+	if clean == "" || len(clean) > 2048 || strings.ContainsAny(clean, "\\:\x00") || strings.HasPrefix(clean, "/") {
+		return "", false
+	}
+	for _, part := range strings.Split(clean, "/") {
+		if part == ".." {
+			return "", false
+		}
+	}
+	return clean, true
+}
+
+func (h *DoneBotHandler) CollabFolderFileDownload(c *gin.Context) {
+	svc, actor, ok := h.collabActor(c)
+	if !ok {
+		return
+	}
+	relPath, valid := cleanTransferRelPath(c.Query("path"))
+	if !valid {
+		response.BadRequest(c, "请输入有效的相对文件路径。")
+		return
+	}
+	authz, err := svc.AuthorizeInvoke(c.Request.Context(), actor, c.Param("id"), "read_file")
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	meta, reader, release, err := svc.Relay().StartDownload(
+		c.Request.Context(),
+		authz.OwnerUserID,
+		authz.InstallationID,
+		authz.FolderID,
+		authz.CallerUserID,
+		authz.CallerEmail,
+		authz.GrantedAccess,
+		relPath,
+	)
+	if response.ErrorFrom(c, err) {
+		return
+	}
+
+	contentType := strings.TrimSpace(meta.ContentType)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	fileName := path.Base(relPath)
+	if strings.TrimSpace(meta.FileName) != "" {
+		fileName = path.Base(strings.TrimSpace(meta.FileName))
+	}
+	c.Header("Content-Type", contentType)
+	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": fileName}))
+	c.Header("X-Content-Type-Options", "nosniff")
+	if meta.Size >= 0 && meta.Size <= donebotcollab.MaxTransferBytes {
+		c.Header("Content-Length", strconv.FormatInt(meta.Size, 10))
+	}
+	if meta.Sha256 != "" {
+		c.Header("X-File-Sha256", meta.Sha256)
+	}
+	c.Status(http.StatusOK)
+	_, copyErr := io.Copy(c.Writer, io.LimitReader(reader, donebotcollab.MaxTransferBytes))
+	release(copyErr)
+}
+
+func (h *DoneBotHandler) CollabFolderFileUpload(c *gin.Context) {
+	svc, actor, ok := h.collabActor(c)
+	if !ok {
+		return
+	}
+	relPath, valid := cleanTransferRelPath(c.Query("path"))
+	if !valid {
+		response.BadRequest(c, "请输入有效的相对文件路径。")
+		return
+	}
+	if c.Request.ContentLength > donebotcollab.MaxTransferBytes {
+		response.Error(c, http.StatusRequestEntityTooLarge, "上传文件不能超过 100 MB。")
+		return
+	}
+	authz, err := svc.AuthorizeInvoke(c.Request.Context(), actor, c.Param("id"), "write_file")
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	limitedBody := http.MaxBytesReader(c.Writer, c.Request.Body, donebotcollab.MaxTransferBytes)
+	size := c.Request.ContentLength
+	contentType := strings.TrimSpace(c.GetHeader("Content-Type"))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	result, err := svc.Relay().RelayUpload(
+		c.Request.Context(),
+		authz.OwnerUserID,
+		authz.InstallationID,
+		authz.FolderID,
+		authz.CallerUserID,
+		authz.CallerEmail,
+		authz.GrantedAccess,
+		relPath,
+		size,
+		contentType,
+		limitedBody,
+	)
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	var decoded any
+	if err := json.Unmarshal(result, &decoded); err != nil {
+		response.Error(c, http.StatusBadGateway, "Invalid response from shared folder host")
+		return
+	}
+	response.Success(c, gin.H{"result": decoded})
+}
+
+func (h *DoneBotHandler) CollabRelayTransferUpload(c *gin.Context) {
+	svc, actor, ok := h.collabActor(c)
+	if !ok {
+		return
+	}
+	installationID := c.GetHeader("X-DoneBot-Installation")
+	if installationID == "" {
+		response.Unauthorized(c, "Installation identity required")
+		return
+	}
+	if c.Request.ContentLength > donebotcollab.MaxTransferBytes {
+		response.Error(c, http.StatusRequestEntityTooLarge, "共享文件不能超过 100 MB。")
+		return
+	}
+	size := c.Request.ContentLength
+	if raw := strings.TrimSpace(c.GetHeader("X-File-Size")); raw != "" {
+		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed >= 0 {
+			size = parsed
+		}
+	}
+	if size > donebotcollab.MaxTransferBytes {
+		response.Error(c, http.StatusRequestEntityTooLarge, "共享文件不能超过 100 MB。")
+		return
+	}
+	meta := donebotcollab.DownloadMeta{
+		FileName:    strings.TrimSpace(c.GetHeader("X-File-Name")),
+		ContentType: strings.TrimSpace(c.GetHeader("X-File-Content-Type")),
+		Size:        size,
+		Sha256:      strings.TrimSpace(c.GetHeader("X-File-Sha256")),
+	}
+	limitedBody := http.MaxBytesReader(c.Writer, c.Request.Body, donebotcollab.MaxTransferBytes)
+	if !response.ErrorFrom(c, svc.Relay().ProvideDownload(c.Request.Context(), actor, installationID, c.Param("transfer_id"), meta, limitedBody)) {
+		response.Success(c, gin.H{"ok": true})
+	}
+}
+
+func (h *DoneBotHandler) CollabRelayTransferDownload(c *gin.Context) {
+	svc, actor, ok := h.collabActor(c)
+	if !ok {
+		return
+	}
+	installationID := c.GetHeader("X-DoneBot-Installation")
+	if installationID == "" {
+		response.Unauthorized(c, "Installation identity required")
+		return
+	}
+	reader, size, contentType, finish, err := svc.Relay().ClaimUpload(actor, installationID, c.Param("transfer_id"))
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	c.Header("Content-Type", contentType)
+	if size >= 0 && size <= donebotcollab.MaxTransferBytes {
+		c.Header("Content-Length", strconv.FormatInt(size, 10))
+	}
+	c.Status(http.StatusOK)
+	_, copyErr := io.Copy(c.Writer, io.LimitReader(reader, donebotcollab.MaxTransferBytes+1))
+	finish(copyErr)
+}
+
+func (h *DoneBotHandler) CollabRelayTransferFail(c *gin.Context) {
+	svc, actor, ok := h.collabActor(c)
+	if !ok {
+		return
+	}
+	installationID := c.GetHeader("X-DoneBot-Installation")
+	if installationID == "" {
+		response.Unauthorized(c, "Installation identity required")
+		return
+	}
+	var in struct {
+		Error string `json:"error"`
+	}
+	if !strictCollabBody(c, 16<<10, &in) {
+		return
+	}
+	if !response.ErrorFrom(c, svc.Relay().FailTransfer(actor, installationID, c.Param("transfer_id"), in.Error)) {
 		response.Success(c, gin.H{"ok": true})
 	}
 }
