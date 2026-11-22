@@ -171,6 +171,9 @@ func isCollabFileTransferUpload(r *http.Request) bool {
 		(strings.HasPrefix(p, "/api/v1/donebot/collab/folders/") || strings.HasPrefix(p, "/v1/donebot/runtime/collab/folders/")) {
 		return true
 	}
+	if r.Method == http.MethodPost && strings.HasPrefix(p, "/api/v1/donebot/collab/chats/") && strings.HasSuffix(p, "/files") {
+		return true
+	}
 	return r.Method == http.MethodPost && strings.HasPrefix(p, "/v1/donebot/runtime/collab/relay/transfers/") && strings.HasSuffix(p, "/upload")
 }
 

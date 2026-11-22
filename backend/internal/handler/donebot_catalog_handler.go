@@ -6,6 +6,8 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -35,6 +37,13 @@ func ProvideDoneBotUserHandler(installs *service.DoneBotService, settings servic
 		h.mobile = doneBotMobileService(db, auth, mobileSettings)
 		h.mobileAuth = auth
 		h.collab = donebotcollab.New(db, true)
+		chatDir := "data/collab-chat"
+		if p := strings.TrimSpace(cfg.AssetStorage.LocalPath); p != "" {
+			chatDir = filepath.Join(filepath.Dir(p), "collab-chat")
+		} else if d := strings.TrimSpace(os.Getenv("DATA_DIR")); d != "" {
+			chatDir = filepath.Join(d, "collab-chat")
+		}
+		h.collab.SetChatStorageDir(chatDir)
 	}
 	h.catalog, h.account = catalog, account
 	h.media = media

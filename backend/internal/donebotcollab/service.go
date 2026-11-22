@@ -27,11 +27,21 @@ const (
 type Service struct {
 	db      *sql.DB
 	relay   *Relay
+	chatDir string
 	enabled bool
 }
 
 func New(db *sql.DB, enabled bool) *Service {
-	return &Service{db: db, relay: NewRelay(), enabled: enabled}
+	return &Service{db: db, relay: NewRelay(), chatDir: "data/collab-chat", enabled: enabled}
+}
+
+func (s *Service) SetChatStorageDir(dir string) {
+	if s == nil {
+		return
+	}
+	if trimmed := strings.TrimSpace(dir); trimmed != "" {
+		s.chatDir = trimmed
+	}
 }
 
 func (s *Service) Enabled() bool { return s != nil && s.enabled && s.db != nil }
