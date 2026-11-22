@@ -79,17 +79,30 @@ type ChatFileMeta struct {
 	FileSha256 string
 }
 
-var safeInlineImageMimes = map[string]bool{
-	"image/png":  true,
-	"image/jpeg": true,
-	"image/webp": true,
-	"image/gif":  true,
+var safeInlineMediaMimes = map[string]bool{
+	"image/png":       true,
+	"image/jpeg":      true,
+	"image/webp":      true,
+	"image/gif":       true,
+	"image/avif":      true,
+	"video/mp4":       true,
+	"video/webm":      true,
+	"video/quicktime": true,
+	"audio/mpeg":      true,
+	"audio/mp4":       true,
+	"audio/x-m4a":     true,
+	"audio/wav":       true,
+	"audio/x-wav":     true,
+	"audio/ogg":       true,
+	"audio/flac":      true,
+	"audio/webm":      true,
+	"audio/aac":       true,
 }
 
 // IsSafeInlineChatMime reports whether a chat attachment MIME type is safe to render inline.
 func IsSafeInlineChatMime(mimeType string) bool {
 	base := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
-	return safeInlineImageMimes[base]
+	return safeInlineMediaMimes[base]
 }
 
 func friendScopeKey(a, b int64) string {

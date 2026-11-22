@@ -4,6 +4,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -149,6 +150,11 @@ func (h *DoneBotHandler) CollabChatFileDownload(c *gin.Context) {
 	defer f.Close()
 
 	contentType := strings.TrimSpace(meta.FileMime)
+	if contentType == "" || strings.EqualFold(contentType, "application/octet-stream") {
+		if guessed := strings.TrimSpace(mime.TypeByExtension(strings.ToLower(filepath.Ext(meta.FileName)))); guessed != "" {
+			contentType = guessed
+		}
+	}
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -160,11 +166,15 @@ func (h *DoneBotHandler) CollabChatFileDownload(c *gin.Context) {
 	c.Header("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": meta.FileName}))
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Cache-Control", "private, max-age=3600")
-	if meta.FileSize >= 0 {
-		c.Header("Content-Length", strconv.FormatInt(meta.FileSize, 10))
-	}
 	if meta.FileSha256 != "" {
 		c.Header("X-File-Sha256", meta.FileSha256)
+	}
+	if stat, statErr := f.Stat(); statErr == nil && stat.Size() <= donebotcollab.MaxChatFileBytes {
+		http.ServeContent(c.Writer, c.Request, meta.FileName, stat.ModTime(), f)
+		return
+	}
+	if meta.FileSize >= 0 {
+		c.Header("Content-Length", strconv.FormatInt(meta.FileSize, 10))
 	}
 	c.Status(http.StatusOK)
 	_, _ = io.Copy(c.Writer, io.LimitReader(f, donebotcollab.MaxChatFileBytes))
