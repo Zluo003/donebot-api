@@ -167,6 +167,35 @@ func TestDoneBotTeamHeartbeatDoesNotRequirePersonalBalance(t *testing.T) {
 	require.Equal(t, 401, response.Code)
 }
 
+func TestDoneBotRuntimeMarketSkipsBilling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	group := &service.Group{ID: 82, Platform: service.PlatformComposite, Status: service.StatusActive, Hydrated: true, SubscriptionType: service.SubscriptionTypeStandard}
+	user := &service.User{ID: 42, Role: service.RoleUser, Status: service.StatusActive} // zero balance
+	credential := "sk-donebot-empty"
+	key := &service.APIKey{ID: 101, Key: credential, UserID: 42, User: user, GroupID: &group.ID, Group: group, Status: service.StatusActive}
+	repo := &doneBotCredentialRepository{keys: map[string]*service.APIKey{credential: key}}
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	keys := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
+	router := gin.New()
+	router.Use(gin.HandlerFunc(middleware.NewAPIKeyAuthMiddleware(keys, nil, cfg)))
+	router.GET("/v1/donebot/runtime/market/bots", func(c *gin.Context) { c.Status(200) })
+	router.POST("/v1/donebot/runtime/market/bots/:id/install", func(c *gin.Context) { c.Status(200) })
+	router.PATCH("/v1/donebot/runtime/market/bots/:id/visibility", func(c *gin.Context) { c.Status(200) })
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/v1/donebot/runtime/market/bots"},
+		{http.MethodPost, "/v1/donebot/runtime/market/bots/123/install"},
+		{http.MethodPatch, "/v1/donebot/runtime/market/bots/123/visibility"},
+	} {
+		request := httptest.NewRequest(tc.method, tc.path, nil)
+		request.Header.Set("Authorization", "Bearer "+credential)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		require.Equal(t, 200, response.Code, "%s %s", tc.method, tc.path)
+	}
+}
+
 func doneBotModelsRouter(keys *service.APIKeyService, cfg *config.Config) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.HandlerFunc(middleware.NewAPIKeyAuthMiddleware(keys, nil, cfg)))

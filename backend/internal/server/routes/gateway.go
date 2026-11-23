@@ -167,6 +167,19 @@ func RegisterGatewayRoutes(
 		runtime.GET("/receipts/:id", h.DoneBot.Receipt)
 		runtime.GET("/templates", h.DoneBot.Templates)
 		runtime.GET("/templates/:template_id/:release", h.DoneBot.Template)
+		// Personal Cloud runtime access to Bot Marketplace (browse/install/publish/report/read-only wallet).
+		// Financial payout mutations (transfer to balance, Alipay withdrawal) remain JWT-only on /api/v1/donebot/market.
+		runtime.GET("/market/categories", h.DoneBot.MarketCategories)
+		runtime.GET("/market/bots", h.DoneBot.MarketListings)
+		runtime.POST("/market/bots", h.DoneBot.MarketBotPublish)
+		runtime.GET("/market/bots/mine", h.DoneBot.MarketMyListings)
+		runtime.GET("/market/bots/:id", h.DoneBot.MarketListingDetail)
+		runtime.PATCH("/market/bots/:id/visibility", h.DoneBot.MarketSetVisibility)
+		runtime.POST("/market/bots/:id/install", h.DoneBot.MarketInstall)
+		runtime.POST("/market/bots/:id/report", h.DoneBot.MarketReport)
+		runtime.GET("/market/creator/wallet", h.DoneBot.MarketCreatorWallet)
+		runtime.GET("/market/creator/ledger", h.DoneBot.MarketCreatorLedger)
+		runtime.GET("/market/creator/withdrawals", h.DoneBot.MarketCreatorWithdrawals)
 	}
 	doneBotGateway.Use(doneBotReasoning, doneBotReceipt, middleware.DoneBotMediaRecoveryMiddleware(h.DoneBot, h.OpenAIGateway))
 	doneBotGateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
