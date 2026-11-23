@@ -90,7 +90,11 @@ func TestPostgresFullReviewLifecycle(t *testing.T) {
 		t.Fatalf("create prereq tables: %v", err)
 	}
 
-	for _, mig := range []string{"287_donebot_bot_market.sql", "288_donebot_market_review_account.sql"} {
+	for _, mig := range []string{
+		"287_donebot_bot_market.sql",
+		"288_donebot_market_review_account.sql",
+		"289_donebot_market_studio_and_spend.sql",
+	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", mig))
 		if err != nil {
 			t.Fatalf("read migration %s: %v", mig, err)
@@ -304,5 +308,79 @@ func TestPostgresFullReviewLifecycle(t *testing.T) {
 	}
 	if err := svc.AdminHandleReport(ctx, 1, reps[0].ID, "resolved", "已核查"); err != nil {
 		t.Fatalf("AdminHandleReport: %v", err)
+	}
+
+	// 7. Studio Pack publish + AI review + listing_type filter + multi-bot install + per-bot 4-category spend
+	svc.SetReviewCaller(func(_ context.Context, _ *Settings, _, _ string) (string, string, error) {
+		return `{"verdict":"approve","risk_score":6,"summary":"工作室分工清晰，无循环刷量风险。","dimensions":{"token_farming":{"passed":true,"score":5,"finding":"正常"},"malicious_loop":{"passed":true,"score":0,"finding":"无成员死循环"},"sensitive_data_exfil":{"passed":true,"score":0,"finding":"无外泄"},"prompt_injection":{"passed":true,"score":0,"finding":"无注入"},"content_compliance":{"passed":true,"score":5,"finding":"合规"}},"rejection_reasons":[],"fix_suggestions":[],"flagged_snippets":[]}`, "mock-fast-model", nil
+	})
+	studio, err := svc.PublishBot(ctx, 1, PublishBotInput{
+		ListingType: "studio",
+		CategoryID:  cats[0].ID,
+		Name:        "自媒体爆款编辑部",
+		Tagline:     "选题策划 + 爆款写手 + 封面设计三位 AI 员工",
+		Description: "一键雇佣整套自媒体内容生产工作室。",
+		Tags:        []string{"自媒体", "OPC"},
+		CostTier:    "light",
+		BotsSummary: []StudioBotSummary{
+			{Name: "选题总监", Role: "热点调研与大纲策划", SkillCount: 2},
+			{Name: "主笔写手", Role: "长短图文撰写与改稿", SkillCount: 3},
+			{Name: "封面视觉", Role: "配图提示词与视觉定稿", SkillCount: 1},
+		},
+		EvalVerified: true,
+		EvalSamples: []EvalSample{
+			{
+				Title:         "小红书热点拆解",
+				Prompt:        "帮我策划一篇面向独立开发者的 AI 工具选题",
+				OutputPreview: "1. 标题备选：一人公司怎么用 3 个 AI 员工日更...",
+				Model:         "deepseek-chat",
+				LatencyMs:     1420,
+				VerifiedAt:    time.Now().UTC().Format(time.RFC3339),
+			},
+		},
+		SoulText: "本工作室包含选题总监、主笔写手与封面视觉三位 AI 员工，按需求依次完成选题、成稿与配图交付，不进行无关循环调用。",
+		Package:  json.RawMessage(`{"version":1,"studio":true,"package":{"agents":[{"name":"选题总监"},{"name":"主笔写手"},{"name":"封面视觉"}]}}`),
+	})
+	if err != nil {
+		t.Fatalf("PublishBot studio failed: %v", err)
+	}
+	if studio.ListingType != "studio" || studio.BotCount != 3 || !studio.EvalVerified || studio.CostTier != "light" {
+		t.Fatalf("unexpected studio fields: %+v", studio)
+	}
+	if n := svc.ProcessPendingReviews(ctx, 5); n < 1 {
+		t.Fatalf("expected studio review processed, got %d", n)
+	}
+	studioItems, studioTotal, err := svc.ListMarketplace(ctx, MarketplaceFilter{ListingType: "studio", Page: 1, PageSize: 20})
+	if err != nil || studioTotal != 1 || len(studioItems) != 1 || studioItems[0].BotCount != 3 || !studioItems[0].EvalVerified {
+		t.Fatalf("ListMarketplace(studio): err=%v total=%d items=%+v", err, studioTotal, studioItems)
+	}
+	botOnlyItems, botOnlyTotal, err := svc.ListMarketplace(ctx, MarketplaceFilter{ListingType: "bot", Page: 1, PageSize: 20})
+	if err != nil || botOnlyTotal != 1 || len(botOnlyItems) != 1 || botOnlyItems[0].ListingType != "bot" {
+		t.Fatalf("ListMarketplace(bot): err=%v total=%d items=%+v", err, botOnlyTotal, botOnlyItems)
+	}
+	studioInstall, err := svc.InstallListing(ctx, 2, studio.ID, "inst-device-studio")
+	if err != nil || studioInstall.ListingType != "studio" || studioInstall.BotCount != 3 || len(studioInstall.BotsSummary) != 3 {
+		t.Fatalf("InstallListing studio: err=%v inst=%+v", err, studioInstall)
+	}
+
+	// Per-bot actual spend tracking via BillingHookAdapter (studio bots share installToken + have individual bot_ids)
+	adapter := NewBillingHookAdapter(svc)
+	adapter.OnLLMSettled(ctx, 2, "studio-llm-1", 12.5, studioInstall.InstallToken, "bot-editor-1")
+	adapter.OnLLMSettled(ctx, 2, "studio-llm-1", 12.5, studioInstall.InstallToken, "bot-editor-1") // idempotent retry
+	adapter.OnLLMSettled(ctx, 2, "studio-llm-2", 4.25, "", "bot-private-self")                      // non-market personal bot!
+	adapter.OnMediaAdmitted(ctx, "rcpt-studio-img-1", 2, "image", studioInstall.InstallToken, "bot-cover-3")
+	adapter.OnMediaSettled(ctx, "rcpt-studio-img-1", 2, 3.0, false)
+	adapter.OnMediaAdmitted(ctx, "rcpt-studio-vid-failed", 2, "video", studioInstall.InstallToken, "bot-cover-3")
+	adapter.OnMediaSettled(ctx, "rcpt-studio-vid-failed", 2, 10.0, true) // failed must not be recorded
+
+	spend, err := svc.GetUserBotSpendSummary(ctx, 2, 30)
+	if err != nil {
+		t.Fatalf("GetUserBotSpendSummary: %v", err)
+	}
+	if spend.TotalCost != 19.75 || spend.LLMCost != 16.75 || spend.ImageCost != 3.0 || len(spend.Bots) != 3 {
+		t.Fatalf("unexpected spend summary: %+v", spend)
+	}
+	if spend.Bots[0].BotID != "bot-editor-1" || spend.Bots[0].LLMCost != 12.5 {
+		t.Fatalf("expected top bot bot-editor-1 with 12.5, got %+v", spend.Bots[0])
 	}
 }

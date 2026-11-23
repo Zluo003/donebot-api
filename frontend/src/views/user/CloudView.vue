@@ -44,7 +44,7 @@
         <CloudStorage v-if="instance && canOpen" :key="instance.id" :id="instance.id" @busy="busy = $event" />
         <button class="text-sm text-gray-500 underline dark:text-dark-400" :disabled="busy" @click="revoke">断开所有 Cloud 网页会话</button>
       </template>
-      <TeamCloudSection />
+      <TeamCloudSection v-if="SHOW_TEAM_CLOUD" />
       <BaseDialog v-if="pending" :show="true" :title="pending.action === 'cancel' ? '取消自动续费？' : pending.action === 'keep' ? '开启自动续费？' : renewable ? '启动 Cloud？' : '购买 Cloud 云主机？'" width="narrow" :close-on-escape="!busy" :show-close-button="!busy" @close="!busy && (pending = null)">
           <p class="text-sm leading-6 text-gray-500 dark:text-dark-400">{{ pending.action === 'cancel' ? `仅关闭到期自动续费，Cloud 继续运行至 ${date(instance?.paid_until ?? null)}。到期停机后保留 ${info?.plan.retention_days} 天，之后永久删除实例与数据。` : pending.action === 'keep' ? `将在已付费期限结束时按届时月费从余额扣款（当前 ${info?.plan.monthly_price} / 月）。本次不扣款，不改变当前到期时间。` : renewable ? '当前已付费期限内启动不重复收费，也不改变自动续费设置。' : `月费 ${info?.plan.monthly_price}，确认后从当前账号余额扣款，购买一个月 Cloud 服务并开启自动续费。余额不足无法购买或续期。` }}</p>
           <p v-if="error" role="alert" class="mt-3 text-sm text-red-600">{{ error }}</p>
@@ -63,6 +63,7 @@ import TeamCloudSection from '@/components/cloud/TeamCloudSection.vue'
 import { useAuthStore } from '@/stores/auth'
 import { cloudAPI, type CloudAction, type CloudInstance, type CloudOperation, type CloudPlanInfo } from '@/api/cloud'
 const auth = useAuthStore()
+const SHOW_TEAM_CLOUD = false
 const info = ref<CloudPlanInfo | null>(null), instance = ref<CloudInstance | null>(null), operations = ref<CloudOperation[]>([])
 const loading = ref(false), busy = ref(false), error = ref(''), notice = ref('')
 const pending = ref<{ action: CloudAction; key: string } | null>(null)

@@ -486,8 +486,85 @@ func (s *Service) PublishBot(ctx context.Context, authorUserID int64, in Publish
 			break
 		}
 	}
-	if len(in.Skills) > MaxSkillsPerBot {
-		return nil, infraerrors.BadRequest("MARKET_SKILLS_TOO_MANY", fmt.Sprintf("单个 Bot 最多附带 %d 个 Skill。", MaxSkillsPerBot))
+	listingType := strings.ToLower(strings.TrimSpace(in.ListingType))
+	if listingType == "" {
+		listingType = "bot"
+	}
+	if listingType != "bot" && listingType != "studio" {
+		return nil, infraerrors.BadRequest("MARKET_TYPE_INVALID", "发布类型仅支持单 Bot（bot）或 AI 工作室（studio）。")
+	}
+	costTier := strings.ToLower(strings.TrimSpace(in.CostTier))
+	if costTier == "" {
+		costTier = "standard"
+	}
+	if costTier != "light" && costTier != "standard" && costTier != "heavy" {
+		return nil, infraerrors.BadRequest("MARKET_COST_TIER_INVALID", "算力消耗档位仅支持 light、standard 或 heavy。")
+	}
+
+	botsSummary := make([]StudioBotSummary, 0, len(in.BotsSummary))
+	for _, b := range in.BotsSummary {
+		bn := strings.TrimSpace(b.Name)
+		if bn == "" || utf8.RuneCountInString(bn) > 60 {
+			continue
+		}
+		br := strings.TrimSpace(b.Role)
+		if utf8.RuneCountInString(br) > 120 {
+			br = truncateSnippet(br, 120)
+		}
+		ba := strings.TrimSpace(b.Avatar)
+		if len(ba) > 256 {
+			ba = ""
+		}
+		bc := strings.TrimSpace(b.Color)
+		if len(bc) > 32 {
+			bc = ""
+		}
+		sc := b.SkillCount
+		if sc < 0 {
+			sc = 0
+		}
+		botsSummary = append(botsSummary, StudioBotSummary{
+			Name: bn, Role: br, Avatar: ba, Color: bc, SkillCount: sc,
+		})
+		if len(botsSummary) >= MaxBotsPerStudio {
+			break
+		}
+	}
+	botCount := 1
+	if listingType == "studio" {
+		if len(botsSummary) < 2 {
+			return nil, infraerrors.BadRequest("MARKET_STUDIO_MIN_BOTS", "AI 工作室整包至少需要包含 2 位 AI 员工。")
+		}
+		botCount = len(botsSummary)
+	}
+
+	evalSamples := make([]EvalSample, 0, MaxEvalSamples)
+	for _, es := range in.EvalSamples {
+		pr := strings.TrimSpace(es.Prompt)
+		op := strings.TrimSpace(es.OutputPreview)
+		if pr == "" || op == "" {
+			continue
+		}
+		evalSamples = append(evalSamples, EvalSample{
+			Title:         truncateSnippet(es.Title, 80),
+			Prompt:        truncateSnippet(pr, 400),
+			OutputPreview: truncateSnippet(op, 1200),
+			Model:         truncateSnippet(es.Model, 80),
+			LatencyMs:     es.LatencyMs,
+			VerifiedAt:    truncateSnippet(es.VerifiedAt, 40),
+		})
+		if len(evalSamples) >= MaxEvalSamples {
+			break
+		}
+	}
+	evalVerified := in.EvalVerified && len(evalSamples) > 0
+
+	maxSkills := MaxSkillsPerBot
+	if listingType == "studio" {
+		maxSkills = MaxSkillsPerStudio
+	}
+	if len(in.Skills) > maxSkills {
+		return nil, infraerrors.BadRequest("MARKET_SKILLS_TOO_MANY", fmt.Sprintf("最多附带 %d 个 Skill。", maxSkills))
 	}
 	skills := make([]SkillDocument, 0, len(in.Skills))
 	skillNames := make([]string, 0, len(in.Skills))
@@ -515,6 +592,7 @@ func (s *Service) PublishBot(ctx context.Context, authorUserID int64, in Publish
 
 	// Synchronous hard-rule pre-check: fast immediate rejection for secrets/obvious attacks/empty SOUL.
 	if hardReject := RunHardRuleCheck(ReviewInput{
+		ListingType: listingType, BotsSummary: botsSummary,
 		Name: name, Tagline: tagline, Description: desc, CategoryName: catName,
 		SamplePrompts: prompts, SoulText: soulText, Skills: skills,
 	}); hardReject != nil {
@@ -525,6 +603,8 @@ func (s *Service) PublishBot(ctx context.Context, authorUserID int64, in Publish
 	promptsJSON, _ := json.Marshal(prompts)
 	skillsJSON, _ := json.Marshal(skills)
 	skillNamesJSON, _ := json.Marshal(skillNames)
+	botsSummaryJSON, _ := json.Marshal(botsSummary)
+	evalSamplesJSON, _ := json.Marshal(evalSamples)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -564,26 +644,32 @@ func (s *Service) PublishBot(ctx context.Context, authorUserID int64, in Publish
 	if nextVersion == 1 {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO donebot_market_listings (
-				id, author_user_id, category_id, source_bot_id, name, tagline, description,
+				id, author_user_id, category_id, source_bot_id, listing_type, bot_count, bots_summary_json,
+				eval_verified, eval_samples_json, cost_tier, name, tagline, description,
 				tags_json, sample_prompts_json, appearance_json, has_soul, skill_count, skill_names_json,
 				latest_release_id, latest_version, status, last_review_note
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,TRUE,$11,$12::jsonb,$13,1,'pending_review','')`,
-			listingID, authorUserID, in.CategoryID, strings.TrimSpace(in.SourceBotID), name, tagline, desc,
+			) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9::jsonb,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16::jsonb,TRUE,$17,$18::jsonb,$19,1,'pending_review','')`,
+			listingID, authorUserID, in.CategoryID, strings.TrimSpace(in.SourceBotID), listingType, botCount, string(botsSummaryJSON),
+			evalVerified, string(evalSamplesJSON), costTier, name, tagline, desc,
 			string(tagsJSON), string(promptsJSON), string(appearance), len(skills), string(skillNamesJSON), releaseID); err != nil {
 			return nil, err
 		}
 	} else {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE donebot_market_listings
-			SET category_id = $1, name = $2, tagline = $3, description = $4,
-			    tags_json = $5::jsonb, sample_prompts_json = $6::jsonb, appearance_json = $7::jsonb,
-			    has_soul = TRUE, skill_count = $8, skill_names_json = $9::jsonb,
-			    latest_release_id = $10, latest_version = $11,
+			SET category_id = $1, listing_type = $2, bot_count = $3, bots_summary_json = $4::jsonb,
+			    eval_verified = $5, eval_samples_json = $6::jsonb, cost_tier = $7,
+			    name = $8, tagline = $9, description = $10,
+			    tags_json = $11::jsonb, sample_prompts_json = $12::jsonb, appearance_json = $13::jsonb,
+			    has_soul = TRUE, skill_count = $14, skill_names_json = $15::jsonb,
+			    latest_release_id = $16, latest_version = $17,
 			    status = CASE WHEN published_release_id IS NOT NULL AND status = 'published' THEN 'published' ELSE 'pending_review' END,
 			    last_review_note = '',
 			    updated_at = NOW()
-			WHERE id = $12`,
-			in.CategoryID, name, tagline, desc, string(tagsJSON), string(promptsJSON), string(appearance),
+			WHERE id = $18`,
+			in.CategoryID, listingType, botCount, string(botsSummaryJSON),
+			evalVerified, string(evalSamplesJSON), costTier,
+			name, tagline, desc, string(tagsJSON), string(promptsJSON), string(appearance),
 			len(skills), string(skillNamesJSON), releaseID, nextVersion, listingID); err != nil {
 			return nil, err
 		}
@@ -626,6 +712,11 @@ func (s *Service) ListMarketplace(ctx context.Context, filter MarketplaceFilter)
 		args = append(args, filter.CategoryID)
 		argIdx++
 	}
+	if lt := strings.ToLower(strings.TrimSpace(filter.ListingType)); lt == "bot" || lt == "studio" {
+		where = append(where, fmt.Sprintf("l.listing_type = $%d", argIdx))
+		args = append(args, lt)
+		argIdx++
+	}
 	if q := strings.TrimSpace(filter.Query); q != "" {
 		like := "%" + q + "%"
 		where = append(where, fmt.Sprintf("(l.name ILIKE $%d OR l.tagline ILIKE $%d OR l.description ILIKE $%d OR l.tags_json::text ILIKE $%d)", argIdx, argIdx, argIdx, argIdx))
@@ -656,7 +747,8 @@ func (s *Service) ListMarketplace(ctx context.Context, filter MarketplaceFilter)
 	offset := (filter.Page - 1) * filter.PageSize
 	listArgs := append(args, filter.PageSize, offset)
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT l.id, l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(ua.url, ''),
+		SELECT l.id, l.listing_type, l.bot_count, l.bots_summary_json, l.eval_verified, l.eval_samples_json, l.cost_tier,
+		       l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(ua.url, ''),
 		       l.category_id, c.name, c.slug, l.source_bot_id, l.name, l.tagline, l.description,
 		       l.tags_json, l.sample_prompts_json, l.appearance_json,
 		       l.has_soul, l.skill_count, l.skill_names_json,
@@ -688,11 +780,13 @@ func (s *Service) ListMarketplace(ctx context.Context, filter MarketplaceFilter)
 
 func scanPublicListing(scanner interface{ Scan(...any) error }) (ListingSummary, error) {
 	var (
-		item                              ListingSummary
-		tagsRaw, promptsRaw, appRaw, snRaw []byte
+		item                                                    ListingSummary
+		botsSummaryRaw, evalSamplesRaw                          []byte
+		tagsRaw, promptsRaw, appRaw, snRaw                      []byte
 	)
 	err := scanner.Scan(
-		&item.ID, &item.AuthorUserID, &item.AuthorName, &item.AuthorAvatarURL,
+		&item.ID, &item.ListingType, &item.BotCount, &botsSummaryRaw, &item.EvalVerified, &evalSamplesRaw, &item.CostTier,
+		&item.AuthorUserID, &item.AuthorName, &item.AuthorAvatarURL,
 		&item.CategoryID, &item.CategoryName, &item.CategorySlug, &item.SourceBotID,
 		&item.Name, &item.Tagline, &item.Description,
 		&tagsRaw, &promptsRaw, &appRaw,
@@ -704,10 +798,27 @@ func scanPublicListing(scanner interface{ Scan(...any) error }) (ListingSummary,
 	if err != nil {
 		return item, err
 	}
+	_ = json.Unmarshal(botsSummaryRaw, &item.BotsSummary)
+	_ = json.Unmarshal(evalSamplesRaw, &item.EvalSamples)
 	_ = json.Unmarshal(tagsRaw, &item.Tags)
 	_ = json.Unmarshal(promptsRaw, &item.SamplePrompts)
 	_ = json.Unmarshal(snRaw, &item.SkillNames)
 	item.Appearance = appRaw
+	if item.ListingType == "" {
+		item.ListingType = "bot"
+	}
+	if item.BotCount <= 0 {
+		item.BotCount = 1
+	}
+	if item.CostTier == "" {
+		item.CostTier = "standard"
+	}
+	if item.BotsSummary == nil {
+		item.BotsSummary = []StudioBotSummary{}
+	}
+	if item.EvalSamples == nil {
+		item.EvalSamples = []EvalSample{}
+	}
 	if item.Tags == nil {
 		item.Tags = []string{}
 	}
@@ -728,11 +839,13 @@ func (s *Service) GetListingDetail(ctx context.Context, listingID string, viewer
 		return nil, infraerrors.BadRequest("MARKET_LISTING_INVALID", "无效的 Bot ID。")
 	}
 	var (
-		item                              ListingSummary
+		item                               ListingSummary
+		botsSummaryRaw, evalSamplesRaw     []byte
 		tagsRaw, promptsRaw, appRaw, snRaw []byte
 	)
 	err := s.db.QueryRowContext(ctx, `
-		SELECT l.id, l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(ua.url, ''),
+		SELECT l.id, l.listing_type, l.bot_count, l.bots_summary_json, l.eval_verified, l.eval_samples_json, l.cost_tier,
+		       l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(ua.url, ''),
 		       l.category_id, c.name, c.slug, l.source_bot_id, l.name, l.tagline, l.description,
 		       l.tags_json, l.sample_prompts_json, l.appearance_json,
 		       l.has_soul, l.skill_count, l.skill_names_json,
@@ -745,7 +858,8 @@ func (s *Service) GetListingDetail(ctx context.Context, listingID string, viewer
 		JOIN users u ON u.id = l.author_user_id
 		LEFT JOIN user_avatars ua ON ua.user_id = u.id
 		WHERE l.id = $1`, listingID).Scan(
-		&item.ID, &item.AuthorUserID, &item.AuthorName, &item.AuthorAvatarURL,
+		&item.ID, &item.ListingType, &item.BotCount, &botsSummaryRaw, &item.EvalVerified, &evalSamplesRaw, &item.CostTier,
+		&item.AuthorUserID, &item.AuthorName, &item.AuthorAvatarURL,
 		&item.CategoryID, &item.CategoryName, &item.CategorySlug, &item.SourceBotID,
 		&item.Name, &item.Tagline, &item.Description,
 		&tagsRaw, &promptsRaw, &appRaw,
@@ -765,10 +879,36 @@ func (s *Service) GetListingDetail(ctx context.Context, listingID string, viewer
 	if item.Status != "published" && !canSeePrivate {
 		return nil, infraerrors.NotFound("MARKET_LISTING_NOT_FOUND", "Bot 不存在或已下架。")
 	}
+	_ = json.Unmarshal(botsSummaryRaw, &item.BotsSummary)
+	_ = json.Unmarshal(evalSamplesRaw, &item.EvalSamples)
 	_ = json.Unmarshal(tagsRaw, &item.Tags)
 	_ = json.Unmarshal(promptsRaw, &item.SamplePrompts)
 	_ = json.Unmarshal(snRaw, &item.SkillNames)
 	item.Appearance = appRaw
+	if item.ListingType == "" {
+		item.ListingType = "bot"
+	}
+	if item.BotCount <= 0 {
+		item.BotCount = 1
+	}
+	if item.CostTier == "" {
+		item.CostTier = "standard"
+	}
+	if item.BotsSummary == nil {
+		item.BotsSummary = []StudioBotSummary{}
+	}
+	if item.EvalSamples == nil {
+		item.EvalSamples = []EvalSample{}
+	}
+	if item.Tags == nil {
+		item.Tags = []string{}
+	}
+	if item.SamplePrompts == nil {
+		item.SamplePrompts = []string{}
+	}
+	if item.SkillNames == nil {
+		item.SkillNames = []string{}
+	}
 	if !canSeePrivate {
 		item.TotalAttributedCost = 0
 		item.TotalCreatorReward = 0
@@ -913,6 +1053,9 @@ func (s *Service) InstallListing(ctx context.Context, installerUserID int64, lis
 
 	var (
 		authorUserID     int64
+		listingType      string
+		botCount         int
+		botsSummaryRaw   []byte
 		name             string
 		promptsRaw       []byte
 		releaseID        string
@@ -920,9 +1063,9 @@ func (s *Service) InstallListing(ctx context.Context, installerUserID int64, lis
 		status           string
 	)
 	err = s.db.QueryRowContext(ctx, `
-		SELECT author_user_id, name, sample_prompts_json, COALESCE(published_release_id::text, ''), published_version, status
+		SELECT author_user_id, listing_type, bot_count, bots_summary_json, name, sample_prompts_json, COALESCE(published_release_id::text, ''), published_version, status
 		FROM donebot_market_listings WHERE id = $1`, listingID).Scan(
-		&authorUserID, &name, &promptsRaw, &releaseID, &publishedVersion, &status)
+		&authorUserID, &listingType, &botCount, &botsSummaryRaw, &name, &promptsRaw, &releaseID, &publishedVersion, &status)
 	if errors.Is(err, sql.ErrNoRows) || status != "published" || releaseID == "" {
 		return nil, infraerrors.NotFound("MARKET_LISTING_NOT_FOUND", "该 Bot 不存在或已下架。")
 	}
@@ -970,10 +1113,24 @@ func (s *Service) InstallListing(ctx context.Context, installerUserID int64, lis
 	}
 	var prompts []string
 	_ = json.Unmarshal(promptsRaw, &prompts)
+	var botsSummary []StudioBotSummary
+	_ = json.Unmarshal(botsSummaryRaw, &botsSummary)
+	if botsSummary == nil {
+		botsSummary = []StudioBotSummary{}
+	}
+	if listingType == "" {
+		listingType = "bot"
+	}
+	if botCount <= 0 {
+		botCount = 1
+	}
 
 	return &InstallResult{
 		InstallID:     installID,
 		ListingID:     listingID,
+		ListingType:   listingType,
+		BotCount:      botCount,
+		BotsSummary:   botsSummary,
 		ReleaseID:     releaseID,
 		Version:       publishedVersion,
 		Name:          name,
@@ -1078,7 +1235,8 @@ func (s *Service) AdminListListings(ctx context.Context, status, query string, p
 		return nil, 0, err
 	}
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT l.id, l.author_user_id, COALESCE(NULLIF(u.username, ''), u.email), COALESCE(ua.url, ''),
+		SELECT l.id, l.listing_type, l.bot_count, l.bots_summary_json, l.eval_verified, l.eval_samples_json, l.cost_tier,
+		       l.author_user_id, COALESCE(NULLIF(u.username, ''), u.email), COALESCE(ua.url, ''),
 		       l.category_id, c.name, c.slug, l.source_bot_id, l.name, l.tagline, l.description,
 		       l.tags_json, l.sample_prompts_json, l.appearance_json,
 		       l.has_soul, l.skill_count, l.skill_names_json,
@@ -1101,11 +1259,13 @@ func (s *Service) AdminListListings(ctx context.Context, status, query string, p
 	items := make([]ListingSummary, 0)
 	for rows.Next() {
 		var (
-			item                              ListingSummary
+			item                               ListingSummary
+			botsSummaryRaw, evalSamplesRaw     []byte
 			tagsRaw, promptsRaw, appRaw, snRaw []byte
 		)
 		if err := rows.Scan(
-			&item.ID, &item.AuthorUserID, &item.AuthorName, &item.AuthorAvatarURL,
+			&item.ID, &item.ListingType, &item.BotCount, &botsSummaryRaw, &item.EvalVerified, &evalSamplesRaw, &item.CostTier,
+			&item.AuthorUserID, &item.AuthorName, &item.AuthorAvatarURL,
 			&item.CategoryID, &item.CategoryName, &item.CategorySlug, &item.SourceBotID,
 			&item.Name, &item.Tagline, &item.Description,
 			&tagsRaw, &promptsRaw, &appRaw,
@@ -1117,10 +1277,27 @@ func (s *Service) AdminListListings(ctx context.Context, status, query string, p
 		); err != nil {
 			return nil, 0, err
 		}
+		_ = json.Unmarshal(botsSummaryRaw, &item.BotsSummary)
+		_ = json.Unmarshal(evalSamplesRaw, &item.EvalSamples)
 		_ = json.Unmarshal(tagsRaw, &item.Tags)
 		_ = json.Unmarshal(promptsRaw, &item.SamplePrompts)
 		_ = json.Unmarshal(snRaw, &item.SkillNames)
 		item.Appearance = appRaw
+		if item.ListingType == "" {
+			item.ListingType = "bot"
+		}
+		if item.BotCount <= 0 {
+			item.BotCount = 1
+		}
+		if item.CostTier == "" {
+			item.CostTier = "standard"
+		}
+		if item.BotsSummary == nil {
+			item.BotsSummary = []StudioBotSummary{}
+		}
+		if item.EvalSamples == nil {
+			item.EvalSamples = []EvalSample{}
+		}
 		items = append(items, item)
 	}
 	return items, total, rows.Err()

@@ -16,12 +16,16 @@ const (
 	MaxTagsPerListing     = 6
 	MaxSamplePrompts      = 3
 	MaxSkillsPerBot       = 30
+	MaxSkillsPerStudio    = 90
+	MaxBotsPerStudio      = 8
+	MaxEvalSamples        = 5
 	MinSoulRunes          = 20
 	MaxSoulRunes          = 100000
 	MaxSkillDescRunes     = 2000      // DoneBot SKILL.md DESCRIPTION_MAX=1024 with safety headroom
 	MaxSkillInstrRunes    = 256 * 1024 // Matches DoneBot SKILL_FILE_MAX_BYTES=256 KiB
 	MinTransferAmount     = 1.0
 	InstallTokenHeader    = "X-DoneBot-Market-Install"
+	BotIDHeader           = "X-DoneBot-Bot-Id"
 	DefaultAttrDays       = 180
 	DefaultFreezeDays     = 7
 	DefaultMinWithdraw    = 100.0
@@ -131,54 +135,103 @@ type SkillDocument struct {
 	Instructions string `json:"instructions"`
 }
 
+type StudioBotSummary struct {
+	Name       string `json:"name"`
+	Role       string `json:"role,omitempty"`
+	Avatar     string `json:"avatar,omitempty"`
+	Color      string `json:"color,omitempty"`
+	SkillCount int    `json:"skill_count,omitempty"`
+}
+
+type EvalSample struct {
+	Title         string `json:"title,omitempty"`
+	Prompt        string `json:"prompt"`
+	OutputPreview string `json:"output_preview"`
+	Model         string `json:"model,omitempty"`
+	LatencyMs     int64  `json:"latency_ms,omitempty"`
+	VerifiedAt    string `json:"verified_at,omitempty"`
+}
+
+type BotSpendRow struct {
+	BotID      string    `json:"bot_id"`
+	TotalCost  float64   `json:"total_cost"`
+	LLMCost    float64   `json:"llm_cost"`
+	ImageCost  float64   `json:"image_cost"`
+	VideoCost  float64   `json:"video_cost"`
+	MusicCost  float64   `json:"music_cost"`
+	EventCount int       `json:"event_count"`
+	LastUsedAt time.Time `json:"last_used_at"`
+}
+
+type BotSpendSummary struct {
+	Days      int           `json:"days"`
+	TotalCost float64       `json:"total_cost"`
+	LLMCost   float64       `json:"llm_cost"`
+	ImageCost float64       `json:"image_cost"`
+	VideoCost float64       `json:"video_cost"`
+	MusicCost float64       `json:"music_cost"`
+	Bots      []BotSpendRow `json:"bots"`
+}
+
 type PublishBotInput struct {
-	ListingID     string          `json:"listing_id,omitempty"`
-	SourceBotID   string          `json:"source_bot_id,omitempty"`
-	CategoryID    int64           `json:"category_id"`
-	Name          string          `json:"name"`
-	Tagline       string          `json:"tagline"`
-	Description   string          `json:"description"`
-	Tags          []string        `json:"tags"`
-	SamplePrompts []string        `json:"sample_prompts"`
-	Appearance    json.RawMessage `json:"appearance,omitempty"`
-	SoulText      string          `json:"soul_text"`
-	Skills        []SkillDocument `json:"skills"`
-	Package       json.RawMessage `json:"package"`
-	Changelog     string          `json:"changelog,omitempty"`
+	ListingID     string             `json:"listing_id,omitempty"`
+	ListingType   string             `json:"listing_type,omitempty"`
+	SourceBotID   string             `json:"source_bot_id,omitempty"`
+	CategoryID    int64              `json:"category_id"`
+	Name          string             `json:"name"`
+	Tagline       string             `json:"tagline"`
+	Description   string             `json:"description"`
+	Tags          []string           `json:"tags"`
+	SamplePrompts []string           `json:"sample_prompts"`
+	Appearance    json.RawMessage    `json:"appearance,omitempty"`
+	BotsSummary   []StudioBotSummary `json:"bots_summary,omitempty"`
+	EvalVerified  bool               `json:"eval_verified,omitempty"`
+	EvalSamples   []EvalSample       `json:"eval_samples,omitempty"`
+	CostTier      string             `json:"cost_tier,omitempty"`
+	SoulText      string             `json:"soul_text"`
+	Skills        []SkillDocument    `json:"skills"`
+	Package       json.RawMessage    `json:"package"`
+	Changelog     string             `json:"changelog,omitempty"`
 }
 
 type ListingSummary struct {
-	ID                  string          `json:"id"`
-	AuthorUserID        int64           `json:"author_user_id"`
-	AuthorName          string          `json:"author_name"`
-	AuthorAvatarURL     string          `json:"author_avatar_url,omitempty"`
-	CategoryID          int64           `json:"category_id"`
-	CategoryName        string          `json:"category_name"`
-	CategorySlug        string          `json:"category_slug"`
-	SourceBotID         string          `json:"source_bot_id,omitempty"`
-	Name                string          `json:"name"`
-	Tagline             string          `json:"tagline"`
-	Description         string          `json:"description"`
-	Tags                []string        `json:"tags"`
-	SamplePrompts       []string        `json:"sample_prompts"`
-	Appearance          json.RawMessage `json:"appearance,omitempty"`
-	HasSoul             bool            `json:"has_soul"`
-	SkillCount          int             `json:"skill_count"`
-	SkillNames          []string        `json:"skill_names"`
-	LatestReleaseID     string          `json:"latest_release_id,omitempty"`
-	PublishedReleaseID  string          `json:"published_release_id,omitempty"`
-	LatestVersion       int             `json:"latest_version"`
-	PublishedVersion    int             `json:"published_version"`
-	Status              string          `json:"status"`
-	Featured            bool            `json:"featured"`
-	InstallCount        int             `json:"install_count"`
-	TotalAttributedCost float64         `json:"total_attributed_cost,omitempty"`
-	TotalCreatorReward  float64         `json:"total_creator_reward,omitempty"`
-	ReportCount         int             `json:"report_count,omitempty"`
-	LastReviewNote      string          `json:"last_review_note,omitempty"`
-	PublishedAt         *time.Time      `json:"published_at,omitempty"`
-	CreatedAt           time.Time       `json:"created_at"`
-	UpdatedAt           time.Time       `json:"updated_at"`
+	ID                  string             `json:"id"`
+	ListingType         string             `json:"listing_type"`
+	BotCount            int                `json:"bot_count"`
+	BotsSummary         []StudioBotSummary `json:"bots_summary"`
+	EvalVerified        bool               `json:"eval_verified"`
+	EvalSamples         []EvalSample       `json:"eval_samples"`
+	CostTier            string             `json:"cost_tier"`
+	AuthorUserID        int64              `json:"author_user_id"`
+	AuthorName          string             `json:"author_name"`
+	AuthorAvatarURL     string             `json:"author_avatar_url,omitempty"`
+	CategoryID          int64              `json:"category_id"`
+	CategoryName        string             `json:"category_name"`
+	CategorySlug        string             `json:"category_slug"`
+	SourceBotID         string             `json:"source_bot_id,omitempty"`
+	Name                string             `json:"name"`
+	Tagline             string             `json:"tagline"`
+	Description         string             `json:"description"`
+	Tags                []string           `json:"tags"`
+	SamplePrompts       []string           `json:"sample_prompts"`
+	Appearance          json.RawMessage    `json:"appearance,omitempty"`
+	HasSoul             bool               `json:"has_soul"`
+	SkillCount          int                `json:"skill_count"`
+	SkillNames          []string           `json:"skill_names"`
+	LatestReleaseID     string             `json:"latest_release_id,omitempty"`
+	PublishedReleaseID  string             `json:"published_release_id,omitempty"`
+	LatestVersion       int                `json:"latest_version"`
+	PublishedVersion    int                `json:"published_version"`
+	Status              string             `json:"status"`
+	Featured            bool               `json:"featured"`
+	InstallCount        int                `json:"install_count"`
+	TotalAttributedCost float64            `json:"total_attributed_cost,omitempty"`
+	TotalCreatorReward  float64            `json:"total_creator_reward,omitempty"`
+	ReportCount         int                `json:"report_count,omitempty"`
+	LastReviewNote      string             `json:"last_review_note,omitempty"`
+	PublishedAt         *time.Time         `json:"published_at,omitempty"`
+	CreatedAt           time.Time          `json:"created_at"`
+	UpdatedAt           time.Time          `json:"updated_at"`
 }
 
 type ReleaseDetail struct {
@@ -208,17 +261,20 @@ type ListingDetail struct {
 }
 
 type InstallResult struct {
-	InstallID      string          `json:"install_id"`
-	ListingID      string          `json:"listing_id"`
-	ReleaseID      string          `json:"release_id"`
-	Version        int             `json:"version"`
-	Name           string          `json:"name"`
-	InstallToken   string          `json:"install_token"`
-	ExpiresAt      time.Time       `json:"expires_at"`
-	Package        json.RawMessage `json:"package"`
-	Skills         []SkillDocument `json:"skills"`
-	SoulText       string          `json:"soul_text"`
-	SamplePrompts  []string        `json:"sample_prompts"`
+	InstallID     string             `json:"install_id"`
+	ListingID     string             `json:"listing_id"`
+	ListingType   string             `json:"listing_type"`
+	BotCount      int                `json:"bot_count"`
+	BotsSummary   []StudioBotSummary `json:"bots_summary"`
+	ReleaseID     string             `json:"release_id"`
+	Version       int                `json:"version"`
+	Name          string             `json:"name"`
+	InstallToken  string             `json:"install_token"`
+	ExpiresAt     time.Time          `json:"expires_at"`
+	Package       json.RawMessage    `json:"package"`
+	Skills        []SkillDocument    `json:"skills"`
+	SoulText      string             `json:"soul_text"`
+	SamplePrompts []string           `json:"sample_prompts"`
 }
 
 type AIReviewDimension struct {
@@ -316,11 +372,12 @@ type TransferToBalanceResult struct {
 }
 
 type MarketplaceFilter struct {
-	CategoryID int64
-	Query      string
-	Sort       string
-	Page       int
-	PageSize   int
+	CategoryID  int64
+	ListingType string
+	Query       string
+	Sort        string
+	Page        int
+	PageSize    int
 }
 
 type AdminOverview struct {

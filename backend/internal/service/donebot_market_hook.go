@@ -6,14 +6,18 @@ import (
 	"sync"
 )
 
-const DoneBotMarketInstallHeader = "X-DoneBot-Market-Install"
+const (
+	DoneBotMarketInstallHeader = "X-DoneBot-Market-Install"
+	DoneBotBotIDHeader         = "X-DoneBot-Bot-Id"
+)
 
 type doneBotMarketInstallTokenKey struct{}
+type doneBotBotIDKey struct{}
 
-// DoneBotMarketBillingHook decouples core usage/media billing settlement from the bot market ledger.
+// DoneBotMarketBillingHook decouples core usage/media billing settlement from the bot market ledger and per-bot spend tracking.
 type DoneBotMarketBillingHook interface {
-	OnLLMSettled(ctx context.Context, installerUserID int64, usageKey string, actualCost float64, installToken string)
-	OnMediaAdmitted(ctx context.Context, receiptID string, installerUserID int64, category string, installToken string)
+	OnLLMSettled(ctx context.Context, installerUserID int64, usageKey string, actualCost float64, installToken string, botID string)
+	OnMediaAdmitted(ctx context.Context, receiptID string, installerUserID int64, category string, installToken string, botID string)
 	OnMediaSettled(ctx context.Context, receiptID string, installerUserID int64, actualCost float64, failed bool)
 }
 
@@ -51,35 +55,57 @@ func DoneBotMarketInstallToken(ctx context.Context) string {
 	return strings.TrimSpace(v)
 }
 
-func CopyDoneBotMarketContext(parent, base context.Context) context.Context {
-	if token := DoneBotMarketInstallToken(parent); token != "" {
-		return WithDoneBotMarketInstallToken(base, token)
+func WithDoneBotBotID(ctx context.Context, botID string) context.Context {
+	trimmed := strings.TrimSpace(botID)
+	if trimmed == "" || len(trimmed) > 128 {
+		return ctx
 	}
-	return base
+	return context.WithValue(ctx, doneBotBotIDKey{}, trimmed)
+}
+
+func DoneBotBotID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	v, _ := ctx.Value(doneBotBotIDKey{}).(string)
+	return strings.TrimSpace(v)
+}
+
+func CopyDoneBotMarketContext(parent, base context.Context) context.Context {
+	out := base
+	if token := DoneBotMarketInstallToken(parent); token != "" {
+		out = WithDoneBotMarketInstallToken(out, token)
+	}
+	if botID := DoneBotBotID(parent); botID != "" {
+		out = WithDoneBotBotID(out, botID)
+	}
+	return out
 }
 
 func NotifyDoneBotMarketLLMSettled(ctx context.Context, installerUserID int64, usageKey string, actualCost float64) {
 	token := DoneBotMarketInstallToken(ctx)
-	if token == "" || installerUserID <= 0 || actualCost <= 0 || strings.TrimSpace(usageKey) == "" {
+	botID := DoneBotBotID(ctx)
+	if (token == "" && botID == "") || installerUserID <= 0 || actualCost <= 0 || strings.TrimSpace(usageKey) == "" {
 		return
 	}
 	hook := currentDoneBotMarketBillingHook()
 	if hook == nil {
 		return
 	}
-	hook.OnLLMSettled(ctx, installerUserID, usageKey, actualCost, token)
+	hook.OnLLMSettled(ctx, installerUserID, usageKey, actualCost, token, botID)
 }
 
 func NotifyDoneBotMarketMediaAdmitted(ctx context.Context, receiptID string, installerUserID int64, category string) {
 	token := DoneBotMarketInstallToken(ctx)
-	if token == "" || strings.TrimSpace(receiptID) == "" || installerUserID <= 0 {
+	botID := DoneBotBotID(ctx)
+	if (token == "" && botID == "") || strings.TrimSpace(receiptID) == "" || installerUserID <= 0 {
 		return
 	}
 	hook := currentDoneBotMarketBillingHook()
 	if hook == nil {
 		return
 	}
-	hook.OnMediaAdmitted(ctx, receiptID, installerUserID, category, token)
+	hook.OnMediaAdmitted(ctx, receiptID, installerUserID, category, token, botID)
 }
 
 func NotifyDoneBotMarketMediaSettled(ctx context.Context, receiptID string, installerUserID int64, actualCost float64, failed bool) {

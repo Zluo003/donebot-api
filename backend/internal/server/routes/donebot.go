@@ -123,6 +123,7 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 		authenticated.POST("/donebot/market/creator/transfer", h.DoneBot.MarketCreatorTransfer)
 		authenticated.GET("/donebot/market/creator/withdrawals", h.DoneBot.MarketCreatorWithdrawals)
 		authenticated.POST("/donebot/market/creator/withdrawals", h.DoneBot.MarketCreatorWithdrawRequest)
+		authenticated.GET("/donebot/market/spend-summary", h.DoneBot.MarketSpendSummary)
 		authenticated.GET("/donebot/templates", h.DoneBot.Templates)
 		authenticated.GET("/donebot/templates/:template_id/:release", h.DoneBot.Template)
 		authenticated.POST("/donebot/installations/claim", h.DoneBot.Claim)

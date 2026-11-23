@@ -72,6 +72,8 @@
             <div class="min-w-0 flex-1 basis-72">
               <div class="flex flex-wrap items-center gap-2">
                 <h3 class="font-semibold">{{ item.name }}</h3>
+                <span v-if="item.listing_type === 'studio'" class="rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">AI 工作室 · {{ item.bot_count }} 位员工</span>
+                <span v-if="item.eval_verified" class="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">已实测认证</span>
                 <span class="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-dark-700">{{ item.category_name }}</span>
                 <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusBadge(item.status)">{{ statusLabel(item.status) }}</span>
                 <span v-if="item.featured" class="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">官方精选</span>

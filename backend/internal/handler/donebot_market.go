@@ -45,11 +45,12 @@ func (h *DoneBotHandler) MarketListings(c *gin.Context) {
 		catID, _ = strconv.ParseInt(raw, 10, 64)
 	}
 	items, total, err := svc.ListMarketplace(c.Request.Context(), donebotmarket.MarketplaceFilter{
-		CategoryID: catID,
-		Query:      c.Query("q"),
-		Sort:       c.Query("sort"),
-		Page:       page,
-		PageSize:   pageSize,
+		CategoryID:  catID,
+		ListingType: c.Query("listing_type"),
+		Query:       c.Query("q"),
+		Sort:        c.Query("sort"),
+		Page:        page,
+		PageSize:    pageSize,
 	})
 	if response.ErrorFrom(c, err) {
 		return
@@ -217,4 +218,22 @@ func (h *DoneBotHandler) MarketCreatorWithdrawRequest(c *gin.Context) {
 		return
 	}
 	response.Success(c, rec)
+}
+
+func (h *DoneBotHandler) MarketSpendSummary(c *gin.Context) {
+	svc, userID, ok := h.marketActor(c)
+	if !ok {
+		return
+	}
+	days := 30
+	if raw := c.Query("days"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			days = parsed
+		}
+	}
+	summary, err := svc.GetUserBotSpendSummary(c.Request.Context(), userID, days)
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	response.Success(c, summary)
 }

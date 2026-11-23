@@ -238,6 +238,131 @@ func (s *Service) accrueVerifiedReward(
 	return tx.Commit()
 }
 
+// --- Per-Bot Actual Spend Tracking (All User Bots, Independent of Market Rebates) ---
+
+// RecordBotLLMSpend records an actual settled LLM cost for a user's bot (idempotent by usageKey).
+func (s *Service) RecordBotLLMSpend(ctx context.Context, userID int64, botID, usageKey string, actualCost float64) error {
+	if !s.Enabled() || userID <= 0 || strings.TrimSpace(botID) == "" || strings.TrimSpace(usageKey) == "" || actualCost <= 0 {
+		return nil
+	}
+	cleanBotID := strings.TrimSpace(botID)
+	if len(cleanBotID) > 128 {
+		cleanBotID = cleanBotID[:128]
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO donebot_bot_spend_events (user_id, bot_id, category, cost_amount, usage_key)
+		VALUES ($1, $2, 'llm', $3, $4)
+		ON CONFLICT (user_id, category, usage_key) DO NOTHING`,
+		userID, cleanBotID, round6(actualCost), "llm:"+strings.TrimSpace(usageKey))
+	return err
+}
+
+// RecordBotMediaSpendRef records the owning bot_id for an admitted async media receipt.
+func (s *Service) RecordBotMediaSpendRef(ctx context.Context, receiptID string, userID int64, botID, category string) {
+	if !s.Enabled() || strings.TrimSpace(receiptID) == "" || userID <= 0 || strings.TrimSpace(botID) == "" {
+		return
+	}
+	cat := normalizeMediaCategory(category)
+	if cat == "" {
+		return
+	}
+	cleanBotID := strings.TrimSpace(botID)
+	if len(cleanBotID) > 128 {
+		cleanBotID = cleanBotID[:128]
+	}
+	_, _ = s.db.ExecContext(ctx, `
+		INSERT INTO donebot_bot_media_spend_refs (receipt_id, user_id, bot_id, category)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (receipt_id) DO NOTHING`,
+		strings.TrimSpace(receiptID), userID, cleanBotID, cat)
+}
+
+// SettleBotMediaSpend records actual settled media spend for the bot associated with receiptID.
+func (s *Service) SettleBotMediaSpend(ctx context.Context, receiptID string, userID int64, actualCost float64, failed bool) error {
+	if !s.Enabled() || failed || strings.TrimSpace(receiptID) == "" || userID <= 0 || actualCost <= 0 {
+		return nil
+	}
+	var botID, category string
+	var storedUserID int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT user_id, bot_id, category
+		FROM donebot_bot_media_spend_refs
+		WHERE receipt_id = $1`, strings.TrimSpace(receiptID)).Scan(&storedUserID, &botID, &category)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if storedUserID != userID || strings.TrimSpace(botID) == "" {
+		return nil
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO donebot_bot_spend_events (user_id, bot_id, category, cost_amount, usage_key)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (user_id, category, usage_key) DO NOTHING`,
+		userID, botID, category, round6(actualCost), "media:"+strings.TrimSpace(receiptID))
+	return err
+}
+
+// GetUserBotSpendSummary returns real 4-category spend per bot for the last N days.
+func (s *Service) GetUserBotSpendSummary(ctx context.Context, userID int64, days int) (*BotSpendSummary, error) {
+	if err := s.available(); err != nil {
+		return nil, err
+	}
+	if days <= 0 {
+		days = 30
+	}
+	if days > 365 {
+		days = 365
+	}
+	since := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT bot_id,
+		       COALESCE(SUM(cost_amount), 0) AS total_cost,
+		       COALESCE(SUM(cost_amount) FILTER (WHERE category = 'llm'), 0) AS llm_cost,
+		       COALESCE(SUM(cost_amount) FILTER (WHERE category = 'image'), 0) AS image_cost,
+		       COALESCE(SUM(cost_amount) FILTER (WHERE category = 'video'), 0) AS video_cost,
+		       COALESCE(SUM(cost_amount) FILTER (WHERE category = 'music'), 0) AS music_cost,
+		       COUNT(*) AS event_count,
+		       MAX(created_at) AS last_used_at
+		FROM donebot_bot_spend_events
+		WHERE user_id = $1 AND created_at >= $2
+		GROUP BY bot_id
+		ORDER BY total_cost DESC, last_used_at DESC
+		LIMIT 200`, userID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	summary := &BotSpendSummary{
+		Days: days,
+		Bots: make([]BotSpendRow, 0),
+	}
+	for rows.Next() {
+		var row BotSpendRow
+		if err := rows.Scan(
+			&row.BotID, &row.TotalCost, &row.LLMCost, &row.ImageCost,
+			&row.VideoCost, &row.MusicCost, &row.EventCount, &row.LastUsedAt,
+		); err != nil {
+			return nil, err
+		}
+		row.TotalCost = round6(row.TotalCost)
+		row.LLMCost = round6(row.LLMCost)
+		row.ImageCost = round6(row.ImageCost)
+		row.VideoCost = round6(row.VideoCost)
+		row.MusicCost = round6(row.MusicCost)
+		summary.TotalCost = round6(summary.TotalCost + row.TotalCost)
+		summary.LLMCost = round6(summary.LLMCost + row.LLMCost)
+		summary.ImageCost = round6(summary.ImageCost + row.ImageCost)
+		summary.VideoCost = round6(summary.VideoCost + row.VideoCost)
+		summary.MusicCost = round6(summary.MusicCost + row.MusicCost)
+		summary.Bots = append(summary.Bots, row)
+	}
+	return summary, rows.Err()
+}
+
 // --- Freeze Thawing ---
 
 func (s *Service) thawUserRewardsTx(ctx context.Context, tx *sql.Tx, userID int64) (float64, error) {

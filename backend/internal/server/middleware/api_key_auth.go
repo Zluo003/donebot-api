@@ -292,6 +292,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		if marketToken := c.GetHeader(service.DoneBotMarketInstallHeader); marketToken != "" {
 			c.Request = c.Request.WithContext(service.WithDoneBotMarketInstallToken(c.Request.Context(), marketToken))
 		}
+		if botID := c.GetHeader(service.DoneBotBotIDHeader); botID != "" {
+			c.Request = c.Request.WithContext(service.WithDoneBotBotID(c.Request.Context(), botID))
+		}
 
 		c.Next()
 	}

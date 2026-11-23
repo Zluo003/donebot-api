@@ -44,22 +44,32 @@ func NewBillingHookAdapter(svc *Service) *BillingHookAdapter {
 	return &BillingHookAdapter{svc: svc}
 }
 
-func (a *BillingHookAdapter) OnLLMSettled(ctx context.Context, installerUserID int64, usageKey string, actualCost float64, installToken string) {
+func (a *BillingHookAdapter) OnLLMSettled(ctx context.Context, installerUserID int64, usageKey string, actualCost float64, installToken string, botID string) {
 	if a == nil || a.svc == nil {
 		return
 	}
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	_ = a.svc.AccrueLLMUsage(runCtx, installerUserID, usageKey, actualCost, installToken)
+	if installToken != "" {
+		_ = a.svc.AccrueLLMUsage(runCtx, installerUserID, usageKey, actualCost, installToken)
+	}
+	if botID != "" {
+		_ = a.svc.RecordBotLLMSpend(runCtx, installerUserID, botID, usageKey, actualCost)
+	}
 }
 
-func (a *BillingHookAdapter) OnMediaAdmitted(ctx context.Context, receiptID string, installerUserID int64, category string, installToken string) {
+func (a *BillingHookAdapter) OnMediaAdmitted(ctx context.Context, receiptID string, installerUserID int64, category string, installToken string, botID string) {
 	if a == nil || a.svc == nil {
 		return
 	}
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	a.svc.RecordMediaAttribution(runCtx, receiptID, installerUserID, category, installToken)
+	if installToken != "" {
+		a.svc.RecordMediaAttribution(runCtx, receiptID, installerUserID, category, installToken)
+	}
+	if botID != "" {
+		a.svc.RecordBotMediaSpendRef(runCtx, receiptID, installerUserID, botID, category)
+	}
 }
 
 func (a *BillingHookAdapter) OnMediaSettled(ctx context.Context, receiptID string, installerUserID int64, actualCost float64, failed bool) {
@@ -69,4 +79,5 @@ func (a *BillingHookAdapter) OnMediaSettled(ctx context.Context, receiptID strin
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	_ = a.svc.AccrueMediaSettlement(runCtx, receiptID, installerUserID, actualCost, failed)
+	_ = a.svc.SettleBotMediaSpend(runCtx, receiptID, installerUserID, actualCost, failed)
 }

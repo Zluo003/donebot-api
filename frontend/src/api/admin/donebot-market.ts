@@ -109,8 +109,31 @@ export interface AIReviewReport {
   checked_at?: string
 }
 
+export interface MarketStudioBotSummary {
+  name: string
+  role?: string
+  avatar?: string
+  color?: string
+  skill_count?: number
+}
+
+export interface MarketEvalSample {
+  title?: string
+  prompt: string
+  output_preview: string
+  model?: string
+  latency_ms?: number
+  verified_at?: string
+}
+
 export interface MarketListing {
   id: string
+  listing_type: 'bot' | 'studio'
+  bot_count: number
+  bots_summary: MarketStudioBotSummary[]
+  eval_verified: boolean
+  eval_samples: MarketEvalSample[]
+  cost_tier: 'light' | 'standard' | 'heavy'
   author_user_id: number
   author_name: string
   category_id: number
