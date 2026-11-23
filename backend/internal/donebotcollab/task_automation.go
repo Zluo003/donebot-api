@@ -325,7 +325,7 @@ func isTaskEventStillValid(eventType string, eventBatchID string, task *TeamTask
 	}
 	switch eventType {
 	case "task_assigned":
-		return task.Status == "todo" || task.Status == "in_progress"
+		return task.Status == "todo"
 	case "task_submitted":
 		if task.Status != "bot_reviewing" && task.Status != "in_review" {
 			return false
