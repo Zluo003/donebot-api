@@ -1409,14 +1409,24 @@ func (s *Service) UploadTeamTaskFileUpdate(
 	return s.GetTeamTaskDetail(ctx, actor, teamID, taskID)
 }
 
+func validateReviewActorDecision(actorKind, decision string) error {
+	if decision != "approve" && decision != "request_changes" {
+		return infraerrors.BadRequest("COLLAB_TASK_REVIEW_INVALID", "验收决定仅支持通过或退回修改。")
+	}
+	if decision == "approve" && normalizeActorKind(actorKind) == "bot" {
+		return infraerrors.Forbidden("COLLAB_TASK_BOT_FINAL_APPROVE_FORBIDDEN", "派发方主协调助手只能执行二审或驳回，终审通过必须由派发人/验收人确认。")
+	}
+	return nil
+}
+
 func (s *Service) ReviewTeamTask(ctx context.Context, actor int64, teamID, taskID string, in ReviewTeamTaskInput) (*TeamTaskDetail, error) {
 	task, role, err := s.authorizeTeamTask(ctx, actor, teamID, taskID)
 	if err != nil {
 		return nil, err
 	}
 	decision := strings.TrimSpace(in.Decision)
-	if decision != "approve" && decision != "request_changes" {
-		return nil, infraerrors.BadRequest("COLLAB_TASK_REVIEW_INVALID", "验收决定仅支持通过或退回修改。")
+	if err = validateReviewActorDecision(in.ActorKind, decision); err != nil {
+		return nil, err
 	}
 	if task.ReviewerID != nil && *task.ReviewerID != actor && role != "owner" && role != "admin" {
 		return nil, infraerrors.Forbidden("COLLAB_TASK_REVIEW_FORBIDDEN", "该任务指定了其他验收人，仅指定验收人或团队管理员可验收。")
