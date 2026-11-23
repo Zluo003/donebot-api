@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -719,7 +720,7 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 		}
 		rawReq, err = json.Marshal(map[string]any{
 			"model":       target.model,
-			"max_tokens":  1200,
+			"max_tokens":  2400,
 			"temperature": 0.1,
 			"system":      systemPrompt,
 			"messages":    []map[string]string{{"role": "user", "content": userPrompt}},
@@ -742,7 +743,7 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 			},
 			"generationConfig": map[string]any{
 				"temperature":      0.1,
-				"maxOutputTokens":  1200,
+				"maxOutputTokens":  2400,
 				"responseMimeType": "application/json",
 			},
 		})
@@ -759,7 +760,7 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 			"model":             target.model,
 			"instructions":      systemPrompt,
 			"input":             userPrompt,
-			"max_output_tokens": 1200,
+			"max_output_tokens": 2400,
 			"stream":            false,
 		})
 	default:
@@ -774,7 +775,7 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 		rawReq, err = json.Marshal(map[string]any{
 			"model":       target.model,
 			"temperature": 0.1,
-			"max_tokens":  1200,
+			"max_tokens":  2400,
 			"messages": []map[string]string{
 				{"role": "system", "content": systemPrompt},
 				{"role": "user", "content": userPrompt},
@@ -1079,11 +1080,34 @@ func (s *Service) RunReviewAgent(ctx context.Context, in ReviewInput) *AIReviewR
 	return report
 }
 
+// reclaimStaleReviewingReleases resets releases stranded in 'reviewing' (e.g. after a crash or redeploy) back to 'pending'.
+func (s *Service) reclaimStaleReviewingReleases(ctx context.Context, staleAfter time.Duration) {
+	if !s.Enabled() {
+		return
+	}
+	cutoff := time.Now().UTC().Add(-staleAfter)
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE donebot_market_releases r
+		SET review_status = 'pending'
+		FROM donebot_market_listings l
+		WHERE r.listing_id = l.id
+		  AND r.review_status = 'reviewing'
+		  AND GREATEST(r.created_at, l.updated_at) < $1`, cutoff)
+	if err != nil {
+		log.Printf("[donebotmarket] reclaim stale reviewing releases failed: %v", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		log.Printf("[donebotmarket] reclaimed %d stale reviewing release(s) back to pending", n)
+	}
+}
+
 // ProcessPendingReviews claims pending releases one by one and runs the AI Review Agent.
 func (s *Service) ProcessPendingReviews(ctx context.Context, limit int) int {
 	if !s.Enabled() {
 		return 0
 	}
+	s.reclaimStaleReviewingReleases(ctx, 150*time.Second)
 	if limit <= 0 {
 		limit = 5
 	}
@@ -1104,21 +1128,22 @@ func (s *Service) ProcessPendingReviews(ctx context.Context, limit int) int {
 func (s *Service) processOnePendingRelease(ctx context.Context) bool {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		log.Printf("[donebotmarket] begin review tx failed: %v", err)
 		return false
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	var (
-		releaseID     string
-		listingID     string
-		version       int
-		soulText      string
-		skillsRaw     []byte
-		name          string
-		tagline       string
-		description   string
-		promptsRaw    []byte
-		categoryName  string
+		releaseID    string
+		listingID    string
+		version      int
+		soulText     string
+		skillsRaw    []byte
+		name         string
+		tagline      string
+		description  string
+		promptsRaw   []byte
+		categoryName string
 	)
 	err = tx.QueryRowContext(ctx, `
 		SELECT r.id, r.listing_id, r.version, r.soul_text, r.skills_json,
@@ -1132,12 +1157,21 @@ func (s *Service) processOnePendingRelease(ctx context.Context) bool {
 		LIMIT 1`).Scan(&releaseID, &listingID, &version, &soulText, &skillsRaw,
 		&name, &tagline, &description, &promptsRaw, &categoryName)
 	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("[donebotmarket] query pending release failed: %v", err)
+		}
 		return false
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE donebot_market_releases SET review_status = 'reviewing' WHERE id = $1`, releaseID); err != nil {
+		log.Printf("[donebotmarket] mark release reviewing failed (release=%s): %v", releaseID, err)
+		return false
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE donebot_market_listings SET updated_at = NOW() WHERE id = $1`, listingID); err != nil {
+		log.Printf("[donebotmarket] touch listing updated_at failed (listing=%s): %v", listingID, err)
 		return false
 	}
 	if err := tx.Commit(); err != nil {
+		log.Printf("[donebotmarket] commit claim tx failed (release=%s): %v", releaseID, err)
 		return false
 	}
 
@@ -1146,6 +1180,7 @@ func (s *Service) processOnePendingRelease(ctx context.Context) bool {
 	var prompts []string
 	_ = json.Unmarshal(promptsRaw, &prompts)
 
+	log.Printf("[donebotmarket] starting AI review: listing=%s release=%s v%d name=%q skills=%d", listingID, releaseID, version, name, len(skills))
 	report := s.RunReviewAgent(ctx, ReviewInput{
 		Name:          name,
 		Tagline:       tagline,
@@ -1155,7 +1190,15 @@ func (s *Service) processOnePendingRelease(ctx context.Context) bool {
 		SoulText:      soulText,
 		Skills:        skills,
 	})
-	_ = s.applyAIReviewOutcome(ctx, listingID, releaseID, version, report)
+	if err := s.applyAIReviewOutcome(ctx, listingID, releaseID, version, report); err != nil {
+		log.Printf("[donebotmarket] applyAIReviewOutcome failed (listing=%s release=%s verdict=%s): %v", listingID, releaseID, report.Verdict, err)
+		// Best-effort revert so the release is not stranded in 'reviewing'.
+		revertCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, _ = s.db.ExecContext(revertCtx, `UPDATE donebot_market_releases SET review_status = 'pending' WHERE id = $1 AND review_status = 'reviewing'`, releaseID)
+		cancel()
+		return true
+	}
+	log.Printf("[donebotmarket] finished AI review: listing=%s release=%s verdict=%s risk=%d model=%q", listingID, releaseID, report.Verdict, report.RiskScore, report.Model)
 	return true
 }
 
@@ -1199,6 +1242,7 @@ func (s *Service) applyAIReviewOutcome(ctx context.Context, listingID, releaseID
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	setReviewedAt := reviewStatus == "approved" || reviewStatus == "rejected"
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE donebot_market_releases
 		SET review_status = $1,
@@ -1206,9 +1250,9 @@ func (s *Service) applyAIReviewOutcome(ctx context.Context, listingID, releaseID
 		    ai_risk_score = $3,
 		    ai_report_json = $4::jsonb,
 		    review_note = $5,
-		    reviewed_at = CASE WHEN $1 IN ('approved', 'rejected') THEN NOW() ELSE reviewed_at END
-		WHERE id = $6`,
-		reviewStatus, report.Verdict, report.RiskScore, string(reportJSON), note, releaseID); err != nil {
+		    reviewed_at = CASE WHEN $6 THEN NOW() ELSE reviewed_at END
+		WHERE id = $7`,
+		reviewStatus, report.Verdict, report.RiskScore, string(reportJSON), note, setReviewedAt, releaseID); err != nil {
 		return err
 	}
 
@@ -1229,7 +1273,7 @@ func (s *Service) applyAIReviewOutcome(ctx context.Context, listingID, releaseID
 		// If an earlier version is already published, keep the listing published while recording latest release note.
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE donebot_market_listings
-			SET status = CASE WHEN published_release_id IS NOT NULL AND status = 'published' THEN 'published' ELSE $1 END,
+			SET status = CASE WHEN published_release_id IS NOT NULL AND status = 'published' THEN 'published' ELSE $1::varchar(24) END,
 			    last_review_note = $2,
 			    updated_at = NOW()
 			WHERE id = $3 AND status <> 'suspended'`,

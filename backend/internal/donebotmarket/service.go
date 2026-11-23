@@ -87,6 +87,8 @@ func (s *Service) StartBackgroundWorkers() {
 			thawTick := time.NewTicker(5 * time.Minute)
 			defer reviewTick.Stop()
 			defer thawTick.Stop()
+			// Process any pending or previously stranded releases immediately on boot.
+			s.kickReviewWorker()
 			for {
 				select {
 				case <-s.stopCh:
