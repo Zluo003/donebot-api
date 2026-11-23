@@ -426,6 +426,19 @@ func buildAccountReviewerTarget(
 	baseURL := strings.TrimRight(strCred("base_url"), "/")
 	p := strings.ToLower(strings.TrimSpace(platform))
 	apiProto := strings.ToLower(strCred("api_protocol"))
+	if baseURL == "" && creds != nil {
+		if urls, ok := creds["api_base_urls"].(map[string]any); ok {
+			for _, k := range []string{apiProto, "chat_completions", "openai", "responses", "anthropic", "gemini"} {
+				if k == "" {
+					continue
+				}
+				if v, ok := urls[k].(string); ok && strings.TrimSpace(v) != "" {
+					baseURL = strings.TrimRight(strings.TrimSpace(v), "/")
+					break
+				}
+			}
+		}
+	}
 
 	mappedModel := strings.TrimSpace(requestedModel)
 	if creds != nil {
@@ -467,6 +480,15 @@ func buildAccountReviewerTarget(
 			authScheme = "x-goog-api-key"
 		} else {
 			authScheme = "bearer"
+		}
+	case apiProto == "responses":
+		protocol = "openai_responses"
+		authScheme = "bearer"
+		if baseURL == "" {
+			baseURL = defaultOpenAIBaseForPlatform(p)
+		}
+		if baseURL == "" {
+			return nil, fmt.Errorf("账号「%s」(%s) 未配置 base_url，无法直接调用", accountName, platform)
 		}
 	default:
 		protocol = "openai"
@@ -512,25 +534,11 @@ func (s *Service) resolveUpstreamReviewer(ctx context.Context, settings *Setting
 	apiBase := strings.TrimSpace(settings.ReviewAPIBase)
 	apiKey := strings.TrimSpace(settings.reviewAPIKey)
 
-	// 1. Explicit custom independent review API overrides account selection when both base & key are configured.
-	if apiBase != "" && apiKey != "" && model != "" {
-		return &resolvedReviewerTarget{
-			accountLabel: "自定义审核 API",
-			platform:     "openai",
-			protocol:     "openai",
-			apiBase:      strings.TrimRight(apiBase, "/"),
-			apiKey:       apiKey,
-			authScheme:   "bearer",
-			model:        model,
-		}, nil
-	}
-
-	if s.db == nil {
-		return nil, errors.New("数据库不可用")
-	}
-
-	// 2. Admin explicitly selected a configured upstream account from the accounts table.
+	// 1. Admin explicitly selected a configured upstream account from the accounts table — always takes top priority.
 	if settings.ReviewAccountID != nil && *settings.ReviewAccountID > 0 {
+		if s.db == nil {
+			return nil, errors.New("数据库不可用")
+		}
 		var (
 			accName, platform, accType, status string
 			credRaw                            []byte
@@ -558,6 +566,23 @@ func (s *Service) resolveUpstreamReviewer(ctx context.Context, settings *Setting
 			return nil, fmt.Errorf("所选审核账号「%s」当前状态为 %s，不可用", accName, status)
 		}
 		return buildAccountReviewerTarget(accName, platform, accType, credRaw, proxyProto, proxyHost, proxyPort, proxyUser, proxyPass, model)
+	}
+
+	// 2. Explicit custom independent review API (only when no system account is selected and URL starts with http/https).
+	if (strings.HasPrefix(apiBase, "http://") || strings.HasPrefix(apiBase, "https://")) && apiKey != "" && model != "" {
+		return &resolvedReviewerTarget{
+			accountLabel: "自定义审核 API",
+			platform:     "openai",
+			protocol:     "openai",
+			apiBase:      strings.TrimRight(apiBase, "/"),
+			apiKey:       apiKey,
+			authScheme:   "bearer",
+			model:        model,
+		}, nil
+	}
+
+	if s.db == nil {
+		return nil, errors.New("数据库不可用")
 	}
 
 	if model == "" {
@@ -721,6 +746,22 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 				"responseMimeType": "application/json",
 			},
 		})
+	case "openai_responses":
+		endpoint = target.apiBase
+		if !strings.HasSuffix(endpoint, "/responses") {
+			if strings.HasSuffix(endpoint, "/v1") {
+				endpoint += "/responses"
+			} else {
+				endpoint += "/v1/responses"
+			}
+		}
+		rawReq, err = json.Marshal(map[string]any{
+			"model":             target.model,
+			"instructions":      systemPrompt,
+			"input":             userPrompt,
+			"max_output_tokens": 1200,
+			"stream":            false,
+		})
 	default:
 		endpoint = target.apiBase
 		if !strings.HasSuffix(endpoint, "/chat/completions") {
@@ -777,10 +818,24 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 		return "", "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Some OpenAI/Codex accounts only serve /v1/responses; transparently retry once on Responses API.
+		if target.protocol == "openai" && target.platform == "openai" &&
+			(resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusBadRequest) {
+			alt := *target
+			alt.protocol = "openai_responses"
+			if out, m, altErr := s.callReviewerTarget(ctx, &alt, systemPrompt, userPrompt); altErr == nil {
+				return out, m, nil
+			}
+		}
 		return "", "", fmt.Errorf("审核模型请求失败 (%d): %s", resp.StatusCode, truncateSnippet(string(body), 200))
 	}
 
 	switch target.protocol {
+	case "openai_responses":
+		if text := extractResponsesText(body); text != "" {
+			return text, target.model, nil
+		}
+		return "", "", errors.New("Responses 审核模型返回为空")
 	case "anthropic":
 		var parsed struct {
 			Content []struct {
@@ -842,6 +897,62 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 		}
 		return parsed.Choices[0].Message.Content, target.model, nil
 	}
+}
+
+func extractResponsesText(body []byte) string {
+	var parsed struct {
+		OutputText string `json:"output_text"`
+		Output     []struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"output"`
+	}
+	if json.Unmarshal(body, &parsed) == nil {
+		if strings.TrimSpace(parsed.OutputText) != "" {
+			return parsed.OutputText
+		}
+		var sb strings.Builder
+		for _, item := range parsed.Output {
+			for _, c := range item.Content {
+				if c.Text != "" {
+					sb.WriteString(c.Text)
+				}
+			}
+		}
+		if strings.TrimSpace(sb.String()) != "" {
+			return sb.String()
+		}
+	}
+	// Fallback: handle SSE responses when upstream streams even with stream=false.
+	var deltas strings.Builder
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		raw := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if raw == "" || raw == "[DONE]" {
+			continue
+		}
+		var ev struct {
+			Type     string `json:"type"`
+			Delta    string `json:"delta"`
+			Text     string `json:"text"`
+			Response struct {
+				OutputText string `json:"output_text"`
+			} `json:"response"`
+		}
+		if json.Unmarshal([]byte(raw), &ev) == nil {
+			if ev.Type == "response.output_text.delta" && ev.Delta != "" {
+				deltas.WriteString(ev.Delta)
+			} else if ev.Type == "response.completed" && strings.TrimSpace(ev.Response.OutputText) != "" {
+				return ev.Response.OutputText
+			}
+		}
+	}
+	return strings.TrimSpace(deltas.String())
 }
 
 func (s *Service) callDefaultReviewModel(ctx context.Context, settings *Settings, systemPrompt, userPrompt string) (string, string, error) {

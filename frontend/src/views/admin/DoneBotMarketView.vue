@@ -237,7 +237,10 @@
               </label>
 
               <label class="block text-sm">
-                <span class="mb-1 block text-gray-600 dark:text-gray-300">选择或输入审核模型</span>
+                <span class="mb-1 block text-gray-600 dark:text-gray-300">
+                  选择或输入审核模型
+                  <span v-if="loadingAccountModels" class="ml-1 text-xs text-gray-400">（正在拉取该账号可用模型…）</span>
+                </span>
                 <div class="flex gap-2">
                   <select
                     v-if="availableReviewModels.length"
@@ -270,19 +273,33 @@
               </template>
             </div>
 
-            <details class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+            <details v-if="selectedReviewAccountId === 0" class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
               <summary class="cursor-pointer text-xs font-medium text-gray-600 dark:text-gray-300">
-                高级：自定义独立审核 API（选填，同时填写地址和密钥时将覆盖上方账号）
+                高级：自定义独立审核 API（仅当上方选择「自动匹配」时可选填）
               </summary>
               <div class="mt-3 grid gap-4 sm:grid-cols-2">
                 <label class="block text-sm">
                   <span class="mb-1 block text-gray-600 dark:text-gray-300">独立审核 API Base</span>
-                  <input v-model="settingsDraft.review_api_base" class="input" placeholder="留空则使用上方所选账号" />
+                  <input
+                    v-model="settingsDraft.review_api_base"
+                    type="url"
+                    name="market-review-custom-base"
+                    autocomplete="off"
+                    class="input"
+                    placeholder="https://api.deepseek.com/v1（留空则自动匹配系统账号）"
+                  />
                 </label>
                 <label class="block text-sm">
                   <span class="mb-1 block text-gray-600 dark:text-gray-300">独立审核 API Key（{{ settingsDraft.review_api_key_configured ? '已配置，留空保持不变' : '选填' }}）</span>
                   <div class="flex gap-2">
-                    <input v-model="reviewKeyInput" type="password" class="input flex-1" placeholder="留空不修改" />
+                    <input
+                      v-model="reviewKeyInput"
+                      type="password"
+                      name="market-review-custom-key"
+                      autocomplete="new-password"
+                      class="input flex-1"
+                      placeholder="留空不修改"
+                    />
                     <button
                       v-if="settingsDraft.review_api_key_configured"
                       type="button"
@@ -393,6 +410,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 import { isStepUpCancelled, useStepUp } from '@/composables/useStepUp'
+import { accountsAPI } from '@/api/admin/accounts'
 import botMarketAdmin, {
   type MarketCategory,
   type MarketListing,
@@ -439,6 +457,8 @@ const reports = ref<MarketReport[]>([])
 const settingsDraft = ref<MarketSettings | null>(null)
 const selectedReviewAccountId = ref<number>(0)
 const reviewAccounts = ref<ReviewAccountOption[]>([])
+const reviewAccountLiveModels = ref<string[]>([])
+const loadingAccountModels = ref(false)
 const reviewGlobalModels = ref<string[]>([])
 const reviewKeyInput = ref('')
 const clearReviewKeyFlag = ref(false)
@@ -446,23 +466,38 @@ const testingReviewer = ref(false)
 const reviewTestResult = ref<ReviewTestResult | null>(null)
 
 const availableReviewModels = computed(() => {
-  const chosen = reviewAccounts.value.find(a => a.id === selectedReviewAccountId.value)
-  const merged = new Set<string>()
-  if (chosen) {
-    for (const m of chosen.models || []) merged.add(m)
+  if (selectedReviewAccountId.value > 0) {
+    if (reviewAccountLiveModels.value.length > 0) return reviewAccountLiveModels.value
+    const chosen = reviewAccounts.value.find(a => a.id === selectedReviewAccountId.value)
+    return chosen?.models || []
   }
-  for (const m of reviewGlobalModels.value) merged.add(m)
-  return Array.from(merged)
+  return reviewGlobalModels.value
 })
+
+async function loadModelsForAccount(accountId: number, autoSelectDefault: boolean) {
+  reviewAccountLiveModels.value = []
+  if (accountId <= 0) return
+  loadingAccountModels.value = true
+  try {
+    const list = await accountsAPI.getAvailableModels(accountId)
+    const ids = Array.from(new Set((list || []).map(m => String(m.id || '').trim()).filter(Boolean)))
+    reviewAccountLiveModels.value = ids
+    if (autoSelectDefault && settingsDraft.value && ids.length > 0 && !ids.includes(settingsDraft.value.review_model)) {
+      settingsDraft.value.review_model = ids[0]
+    }
+  } catch {
+    const chosen = reviewAccounts.value.find(a => a.id === accountId)
+    if (autoSelectDefault && chosen?.default_model && settingsDraft.value && !(chosen.models || []).includes(settingsDraft.value.review_model)) {
+      settingsDraft.value.review_model = chosen.default_model
+    }
+  } finally {
+    loadingAccountModels.value = false
+  }
+}
 
 function onReviewAccountChange() {
   reviewTestResult.value = null
-  const chosen = reviewAccounts.value.find(a => a.id === selectedReviewAccountId.value)
-  if (chosen && settingsDraft.value && chosen.default_model) {
-    if (!settingsDraft.value.review_model || !(chosen.models || []).includes(settingsDraft.value.review_model)) {
-      settingsDraft.value.review_model = chosen.default_model
-    }
-  }
+  void loadModelsForAccount(selectedReviewAccountId.value, true)
 }
 
 function clearCustomReviewAPI() {
@@ -539,6 +574,9 @@ async function reloadAll() {
     clearReviewKeyFlag.value = false
     reviewAccounts.value = opts.accounts || []
     reviewGlobalModels.value = opts.models || []
+    if (selectedReviewAccountId.value > 0) {
+      void loadModelsForAccount(selectedReviewAccountId.value, false)
+    }
     reports.value = reps.items || []
     await Promise.all([loadListings(), loadWithdrawals()])
   } catch (c) { error.value = errMsg(c) } finally { busy.value = false }
@@ -631,11 +669,12 @@ async function runReviewerTest() {
   if (!settingsDraft.value) return
   testingReviewer.value = true; error.value = ''; reviewTestResult.value = null
   try {
+    const useSystemAccount = selectedReviewAccountId.value > 0
     reviewTestResult.value = await stepUp.run(() => botMarketAdmin.testReviewer({
       review_account_id: selectedReviewAccountId.value,
       review_model: settingsDraft.value!.review_model,
-      review_api_base: settingsDraft.value!.review_api_base,
-      ...(reviewKeyInput.value.trim() ? { review_api_key: reviewKeyInput.value.trim() } : {}),
+      ...(!useSystemAccount && settingsDraft.value!.review_api_base ? { review_api_base: settingsDraft.value!.review_api_base } : {}),
+      ...(!useSystemAccount && reviewKeyInput.value.trim() ? { review_api_key: reviewKeyInput.value.trim() } : {}),
     }))
   } catch (c) {
     if (!isStepUpCancelled(c)) error.value = errMsg(c)
@@ -648,14 +687,15 @@ async function saveSettings() {
   if (!settingsDraft.value) return
   busy.value = true; error.value = ''
   try {
+    const useSystemAccount = selectedReviewAccountId.value > 0
     const saved = await stepUp.run(() => botMarketAdmin.saveSettings({
       enabled: settingsDraft.value!.enabled,
       auto_publish_on_ai_approve: settingsDraft.value!.auto_publish_on_ai_approve,
       review_account_id: selectedReviewAccountId.value,
       review_model: settingsDraft.value!.review_model,
-      review_api_base: settingsDraft.value!.review_api_base,
-      ...(reviewKeyInput.value.trim() ? { review_api_key: reviewKeyInput.value.trim() } : {}),
-      ...(clearReviewKeyFlag.value ? { clear_review_api_key: true } : {}),
+      review_api_base: useSystemAccount ? '' : settingsDraft.value!.review_api_base,
+      ...(!useSystemAccount && reviewKeyInput.value.trim() ? { review_api_key: reviewKeyInput.value.trim() } : {}),
+      ...(useSystemAccount || clearReviewKeyFlag.value ? { clear_review_api_key: true } : {}),
       attribution_days: settingsDraft.value!.attribution_days,
       freeze_days: settingsDraft.value!.freeze_days,
       min_withdraw_amount: settingsDraft.value!.min_withdraw_amount,
