@@ -378,6 +378,15 @@ func TestTeamChannelsAndTasksPostgres(t *testing.T) {
 	require.NotNil(t, passDetail.Task.LatestBotReview)
 	require.Equal(t, "pass", passDetail.Task.LatestBotReview.Verdict)
 
+	// Bot actor MUST NOT finalize approval to done directly.
+	_, err = collab.ReviewTeamTask(ctx, 1, team.ID, autoTask.ID, ReviewTeamTaskInput{
+		Decision:     "approve",
+		Body:         "尝试自动终审",
+		ActorKind:    "bot",
+		ActorBotName: "多宝",
+	})
+	require.Error(t, err)
+
 	// Test auto-escalation when hitting MaxAutoRevisions (max=1).
 	maxOne := 1
 	escTask, err := collab.CreateTeamTask(ctx, 1, team.ID, CreateTeamTaskInput{
@@ -433,4 +442,13 @@ func TestTeamChannelsAndTasksPostgres(t *testing.T) {
 	require.Error(t, err)
 	_, _, err = collab.OpenTeamTaskFile(ctx, 3, privFileID)
 	require.Error(t, err)
+}
+
+func TestValidateReviewActorDecisionBlocksBotFinalApprove(t *testing.T) {
+	require.Error(t, validateReviewActorDecision("bot", "approve"))
+	require.Error(t, validateReviewActorDecision("BOT", "approve"))
+	require.NoError(t, validateReviewActorDecision("bot", "request_changes"))
+	require.NoError(t, validateReviewActorDecision("user", "approve"))
+	require.NoError(t, validateReviewActorDecision("", "approve"))
+	require.Error(t, validateReviewActorDecision("user", "invalid"))
 }
