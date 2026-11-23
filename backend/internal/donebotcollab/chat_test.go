@@ -83,6 +83,7 @@ func TestCollabChatPostgres(t *testing.T) {
 		"../../migrations/283_donebot_collab_groups_and_bots.sql",
 		"../../migrations/284_donebot_collab_bot_appearance.sql",
 		"../../migrations/285_donebot_team_channels_and_tasks.sql",
+		"../../migrations/286_donebot_team_task_automation.sql",
 	} {
 		sqlBytes, readErr := os.ReadFile(file)
 		require.NoError(t, readErr)

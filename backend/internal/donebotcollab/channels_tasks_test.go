@@ -52,6 +52,7 @@ func TestTeamChannelsAndTasksPostgres(t *testing.T) {
 		"../../migrations/283_donebot_collab_groups_and_bots.sql",
 		"../../migrations/284_donebot_collab_bot_appearance.sql",
 		"../../migrations/285_donebot_team_channels_and_tasks.sql",
+		"../../migrations/286_donebot_team_task_automation.sql",
 	} {
 		sqlBytes, readErr := os.ReadFile(file)
 		require.NoError(t, readErr)
@@ -211,11 +212,18 @@ func TestTeamChannelsAndTasksPostgres(t *testing.T) {
 
 	payload := []byte("fake-mp4-video-deliverable-v1")
 	detail, err := collab.UploadTeamTaskFileUpdate(
-		ctx, 2, team.ID, task.ID, "submission", "ep3_preview_v1.mp4", "video/mp4", "第一版样片请导演审阅", true,
+		ctx, 2, team.ID, task.ID, UploadTaskFileOptions{
+			Kind:          "submission",
+			Finalize:      true,
+			FileName:      "ep3_preview_v1.mp4",
+			Mime:          "video/mp4",
+			Body:          "第一版样片请导演审阅",
+			NotifyChannel: true,
+		},
 		bytes.NewReader(payload), int64(len(payload)),
 	)
 	require.NoError(t, err)
-	require.Equal(t, "in_review", detail.Task.Status)
+	require.Equal(t, "bot_reviewing", detail.Task.Status)
 	require.Equal(t, 1, detail.Task.DeliverableCount)
 	lastUpdate := detail.Updates[len(detail.Updates)-1]
 	require.Equal(t, "submission", lastUpdate.Kind)
@@ -239,15 +247,19 @@ func TestTeamChannelsAndTasksPostgres(t *testing.T) {
 	require.Equal(t, 1, counts1[0].ReviewByMe)
 
 	// Member 3 (not reviewer, not admin) cannot review.
-	_, err = collab.ReviewTeamTask(ctx, 3, team.ID, task.ID, "approve", "不错", false)
+	_, err = collab.ReviewTeamTask(ctx, 3, team.ID, task.ID, ReviewTeamTaskInput{Decision: "approve", Body: "不错"})
 	require.Error(t, err)
 
 	// Reviewer requests changes without reason -> rejected.
-	_, err = collab.ReviewTeamTask(ctx, 1, team.ID, task.ID, "request_changes", "   ", false)
+	_, err = collab.ReviewTeamTask(ctx, 1, team.ID, task.ID, ReviewTeamTaskInput{Decision: "request_changes", Body: "   "})
 	require.Error(t, err)
 
 	// Reviewer requests changes with concrete feedback.
-	detail, err = collab.ReviewTeamTask(ctx, 1, team.ID, task.ID, "request_changes", "第2秒衣服颜色偏暗，请调亮一点", true)
+	detail, err = collab.ReviewTeamTask(ctx, 1, team.ID, task.ID, ReviewTeamTaskInput{
+		Decision:      "request_changes",
+		Body:          "第2秒衣服颜色偏暗，请调亮一点",
+		NotifyChannel: true,
+	})
 	require.NoError(t, err)
 	require.Equal(t, "changes_requested", detail.Task.Status)
 
@@ -256,11 +268,18 @@ func TestTeamChannelsAndTasksPostgres(t *testing.T) {
 	require.Equal(t, 1, counts2[0].ChangesRequestedToMe)
 
 	// Assignee resubmits and reviewer approves.
-	detail, err = collab.SubmitTeamTaskForReview(ctx, 2, team.ID, task.ID, "已调亮服装色彩，v2 已放共享目录", true)
+	detail, err = collab.SubmitTeamTaskForReview(ctx, 2, team.ID, task.ID, SubmitTeamTaskInput{
+		Body:          "已调亮服装色彩，v2 已放共享目录",
+		NotifyChannel: true,
+	})
 	require.NoError(t, err)
-	require.Equal(t, "in_review", detail.Task.Status)
+	require.Equal(t, "bot_reviewing", detail.Task.Status)
 
-	detail, err = collab.ReviewTeamTask(ctx, 1, team.ID, task.ID, "approve", "这版很好，定稿！", true)
+	detail, err = collab.ReviewTeamTask(ctx, 1, team.ID, task.ID, ReviewTeamTaskInput{
+		Decision:      "approve",
+		Body:          "这版很好，定稿！",
+		NotifyChannel: true,
+	})
 	require.NoError(t, err)
 	require.Equal(t, "done", detail.Task.Status)
 	require.NotNil(t, detail.Task.CompletedAt)
@@ -269,7 +288,118 @@ func TestTeamChannelsAndTasksPostgres(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, counts1[0].OpenTotal)
 
-	// 6. Private channel task is hidden from excluded member 3 (list, detail, and file download).
+	// 6. Bot-to-Bot automation lifecycle: multi-file batch -> claim task_submitted -> hard_fail auto-reject (1/2, 2/2) -> round 3 auto-escalate & pass flow.
+	maxRev := 2
+	autoTask, err := collab.CreateTeamTask(ctx, 1, team.ID, CreateTeamTaskInput{
+		ChannelID:          pubCh.ID,
+		Title:              "双十一主图 3 张竖图",
+		Description:        "输出 3 张 9:16 竖图主图",
+		AcceptanceCriteria: []string{"共 3 张图片", "画幅 9:16 竖图", "无文字乱码"},
+		AssigneeID:         &assignee,
+		ReviewerID:         &reviewer,
+		MaxAutoRevisions:   &maxRev,
+		ActorKind:          "bot",
+		ActorBotName:       "多宝",
+	})
+	require.NoError(t, err)
+	require.Len(t, autoTask.AcceptanceCriteria, 3)
+
+	// Assignee claims task_assigned event.
+	assignedEv, err := collab.ClaimTaskBotEvent(ctx, 2)
+	require.NoError(t, err)
+	require.NotNil(t, assignedEv)
+	require.Equal(t, "task_assigned", assignedEv.EventType)
+	require.Equal(t, autoTask.ID, assignedEv.TaskID)
+	require.NoError(t, collab.CompleteTaskBotEvent(ctx, 2, assignedEv.ID, "done", ""))
+
+	// Assignee bot stages 2 files under one batch_id and finalizes submission.
+	batch1 := uuid.NewString()
+	_, err = collab.UploadTeamTaskFileUpdate(ctx, 2, team.ID, autoTask.ID, UploadTaskFileOptions{
+		Kind: "submission", BatchID: batch1, Finalize: false,
+		FileName: "hero_1.png", Mime: "image/png", ActorKind: "bot", ActorBotName: "美术助手",
+	}, bytes.NewReader([]byte("png-1")), 5)
+	require.NoError(t, err)
+	_, err = collab.UploadTeamTaskFileUpdate(ctx, 2, team.ID, autoTask.ID, UploadTaskFileOptions{
+		Kind: "submission", BatchID: batch1, Finalize: false,
+		FileName: "hero_2.png", Mime: "image/png", ActorKind: "bot", ActorBotName: "美术助手",
+	}, bytes.NewReader([]byte("png-2")), 5)
+	require.NoError(t, err)
+	subDetail, err := collab.SubmitTeamTaskForReview(ctx, 2, team.ID, autoTask.ID, SubmitTeamTaskInput{
+		BatchID: batch1, Body: "简报：已完成 2 张主图，请初审", ActorKind: "bot", ActorBotName: "美术助手",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "bot_reviewing", subDetail.Task.Status)
+	require.Equal(t, batch1, subDetail.Task.LatestSubmissionBatchID)
+	require.Equal(t, 2, subDetail.Task.DeliverableCount)
+
+	// Reviewer Chief Bot claims task_submitted and auto-rejects (round 1/2) because only 2 of 3 images were delivered.
+	subEv, err := collab.ClaimTaskBotEvent(ctx, 1)
+	require.NoError(t, err)
+	require.NotNil(t, subEv)
+	require.Equal(t, "task_submitted", subEv.EventType)
+	require.Equal(t, batch1, subEv.BatchID)
+	require.NoError(t, collab.CompleteTaskBotEvent(ctx, 1, subEv.ID, "done", ""))
+
+	rej1, err := collab.BotReviewTeamTask(ctx, 1, team.ID, autoTask.ID, BotReviewTeamTaskInput{
+		Verdict:         "hard_fail",
+		Summary:         "要求 3 张竖图，本批次仅提交了 2 张",
+		FailedCriteria:  []string{"共 3 张图片"},
+		ActionableFixes: []string{"补齐第 3 张 9:16 竖图主图"},
+		BotName:         "多宝",
+		NotifyChannel:   true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "bot_revising", rej1.Task.Status)
+	require.Equal(t, 1, rej1.Task.AutoRevisionCount)
+
+	// Assignee Bot claims task_bot_rejected event, revises & resubmits batch 2.
+	rejEv, err := collab.ClaimTaskBotEvent(ctx, 2)
+	require.NoError(t, err)
+	require.NotNil(t, rejEv)
+	require.Equal(t, "task_bot_rejected", rejEv.EventType)
+	require.NoError(t, collab.CompleteTaskBotEvent(ctx, 2, rejEv.ID, "done", ""))
+
+	batch2 := uuid.NewString()
+	_, err = collab.SubmitTeamTaskForReview(ctx, 2, team.ID, autoTask.ID, SubmitTeamTaskInput{
+		BatchID: batch2, Body: "已补齐第 3 张主图", ActorKind: "bot", ActorBotName: "美术助手",
+	})
+	require.NoError(t, err)
+
+	// Reviewer Chief Bot passes batch 2 -> ready_for_review.
+	passDetail, err := collab.BotReviewTeamTask(ctx, 1, team.ID, autoTask.ID, BotReviewTeamTaskInput{
+		Verdict:        "pass",
+		Summary:        "3 张竖图齐备无乱码，建议主人重点对比第 2 与第 3 张构图",
+		PassedItems:    []string{"共 3 张图片", "画幅 9:16 竖图", "无文字乱码"},
+		AttentionItems: []string{"第 2 与第 3 张暖色调风格略有差异，请拍板主推版"},
+		BotName:        "多宝",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "ready_for_review", passDetail.Task.Status)
+	require.NotNil(t, passDetail.Task.LatestBotReview)
+	require.Equal(t, "pass", passDetail.Task.LatestBotReview.Verdict)
+
+	// Test auto-escalation when hitting MaxAutoRevisions (max=1).
+	maxOne := 1
+	escTask, err := collab.CreateTeamTask(ctx, 1, team.ID, CreateTeamTaskInput{
+		Title:            "测试上限升级任务",
+		AssigneeID:       &assignee,
+		ReviewerID:       &reviewer,
+		MaxAutoRevisions: &maxOne,
+	})
+	require.NoError(t, err)
+	_, err = collab.SubmitTeamTaskForReview(ctx, 2, team.ID, escTask.ID, SubmitTeamTaskInput{Body: "v1"})
+	require.NoError(t, err)
+	r1, err := collab.BotReviewTeamTask(ctx, 1, team.ID, escTask.ID, BotReviewTeamTaskInput{Verdict: "hard_fail", Summary: "第1次不符", BotName: "多宝"})
+	require.NoError(t, err)
+	require.Equal(t, "bot_revising", r1.Task.Status)
+	_, err = collab.SubmitTeamTaskForReview(ctx, 2, team.ID, escTask.ID, SubmitTeamTaskInput{Body: "v2"})
+	require.NoError(t, err)
+	r2, err := collab.BotReviewTeamTask(ctx, 1, team.ID, escTask.ID, BotReviewTeamTaskInput{Verdict: "hard_fail", Summary: "第2次仍不符", BotName: "多宝"})
+	require.NoError(t, err)
+	require.Equal(t, "changes_requested", r2.Task.Status)
+	require.Equal(t, "escalated", r2.Task.LatestBotReviewVerdict)
+
+	// 7. Private channel task is hidden from excluded member 3 (list, detail, and file download).
 	privTask, err := collab.CreateTeamTask(ctx, 1, team.ID, CreateTeamTaskInput{
 		ChannelID:  privCh.ID,
 		Title:      "保密商务报价",
@@ -286,7 +416,9 @@ func TestTeamChannelsAndTasksPostgres(t *testing.T) {
 	require.Error(t, err)
 
 	privDetail, err := collab.UploadTeamTaskFileUpdate(
-		ctx, 2, team.ID, privTask.ID, "submission", "secret.pdf", "application/pdf", "报价表", false,
+		ctx, 2, team.ID, privTask.ID, UploadTaskFileOptions{
+			Kind: "submission", Finalize: true, FileName: "secret.pdf", Mime: "application/pdf", Body: "报价表",
+		},
 		bytes.NewReader([]byte("secret-pdf")), 10,
 	)
 	require.NoError(t, err)

@@ -191,14 +191,11 @@ func (h *DoneBotHandler) CollabTeamTaskSubmit(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var in struct {
-		Body          string `json:"body"`
-		NotifyChannel bool   `json:"notify_channel"`
-	}
+	var in donebotcollab.SubmitTeamTaskInput
 	if !strictCollabBody(c, 64<<10, &in) {
 		return
 	}
-	out, err := svc.SubmitTeamTaskForReview(c.Request.Context(), actor, c.Param("team"), c.Param("task_id"), in.Body, in.NotifyChannel)
+	out, err := svc.SubmitTeamTaskForReview(c.Request.Context(), actor, c.Param("team"), c.Param("task_id"), in)
 	if !response.ErrorFrom(c, err) {
 		response.Success(c, out)
 	}
@@ -217,8 +214,10 @@ func (h *DoneBotHandler) CollabTeamTaskFileUpload(c *gin.Context) {
 	if kind == "" {
 		kind = "submission"
 	}
-	fileName := c.Query("name")
-	caption := c.Query("body")
+	finalize := true
+	if rawFin := strings.TrimSpace(c.Query("finalize")); rawFin == "0" || strings.EqualFold(rawFin, "false") {
+		finalize = false
+	}
 	notifyChannel := c.Query("notify_channel") == "1" || strings.EqualFold(c.Query("notify_channel"), "true")
 	contentType := strings.TrimSpace(c.GetHeader("Content-Type"))
 	if contentType == "" {
@@ -230,11 +229,17 @@ func (h *DoneBotHandler) CollabTeamTaskFileUpload(c *gin.Context) {
 		actor,
 		c.Param("team"),
 		c.Param("task_id"),
-		kind,
-		fileName,
-		contentType,
-		caption,
-		notifyChannel,
+		donebotcollab.UploadTaskFileOptions{
+			Kind:          kind,
+			BatchID:       c.Query("batch_id"),
+			Finalize:      finalize,
+			FileName:      c.Query("name"),
+			Mime:          contentType,
+			Body:          c.Query("body"),
+			ActorKind:     c.Query("actor_kind"),
+			ActorBotName:  c.Query("actor_bot_name"),
+			NotifyChannel: notifyChannel,
+		},
 		limitedBody,
 		c.Request.ContentLength,
 	)
@@ -248,17 +253,58 @@ func (h *DoneBotHandler) CollabTeamTaskReview(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var in struct {
-		Decision      string `json:"decision"`
-		Body          string `json:"body"`
-		NotifyChannel bool   `json:"notify_channel"`
-	}
+	var in donebotcollab.ReviewTeamTaskInput
 	if !strictCollabBody(c, 64<<10, &in) {
 		return
 	}
-	out, err := svc.ReviewTeamTask(c.Request.Context(), actor, c.Param("team"), c.Param("task_id"), in.Decision, in.Body, in.NotifyChannel)
+	out, err := svc.ReviewTeamTask(c.Request.Context(), actor, c.Param("team"), c.Param("task_id"), in)
 	if !response.ErrorFrom(c, err) {
 		response.Success(c, out)
+	}
+}
+
+func (h *DoneBotHandler) CollabTeamTaskBotReview(c *gin.Context) {
+	svc, actor, ok := h.collabActor(c)
+	if !ok {
+		return
+	}
+	var in donebotcollab.BotReviewTeamTaskInput
+	if !strictCollabBody(c, 64<<10, &in) {
+		return
+	}
+	out, err := svc.BotReviewTeamTask(c.Request.Context(), actor, c.Param("team"), c.Param("task_id"), in)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+
+func (h *DoneBotHandler) CollabTaskBotEventClaim(c *gin.Context) {
+	svc, actor, ok := h.collabActor(c)
+	if !ok {
+		return
+	}
+	out, err := svc.ClaimTaskBotEvent(c.Request.Context(), actor)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, gin.H{"event": out})
+	}
+}
+
+func (h *DoneBotHandler) CollabTaskBotEventComplete(c *gin.Context) {
+	svc, actor, ok := h.collabActor(c)
+	if !ok {
+		return
+	}
+	var in struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	if c.Request.ContentLength != 0 {
+		if !strictCollabBody(c, 8<<10, &in) {
+			return
+		}
+	}
+	if !response.ErrorFrom(c, svc.CompleteTaskBotEvent(c.Request.Context(), actor, c.Param("id"), in.Status, in.Error)) {
+		response.Success(c, gin.H{"ok": true})
 	}
 }
 
