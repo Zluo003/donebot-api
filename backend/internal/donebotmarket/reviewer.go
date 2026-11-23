@@ -3,6 +3,7 @@ package donebotmarket
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -224,64 +226,388 @@ func parseAIReviewJSON(raw, modelUsed string) (*AIReviewReport, error) {
 	return &report, nil
 }
 
-func (s *Service) resolveUpstreamReviewer(ctx context.Context, settings *Settings) (apiBase, apiKey, model string, err error) {
-	model = strings.TrimSpace(settings.ReviewModel)
-	apiBase = strings.TrimSpace(settings.ReviewAPIBase)
-	apiKey = strings.TrimSpace(settings.reviewAPIKey)
-	if apiBase != "" && apiKey != "" && model != "" {
-		return strings.TrimRight(apiBase, "/"), apiKey, model, nil
+type resolvedReviewerTarget struct {
+	accountLabel string
+	platform     string
+	protocol     string // "openai" | "anthropic" | "gemini"
+	apiBase      string
+	apiKey       string
+	authScheme   string // "bearer" | "x-api-key" | "x-goog-api-key"
+	model        string
+	proxyURL     string
+}
+
+func platformDefaultModels(platform string) []string {
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case "deepseek":
+		return []string{"deepseek-chat", "deepseek-reasoner"}
+	case "openai":
+		return []string{"gpt-4o-mini", "gpt-4.1-mini", "gpt-5-mini", "gpt-4o"}
+	case "anthropic":
+		return []string{"claude-haiku-4-5-20251001", "claude-sonnet-4-5-20250929", "claude-3-5-haiku-20241022"}
+	case "gemini":
+		return []string{"gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"}
+	case "qwen":
+		return []string{"qwen-plus", "qwen-turbo", "qwen-max"}
+	case "glm":
+		return []string{"glm-4.5-air", "glm-4.5", "glm-4-flash"}
+	case "kimi":
+		return []string{"kimi-k2", "moonshot-v1-8k"}
+	case "minimax":
+		return []string{"MiniMax-M1", "MiniMax-Text-01"}
+	default:
+		return nil
 	}
-	if model == "" {
-		return "", "", "", errors.New("未配置审核 Agent 模型")
+}
+
+func extractAccountModels(platform string, credRaw, extraRaw []byte) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 12)
+	add := func(m string) {
+		m = strings.TrimSpace(m)
+		if m == "" || m == "*" || strings.Contains(m, "*") || len(m) > 120 {
+			return
+		}
+		if _, ok := seen[m]; ok {
+			return
+		}
+		seen[m] = struct{}{}
+		out = append(out, m)
 	}
-	if s.db == nil {
-		return "", "", "", errors.New("数据库不可用")
+
+	var creds map[string]any
+	if len(credRaw) > 0 {
+		_ = json.Unmarshal(credRaw, &creds)
 	}
-	// Resolve an active OpenAI-compatible apikey account from existing upstream accounts.
-	rows, qErr := s.db.QueryContext(ctx, `
-		SELECT platform, COALESCE(credentials->>'base_url', ''), COALESCE(credentials->>'api_key', '')
+	if creds != nil {
+		if mm, ok := creds["model_mapping"].(map[string]any); ok {
+			keys := make([]string, 0, len(mm))
+			for k := range mm {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				add(k)
+				if v, ok := mm[k].(string); ok {
+					add(v)
+				}
+			}
+		}
+		if arr, ok := creds["models"].([]any); ok {
+			for _, item := range arr {
+				if s, ok := item.(string); ok {
+					add(s)
+				}
+			}
+		}
+	}
+	var extra map[string]any
+	if len(extraRaw) > 0 {
+		_ = json.Unmarshal(extraRaw, &extra)
+	}
+	if extra != nil {
+		for _, key := range []string{"models", "supported_models", "available_models"} {
+			if arr, ok := extra[key].([]any); ok {
+				for _, item := range arr {
+					if s, ok := item.(string); ok {
+						add(s)
+					}
+				}
+			}
+		}
+	}
+	for _, def := range platformDefaultModels(platform) {
+		add(def)
+	}
+	return out
+}
+
+func (s *Service) AdminReviewOptions(ctx context.Context) (*ReviewOptions, error) {
+	if err := s.available(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, name, platform, type, status, schedulable, COALESCE(credentials, '{}'::jsonb), COALESCE(extra, '{}'::jsonb)
 		FROM accounts
-		WHERE deleted_at IS NULL AND status = 'active' AND schedulable = TRUE
-		  AND type = 'apikey'
-		  AND platform IN ('openai', 'deepseek', 'qwen', 'glm', 'kimi', 'minimax', 'composite')
-		  AND COALESCE(credentials->>'api_key', '') <> ''
-		ORDER BY priority ASC, id ASC
-		LIMIT 20`)
-	if qErr != nil {
-		return "", "", "", qErr
+		WHERE deleted_at IS NULL
+		  AND (COALESCE(credentials->>'api_key', '') <> '' OR COALESCE(credentials->>'access_token', '') <> '')
+		ORDER BY CASE WHEN status = 'active' AND schedulable = TRUE THEN 0 ELSE 1 END, priority ASC, id ASC
+		LIMIT 200`)
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	type cand struct {
-		platform string
-		baseURL  string
-		apiKey   string
+	accounts := make([]ReviewAccountOption, 0)
+	globalSeen := map[string]struct{}{}
+	globalModels := make([]string, 0, 32)
+	addGlobal := func(m string) {
+		m = strings.TrimSpace(m)
+		if m == "" || len(m) > 120 {
+			return
+		}
+		if _, ok := globalSeen[m]; ok {
+			return
+		}
+		globalSeen[m] = struct{}{}
+		globalModels = append(globalModels, m)
 	}
-	var fallback *cand
-	lowerModel := strings.ToLower(model)
+
+	// Include DoneBot configured LLM catalog models first so admin sees familiar model names right at the top.
+	var catalogRaw string
+	if s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'donebot.model_catalog'`).Scan(&catalogRaw) == nil && catalogRaw != "" {
+		var entries []struct {
+			Model   string `json:"model"`
+			Kind    string `json:"kind"`
+			Enabled bool   `json:"enabled"`
+		}
+		if json.Unmarshal([]byte(catalogRaw), &entries) == nil {
+			for _, e := range entries {
+				if (e.Kind == "" || e.Kind == "llm") && e.Model != "" {
+					addGlobal(e.Model)
+				}
+			}
+		}
+	}
+
 	for rows.Next() {
-		var c cand
-		if err := rows.Scan(&c.platform, &c.baseURL, &c.apiKey); err != nil {
+		var (
+			opt                ReviewAccountOption
+			credRaw, extraRaw  []byte
+		)
+		if err := rows.Scan(&opt.ID, &opt.Name, &opt.Platform, &opt.Type, &opt.Status, &opt.Schedulable, &credRaw, &extraRaw); err != nil {
 			continue
 		}
-		if c.baseURL == "" {
-			c.baseURL = defaultOpenAIBaseForPlatform(c.platform)
+		opt.Models = extractAccountModels(opt.Platform, credRaw, extraRaw)
+		if len(opt.Models) > 0 {
+			opt.DefaultModel = opt.Models[0]
 		}
-		if c.baseURL == "" || c.apiKey == "" {
+		for _, m := range opt.Models {
+			addGlobal(m)
+		}
+		accounts = append(accounts, opt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return &ReviewOptions{Accounts: accounts, Models: globalModels}, nil
+}
+
+func buildAccountReviewerTarget(
+	accountName, platform, accType string,
+	credRaw []byte,
+	proxyProto, proxyHost string,
+	proxyPort int,
+	proxyUser, proxyPass string,
+	requestedModel string,
+) (*resolvedReviewerTarget, error) {
+	var creds map[string]any
+	if len(credRaw) > 0 {
+		_ = json.Unmarshal(credRaw, &creds)
+	}
+	strCred := func(key string) string {
+		if creds == nil {
+			return ""
+		}
+		if v, ok := creds[key].(string); ok {
+			return strings.TrimSpace(v)
+		}
+		return ""
+	}
+
+	apiKey := strCred("api_key")
+	if apiKey == "" {
+		apiKey = strCred("access_token")
+	}
+	if apiKey == "" {
+		return nil, fmt.Errorf("账号「%s」缺少可用的 API Key 或访问令牌", accountName)
+	}
+
+	baseURL := strings.TrimRight(strCred("base_url"), "/")
+	p := strings.ToLower(strings.TrimSpace(platform))
+	apiProto := strings.ToLower(strCred("api_protocol"))
+
+	mappedModel := strings.TrimSpace(requestedModel)
+	if creds != nil {
+		if mm, ok := creds["model_mapping"].(map[string]any); ok && mappedModel != "" {
+			if target, ok := mm[mappedModel].(string); ok && strings.TrimSpace(target) != "" {
+				mappedModel = strings.TrimSpace(target)
+			}
+		}
+	}
+	if mappedModel == "" {
+		defaults := platformDefaultModels(p)
+		if len(defaults) > 0 {
+			mappedModel = defaults[0]
+		}
+	}
+	if mappedModel == "" {
+		return nil, errors.New("请选择或填写审核模型名称")
+	}
+
+	protocol := "openai"
+	authScheme := "bearer"
+	switch {
+	case p == "anthropic" || apiProto == "anthropic" || apiProto == "messages":
+		protocol = "anthropic"
+		if baseURL == "" {
+			baseURL = "https://api.anthropic.com"
+		}
+		if strings.EqualFold(strCred("auth_scheme"), "bearer") || accType != "apikey" {
+			authScheme = "bearer"
+		} else {
+			authScheme = "x-api-key"
+		}
+	case p == "gemini" || apiProto == "gemini":
+		protocol = "gemini"
+		if baseURL == "" {
+			baseURL = "https://generativelanguage.googleapis.com"
+		}
+		if accType == "apikey" {
+			authScheme = "x-goog-api-key"
+		} else {
+			authScheme = "bearer"
+		}
+	default:
+		protocol = "openai"
+		authScheme = "bearer"
+		if baseURL == "" {
+			baseURL = defaultOpenAIBaseForPlatform(p)
+		}
+		if baseURL == "" {
+			return nil, fmt.Errorf("账号「%s」(%s) 未配置 base_url，无法直接调用", accountName, platform)
+		}
+	}
+
+	proxyURL := ""
+	if strings.TrimSpace(proxyHost) != "" && proxyPort > 0 {
+		scheme := strings.ToLower(strings.TrimSpace(proxyProto))
+		if scheme == "" {
+			scheme = "http"
+		}
+		u := &url.URL{
+			Scheme: scheme,
+			Host:   fmt.Sprintf("%s:%d", strings.TrimSpace(proxyHost), proxyPort),
+		}
+		if strings.TrimSpace(proxyUser) != "" {
+			u.User = url.UserPassword(strings.TrimSpace(proxyUser), proxyPass)
+		}
+		proxyURL = u.String()
+	}
+
+	return &resolvedReviewerTarget{
+		accountLabel: fmt.Sprintf("%s (%s)", accountName, platform),
+		platform:     p,
+		protocol:     protocol,
+		apiBase:      strings.TrimRight(baseURL, "/"),
+		apiKey:       apiKey,
+		authScheme:   authScheme,
+		model:        mappedModel,
+		proxyURL:     proxyURL,
+	}, nil
+}
+
+func (s *Service) resolveUpstreamReviewer(ctx context.Context, settings *Settings) (*resolvedReviewerTarget, error) {
+	model := strings.TrimSpace(settings.ReviewModel)
+	apiBase := strings.TrimSpace(settings.ReviewAPIBase)
+	apiKey := strings.TrimSpace(settings.reviewAPIKey)
+
+	// 1. Explicit custom independent review API overrides account selection when both base & key are configured.
+	if apiBase != "" && apiKey != "" && model != "" {
+		return &resolvedReviewerTarget{
+			accountLabel: "自定义审核 API",
+			platform:     "openai",
+			protocol:     "openai",
+			apiBase:      strings.TrimRight(apiBase, "/"),
+			apiKey:       apiKey,
+			authScheme:   "bearer",
+			model:        model,
+		}, nil
+	}
+
+	if s.db == nil {
+		return nil, errors.New("数据库不可用")
+	}
+
+	// 2. Admin explicitly selected a configured upstream account from the accounts table.
+	if settings.ReviewAccountID != nil && *settings.ReviewAccountID > 0 {
+		var (
+			accName, platform, accType, status string
+			credRaw                            []byte
+			proxyProto, proxyHost              string
+			proxyPort                          int
+			proxyUser, proxyPass               string
+		)
+		err := s.db.QueryRowContext(ctx, `
+			SELECT a.name, a.platform, a.type, a.status, COALESCE(a.credentials, '{}'::jsonb),
+			       COALESCE(p.protocol, ''), COALESCE(p.host, ''), COALESCE(p.port, 0),
+			       COALESCE(p.username, ''), COALESCE(p.password, '')
+			FROM accounts a
+			LEFT JOIN proxies p ON p.id = a.proxy_id AND p.deleted_at IS NULL AND p.status = 'active'
+			WHERE a.id = $1 AND a.deleted_at IS NULL`, *settings.ReviewAccountID).Scan(
+			&accName, &platform, &accType, &status, &credRaw,
+			&proxyProto, &proxyHost, &proxyPort, &proxyUser, &proxyPass,
+		)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("所选审核上游账号不存在，请在管理后台重新选择")
+		}
+		if err != nil {
+			return nil, err
+		}
+		if status != "active" {
+			return nil, fmt.Errorf("所选审核账号「%s」当前状态为 %s，不可用", accName, status)
+		}
+		return buildAccountReviewerTarget(accName, platform, accType, credRaw, proxyProto, proxyHost, proxyPort, proxyUser, proxyPass, model)
+	}
+
+	if model == "" {
+		return nil, errors.New("未配置审核 Agent 账号或模型，请在 Bot 广场管理中选择上游账号与模型")
+	}
+
+	// 3. Fallback: auto-match an active schedulable account from existing upstream accounts.
+	rows, qErr := s.db.QueryContext(ctx, `
+		SELECT a.name, a.platform, a.type, COALESCE(a.credentials, '{}'::jsonb),
+		       COALESCE(p.protocol, ''), COALESCE(p.host, ''), COALESCE(p.port, 0),
+		       COALESCE(p.username, ''), COALESCE(p.password, '')
+		FROM accounts a
+		LEFT JOIN proxies p ON p.id = a.proxy_id AND p.deleted_at IS NULL AND p.status = 'active'
+		WHERE a.deleted_at IS NULL AND a.status = 'active' AND a.schedulable = TRUE
+		  AND (COALESCE(a.credentials->>'api_key', '') <> '' OR COALESCE(a.credentials->>'access_token', '') <> '')
+		ORDER BY a.priority ASC, a.id ASC
+		LIMIT 30`)
+	if qErr != nil {
+		return nil, qErr
+	}
+	defer func() { _ = rows.Close() }()
+
+	var fallback *resolvedReviewerTarget
+	lowerModel := strings.ToLower(model)
+	for rows.Next() {
+		var (
+			accName, platform, accType string
+			credRaw                    []byte
+			proxyProto, proxyHost      string
+			proxyPort                  int
+			proxyUser, proxyPass       string
+		)
+		if err := rows.Scan(&accName, &platform, &accType, &credRaw, &proxyProto, &proxyHost, &proxyPort, &proxyUser, &proxyPass); err != nil {
+			continue
+		}
+		target, err := buildAccountReviewerTarget(accName, platform, accType, credRaw, proxyProto, proxyHost, proxyPort, proxyUser, proxyPass, model)
+		if err != nil {
 			continue
 		}
 		if fallback == nil {
-			cp := c
-			fallback = &cp
+			fallback = target
 		}
-		if matchesPlatformHint(lowerModel, c.platform) {
-			return strings.TrimRight(c.baseURL, "/"), c.apiKey, model, nil
+		if matchesPlatformHint(lowerModel, platform) {
+			return target, nil
 		}
 	}
 	if fallback != nil {
-		return strings.TrimRight(fallback.baseURL, "/"), fallback.apiKey, model, nil
+		return fallback, nil
 	}
-	return "", "", "", errors.New("未找到可用的上游审核模型渠道，请在 Bot 广场配置中填写审核模型与通道")
+	return nil, errors.New("未找到可用的上游审核账号，请在 Bot 广场配置中直接选择已有账号与模型")
 }
 
 func defaultOpenAIBaseForPlatform(platform string) string {
@@ -306,6 +632,10 @@ func defaultOpenAIBaseForPlatform(platform string) string {
 func matchesPlatformHint(lowerModel, platform string) bool {
 	p := strings.ToLower(platform)
 	switch {
+	case strings.Contains(lowerModel, "claude") && p == "anthropic":
+		return true
+	case strings.Contains(lowerModel, "gemini") && p == "gemini":
+		return true
 	case strings.Contains(lowerModel, "deepseek") && p == "deepseek":
 		return true
 	case strings.Contains(lowerModel, "qwen") && p == "qwen":
@@ -323,52 +653,121 @@ func matchesPlatformHint(lowerModel, platform string) bool {
 	}
 }
 
-func (s *Service) callDefaultReviewModel(ctx context.Context, settings *Settings, systemPrompt, userPrompt string) (string, string, error) {
-	apiBase, apiKey, model, err := s.resolveUpstreamReviewer(ctx, settings)
+func (s *Service) httpClientForTarget(proxyRaw string) *http.Client {
+	if strings.TrimSpace(proxyRaw) == "" {
+		if s.httpClient != nil {
+			return s.httpClient
+		}
+		return &http.Client{Timeout: 55 * time.Second}
+	}
+	parsedProxy, err := url.Parse(proxyRaw)
+	if err != nil {
+		if s.httpClient != nil {
+			return s.httpClient
+		}
+		return &http.Client{Timeout: 55 * time.Second}
+	}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.Proxy = http.ProxyURL(parsedProxy)
+	return &http.Client{Timeout: 55 * time.Second, Transport: tr}
+}
+
+func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReviewerTarget, systemPrompt, userPrompt string) (string, string, error) {
+	reqCtx, cancel := context.WithTimeout(ctx, 50*time.Second)
+	defer cancel()
+
+	var (
+		endpoint string
+		rawReq   []byte
+		err      error
+	)
+
+	switch target.protocol {
+	case "anthropic":
+		endpoint = target.apiBase
+		if !strings.HasSuffix(endpoint, "/messages") {
+			if strings.HasSuffix(endpoint, "/v1") {
+				endpoint += "/messages"
+			} else {
+				endpoint += "/v1/messages"
+			}
+		}
+		rawReq, err = json.Marshal(map[string]any{
+			"model":       target.model,
+			"max_tokens":  1200,
+			"temperature": 0.1,
+			"system":      systemPrompt,
+			"messages":    []map[string]string{{"role": "user", "content": userPrompt}},
+		})
+	case "gemini":
+		endpoint = target.apiBase
+		if !strings.Contains(endpoint, ":generateContent") {
+			if strings.HasSuffix(endpoint, "/v1beta") || strings.HasSuffix(endpoint, "/v1") {
+				endpoint += "/models/" + url.PathEscape(target.model) + ":generateContent"
+			} else {
+				endpoint += "/v1beta/models/" + url.PathEscape(target.model) + ":generateContent"
+			}
+		}
+		rawReq, err = json.Marshal(map[string]any{
+			"systemInstruction": map[string]any{
+				"parts": []map[string]string{{"text": systemPrompt}},
+			},
+			"contents": []map[string]any{
+				{"role": "user", "parts": []map[string]string{{"text": userPrompt}}},
+			},
+			"generationConfig": map[string]any{
+				"temperature":      0.1,
+				"maxOutputTokens":  1200,
+				"responseMimeType": "application/json",
+			},
+		})
+	default:
+		endpoint = target.apiBase
+		if !strings.HasSuffix(endpoint, "/chat/completions") {
+			if strings.HasSuffix(endpoint, "/v1") || strings.HasSuffix(endpoint, "/v4") {
+				endpoint += "/chat/completions"
+			} else {
+				endpoint += "/v1/chat/completions"
+			}
+		}
+		rawReq, err = json.Marshal(map[string]any{
+			"model":       target.model,
+			"temperature": 0.1,
+			"max_tokens":  1200,
+			"messages": []map[string]string{
+				{"role": "system", "content": systemPrompt},
+				{"role": "user", "content": userPrompt},
+			},
+		})
+	}
 	if err != nil {
 		return "", "", err
 	}
-	endpoint := apiBase
-	if !strings.HasSuffix(endpoint, "/chat/completions") {
-		if strings.HasSuffix(endpoint, "/v1") || strings.HasSuffix(endpoint, "/v4") {
-			endpoint += "/chat/completions"
-		} else {
-			endpoint += "/v1/chat/completions"
-		}
-	}
+
 	parsedURL, err := url.Parse(endpoint)
 	if err != nil || (parsedURL.Scheme != "https" && parsedURL.Scheme != "http") {
 		return "", "", errors.New("审核模型 API 地址无效")
 	}
-
-	reqBody := map[string]any{
-		"model":       model,
-		"temperature": 0.1,
-		"max_tokens":  1200,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": userPrompt},
-		},
-	}
-	rawReq, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", "", err
-	}
-	reqCtx, cancel := context.WithTimeout(ctx, 50*time.Second)
-	defer cancel()
 
 	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, bytes.NewReader(rawReq))
 	if err != nil {
 		return "", "", err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-
-	client := s.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: 55 * time.Second}
+	switch target.authScheme {
+	case "x-api-key":
+		httpReq.Header.Set("x-api-key", target.apiKey)
+		httpReq.Header.Set("anthropic-version", "2023-06-01")
+	case "x-goog-api-key":
+		httpReq.Header.Set("x-goog-api-key", target.apiKey)
+	default:
+		httpReq.Header.Set("Authorization", "Bearer "+target.apiKey)
+		if target.protocol == "anthropic" {
+			httpReq.Header.Set("anthropic-version", "2023-06-01")
+		}
 	}
-	resp, err := client.Do(httpReq)
+
+	resp, err := s.httpClientForTarget(target.proxyURL).Do(httpReq)
 	if err != nil {
 		return "", "", err
 	}
@@ -380,20 +779,150 @@ func (s *Service) callDefaultReviewModel(ctx context.Context, settings *Settings
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", "", fmt.Errorf("审核模型请求失败 (%d): %s", resp.StatusCode, truncateSnippet(string(body), 200))
 	}
-	var parsed struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
+
+	switch target.protocol {
+	case "anthropic":
+		var parsed struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return "", "", fmt.Errorf("解析 Anthropic 审核响应失败: %w", err)
+		}
+		var sb strings.Builder
+		for _, blk := range parsed.Content {
+			if blk.Text != "" {
+				sb.WriteString(blk.Text)
+			}
+		}
+		if strings.TrimSpace(sb.String()) == "" {
+			return "", "", errors.New("审核模型返回为空")
+		}
+		return sb.String(), target.model, nil
+	case "gemini":
+		var parsed struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"content"`
+			} `json:"candidates"`
+		}
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return "", "", fmt.Errorf("解析 Gemini 审核响应失败: %w", err)
+		}
+		var sb strings.Builder
+		if len(parsed.Candidates) > 0 {
+			for _, part := range parsed.Candidates[0].Content.Parts {
+				if part.Text != "" {
+					sb.WriteString(part.Text)
+				}
+			}
+		}
+		if strings.TrimSpace(sb.String()) == "" {
+			return "", "", errors.New("审核模型返回为空")
+		}
+		return sb.String(), target.model, nil
+	default:
+		var parsed struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return "", "", fmt.Errorf("解析审核模型响应失败: %w", err)
+		}
+		if len(parsed.Choices) == 0 || strings.TrimSpace(parsed.Choices[0].Message.Content) == "" {
+			return "", "", errors.New("审核模型返回为空")
+		}
+		return parsed.Choices[0].Message.Content, target.model, nil
 	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", "", fmt.Errorf("解析审核模型响应失败: %w", err)
+}
+
+func (s *Service) callDefaultReviewModel(ctx context.Context, settings *Settings, systemPrompt, userPrompt string) (string, string, error) {
+	target, err := s.resolveUpstreamReviewer(ctx, settings)
+	if err != nil {
+		return "", "", err
 	}
-	if len(parsed.Choices) == 0 || strings.TrimSpace(parsed.Choices[0].Message.Content) == "" {
-		return "", "", errors.New("审核模型返回为空")
+	return s.callReviewerTarget(ctx, target, systemPrompt, userPrompt)
+}
+
+// AdminTestReviewer verifies the chosen upstream account + model can execute the review agent prompt cleanly.
+func (s *Service) AdminTestReviewer(ctx context.Context, in ReviewTestInput) (*ReviewTestResult, error) {
+	if err := s.available(); err != nil {
+		return nil, err
 	}
-	return parsed.Choices[0].Message.Content, model, nil
+	cur, err := s.GetSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	testCfg := *cur
+	if in.ReviewAccountID != nil {
+		if *in.ReviewAccountID <= 0 {
+			testCfg.ReviewAccountID = nil
+		} else {
+			id := *in.ReviewAccountID
+			testCfg.ReviewAccountID = &id
+		}
+	}
+	if strings.TrimSpace(in.ReviewModel) != "" {
+		testCfg.ReviewModel = strings.TrimSpace(in.ReviewModel)
+	}
+	if in.ReviewAPIBase != "" {
+		testCfg.ReviewAPIBase = strings.TrimSpace(in.ReviewAPIBase)
+	}
+	if strings.TrimSpace(in.ReviewAPIKey) != "" {
+		testCfg.reviewAPIKey = strings.TrimSpace(in.ReviewAPIKey)
+	}
+
+	target, err := s.resolveUpstreamReviewer(ctx, &testCfg)
+	if err != nil {
+		return &ReviewTestResult{OK: false, Error: err.Error()}, nil
+	}
+
+	start := time.Now()
+	sample := ReviewInput{
+		Name:         "中文技术文档润色助手",
+		Tagline:      "帮助整理清晰、结构化的产品与技术文档",
+		Description:  "仅按用户要求润色和优化结构，不执行任何外部命令。",
+		CategoryName: "写作创作",
+		SoulText:     "你是专业中文技术编辑，根据用户提供的草稿改进措辞、理顺章节逻辑并输出简洁清晰的 Markdown 文档。",
+	}
+	raw, modelUsed, callErr := s.callReviewerTarget(ctx, target, reviewAgentSystemPrompt, buildReviewAgentUserPrompt(sample))
+	latency := time.Since(start).Milliseconds()
+	if callErr != nil {
+		return &ReviewTestResult{
+			OK:        false,
+			Model:     target.model,
+			Account:   target.accountLabel,
+			LatencyMs: latency,
+			Error:     callErr.Error(),
+		}, nil
+	}
+	report, parseErr := parseAIReviewJSON(raw, modelUsed)
+	if parseErr != nil {
+		return &ReviewTestResult{
+			OK:        false,
+			Model:     modelUsed,
+			Account:   target.accountLabel,
+			LatencyMs: latency,
+			Error:     "模型已响应，但未返回合法 JSON 审核报告：" + parseErr.Error(),
+		}, nil
+	}
+	return &ReviewTestResult{
+		OK:        true,
+		Model:     modelUsed,
+		Account:   target.accountLabel,
+		LatencyMs: latency,
+		Verdict:   report.Verdict,
+		RiskScore: report.RiskScore,
+		Summary:   report.Summary,
+	}, nil
 }
 
 // RunReviewAgent evaluates a release via hard rules first, then the configured AI Review Agent.

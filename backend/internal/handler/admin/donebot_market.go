@@ -56,6 +56,33 @@ func (h *DoneBotHandler) UpdateMarketSettings(c *gin.Context) {
 	}
 }
 
+func (h *DoneBotHandler) MarketReviewOptions(c *gin.Context) {
+	svc, _, ok := h.marketService(c)
+	if !ok {
+		return
+	}
+	out, err := svc.AdminReviewOptions(c.Request.Context())
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+
+func (h *DoneBotHandler) TestMarketReviewer(c *gin.Context) {
+	svc, _, ok := h.marketService(c)
+	if !ok {
+		return
+	}
+	var in donebotmarket.ReviewTestInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.BadRequest(c, "测试参数无效："+err.Error())
+		return
+	}
+	out, err := svc.AdminTestReviewer(c.Request.Context(), in)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+
 func (h *DoneBotHandler) MarketCategories(c *gin.Context) {
 	svc, _, ok := h.marketService(c)
 	if !ok {

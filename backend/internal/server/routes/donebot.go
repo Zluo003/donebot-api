@@ -159,6 +159,8 @@ func registerDoneBotAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers, ste
 		donebot.GET("/market/overview", h.Admin.DoneBot.MarketOverview)
 		donebot.GET("/market/settings", h.Admin.DoneBot.MarketSettings)
 		donebot.PUT("/market/settings", gin.HandlerFunc(stepUp), h.Admin.DoneBot.UpdateMarketSettings)
+		donebot.GET("/market/review-options", h.Admin.DoneBot.MarketReviewOptions)
+		donebot.POST("/market/review-test", gin.HandlerFunc(stepUp), h.Admin.DoneBot.TestMarketReviewer)
 		donebot.GET("/market/categories", h.Admin.DoneBot.MarketCategories)
 		donebot.POST("/market/categories", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SaveMarketCategory)
 		donebot.PUT("/market/categories/:id", gin.HandlerFunc(stepUp), h.Admin.DoneBot.SaveMarketCategory)

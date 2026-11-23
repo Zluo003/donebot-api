@@ -127,17 +127,22 @@ func (s *Service) GetSettings(ctx context.Context) (*Settings, error) {
 		return nil, err
 	}
 	var out Settings
+	var reviewAccountID sql.NullInt64
 	err := s.db.QueryRowContext(ctx, `
-		SELECT enabled, auto_publish_on_ai_approve, review_model, review_api_base, review_api_key,
+		SELECT enabled, auto_publish_on_ai_approve, review_account_id, review_model, review_api_base, review_api_key,
 		       attribution_days, freeze_days, min_withdraw_amount, transfer_bonus_percent,
 		       rebate_llm_percent, rebate_image_percent, rebate_video_percent, rebate_music_percent,
 		       signing_secret, updated_at
 		FROM donebot_market_settings WHERE id = 1`).Scan(
-		&out.Enabled, &out.AutoPublishOnAIApprove, &out.ReviewModel, &out.ReviewAPIBase, &out.reviewAPIKey,
+		&out.Enabled, &out.AutoPublishOnAIApprove, &reviewAccountID, &out.ReviewModel, &out.ReviewAPIBase, &out.reviewAPIKey,
 		&out.AttributionDays, &out.FreezeDays, &out.MinWithdrawAmount, &out.TransferBonusPercent,
 		&out.RebateLLMPercent, &out.RebateImagePercent, &out.RebateVideoPercent, &out.RebateMusicPercent,
 		&out.signingSecret, &out.UpdatedAt,
 	)
+	if reviewAccountID.Valid && reviewAccountID.Int64 > 0 {
+		id := reviewAccountID.Int64
+		out.ReviewAccountID = &id
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		secret, genErr := generateSigningSecret()
 		if genErr != nil {
@@ -181,6 +186,21 @@ func (s *Service) UpdateSettings(ctx context.Context, in UpdateSettingsInput) (*
 	}
 	if in.AutoPublishOnAIApprove != nil {
 		cur.AutoPublishOnAIApprove = *in.AutoPublishOnAIApprove
+	}
+	if in.ReviewAccountID != nil {
+		if *in.ReviewAccountID <= 0 {
+			cur.ReviewAccountID = nil
+		} else {
+			var exists bool
+			if qErr := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM accounts WHERE id = $1 AND deleted_at IS NULL)`, *in.ReviewAccountID).Scan(&exists); qErr != nil {
+				return nil, qErr
+			}
+			if !exists {
+				return nil, infraerrors.BadRequest("MARKET_REVIEW_ACCOUNT_NOT_FOUND", "所选审核上游账号不存在或已删除。")
+			}
+			id := *in.ReviewAccountID
+			cur.ReviewAccountID = &id
+		}
 	}
 	if in.ReviewModel != nil {
 		cur.ReviewModel = strings.TrimSpace(*in.ReviewModel)
@@ -246,24 +266,29 @@ func (s *Service) UpdateSettings(ctx context.Context, in UpdateSettingsInput) (*
 		return nil, err
 	}
 
+	var reviewAccParam any
+	if cur.ReviewAccountID != nil && *cur.ReviewAccountID > 0 {
+		reviewAccParam = *cur.ReviewAccountID
+	}
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE donebot_market_settings
 		SET enabled = $1,
 		    auto_publish_on_ai_approve = $2,
-		    review_model = $3,
-		    review_api_base = $4,
-		    review_api_key = $5,
-		    attribution_days = $6,
-		    freeze_days = $7,
-		    min_withdraw_amount = $8,
-		    transfer_bonus_percent = $9,
-		    rebate_llm_percent = $10,
-		    rebate_image_percent = $11,
-		    rebate_video_percent = $12,
-		    rebate_music_percent = $13,
+		    review_account_id = $3,
+		    review_model = $4,
+		    review_api_base = $5,
+		    review_api_key = $6,
+		    attribution_days = $7,
+		    freeze_days = $8,
+		    min_withdraw_amount = $9,
+		    transfer_bonus_percent = $10,
+		    rebate_llm_percent = $11,
+		    rebate_image_percent = $12,
+		    rebate_video_percent = $13,
+		    rebate_music_percent = $14,
 		    updated_at = NOW()
 		WHERE id = 1`,
-		cur.Enabled, cur.AutoPublishOnAIApprove, cur.ReviewModel, cur.ReviewAPIBase, cur.reviewAPIKey,
+		cur.Enabled, cur.AutoPublishOnAIApprove, reviewAccParam, cur.ReviewModel, cur.ReviewAPIBase, cur.reviewAPIKey,
 		cur.AttributionDays, cur.FreezeDays, cur.MinWithdrawAmount, cur.TransferBonusPercent,
 		cur.RebateLLMPercent, cur.RebateImagePercent, cur.RebateVideoPercent, cur.RebateMusicPercent,
 	)
@@ -618,9 +643,9 @@ func (s *Service) ListMarketplace(ctx context.Context, filter MarketplaceFilter)
 
 	orderSQL := "l.featured DESC, l.install_count DESC, l.total_attributed_cost DESC, l.published_at DESC"
 	switch filter.Sort {
-	case "newest":
+	case "newest", "latest":
 		orderSQL = "l.published_at DESC, l.created_at DESC"
-	case "installs":
+	case "installs", "popular":
 		orderSQL = "l.install_count DESC, l.published_at DESC"
 	case "active":
 		orderSQL = "l.total_attributed_cost DESC, l.install_count DESC, l.published_at DESC"
@@ -629,7 +654,7 @@ func (s *Service) ListMarketplace(ctx context.Context, filter MarketplaceFilter)
 	offset := (filter.Page - 1) * filter.PageSize
 	listArgs := append(args, filter.PageSize, offset)
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT l.id, l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(u.avatar_url, ''),
+		SELECT l.id, l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(ua.url, ''),
 		       l.category_id, c.name, c.slug, l.source_bot_id, l.name, l.tagline, l.description,
 		       l.tags_json, l.sample_prompts_json, l.appearance_json,
 		       l.has_soul, l.skill_count, l.skill_names_json,
@@ -639,6 +664,7 @@ func (s *Service) ListMarketplace(ctx context.Context, filter MarketplaceFilter)
 		FROM donebot_market_listings l
 		JOIN donebot_market_categories c ON c.id = l.category_id
 		JOIN users u ON u.id = l.author_user_id
+		LEFT JOIN user_avatars ua ON ua.user_id = u.id
 		WHERE %s
 		ORDER BY %s
 		LIMIT $%d OFFSET $%d`, whereSQL, orderSQL, argIdx, argIdx+1), listArgs...)
@@ -704,7 +730,7 @@ func (s *Service) GetListingDetail(ctx context.Context, listingID string, viewer
 		tagsRaw, promptsRaw, appRaw, snRaw []byte
 	)
 	err := s.db.QueryRowContext(ctx, `
-		SELECT l.id, l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(u.avatar_url, ''),
+		SELECT l.id, l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(ua.url, ''),
 		       l.category_id, c.name, c.slug, l.source_bot_id, l.name, l.tagline, l.description,
 		       l.tags_json, l.sample_prompts_json, l.appearance_json,
 		       l.has_soul, l.skill_count, l.skill_names_json,
@@ -715,6 +741,7 @@ func (s *Service) GetListingDetail(ctx context.Context, listingID string, viewer
 		FROM donebot_market_listings l
 		JOIN donebot_market_categories c ON c.id = l.category_id
 		JOIN users u ON u.id = l.author_user_id
+		LEFT JOIN user_avatars ua ON ua.user_id = u.id
 		WHERE l.id = $1`, listingID).Scan(
 		&item.ID, &item.AuthorUserID, &item.AuthorName, &item.AuthorAvatarURL,
 		&item.CategoryID, &item.CategoryName, &item.CategorySlug, &item.SourceBotID,
@@ -1051,7 +1078,7 @@ func (s *Service) AdminListListings(ctx context.Context, status, query string, p
 		return nil, 0, err
 	}
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT l.id, l.author_user_id, COALESCE(NULLIF(u.username, ''), u.email), COALESCE(u.avatar_url, ''),
+		SELECT l.id, l.author_user_id, COALESCE(NULLIF(u.username, ''), u.email), COALESCE(ua.url, ''),
 		       l.category_id, c.name, c.slug, l.source_bot_id, l.name, l.tagline, l.description,
 		       l.tags_json, l.sample_prompts_json, l.appearance_json,
 		       l.has_soul, l.skill_count, l.skill_names_json,
@@ -1062,6 +1089,7 @@ func (s *Service) AdminListListings(ctx context.Context, status, query string, p
 		FROM donebot_market_listings l
 		JOIN donebot_market_categories c ON c.id = l.category_id
 		JOIN users u ON u.id = l.author_user_id
+		LEFT JOIN user_avatars ua ON ua.user_id = u.id
 		WHERE %s
 		ORDER BY CASE WHEN l.status IN ('manual_review', 'pending_review') THEN 0 ELSE 1 END, l.updated_at DESC
 		LIMIT $%d OFFSET $%d`, whereSQL, idx, idx+1), append(args, pageSize, (page-1)*pageSize)...)

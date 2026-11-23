@@ -15,6 +15,7 @@ export interface MarketOverview {
 export interface MarketSettings {
   enabled: boolean
   auto_publish_on_ai_approve: boolean
+  review_account_id?: number | null
   review_model: string
   review_api_base: string
   review_api_key_configured: boolean
@@ -32,6 +33,7 @@ export interface MarketSettings {
 export interface UpdateMarketSettingsInput {
   enabled?: boolean
   auto_publish_on_ai_approve?: boolean
+  review_account_id?: number
   review_model?: string
   review_api_base?: string
   review_api_key?: string
@@ -44,6 +46,33 @@ export interface UpdateMarketSettingsInput {
   rebate_image_percent?: number
   rebate_video_percent?: number
   rebate_music_percent?: number
+}
+
+export interface ReviewAccountOption {
+  id: number
+  name: string
+  platform: string
+  type: string
+  status: string
+  schedulable: boolean
+  models: string[]
+  default_model?: string
+}
+
+export interface ReviewOptions {
+  accounts: ReviewAccountOption[]
+  models: string[]
+}
+
+export interface ReviewTestResult {
+  ok: boolean
+  model?: string
+  account?: string
+  latency_ms: number
+  verdict?: string
+  risk_score?: number
+  summary?: string
+  error?: string
 }
 
 export interface MarketCategory {
@@ -166,6 +195,12 @@ const botMarketAdmin = {
   },
   async saveSettings(input: UpdateMarketSettingsInput) {
     return (await apiClient.put<MarketSettings>('/admin/donebot/market/settings', input)).data
+  },
+  async reviewOptions() {
+    return (await apiClient.get<ReviewOptions>('/admin/donebot/market/review-options')).data
+  },
+  async testReviewer(input: { review_account_id?: number; review_model?: string; review_api_base?: string; review_api_key?: string }) {
+    return (await apiClient.post<ReviewTestResult>('/admin/donebot/market/review-test', input)).data
   },
   async categories() {
     return (await apiClient.get<{ categories: MarketCategory[] }>('/admin/donebot/market/categories')).data.categories

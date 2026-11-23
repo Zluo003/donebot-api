@@ -129,6 +129,29 @@ func TestParseAIReviewJSONAndSafetyClamps(t *testing.T) {
 	}
 }
 
+func TestBuildAccountReviewerTargetAndExtractModels(t *testing.T) {
+	cred := []byte(`{"api_key":"sk-ant-test","model_mapping":{"claude-sonnet":"claude-sonnet-4-5-20250929"}}`)
+	models := extractAccountModels("anthropic", cred, nil)
+	if len(models) == 0 || models[0] != "claude-sonnet" {
+		t.Fatalf("expected mapped model first, got %v", models)
+	}
+	target, err := buildAccountReviewerTarget("Claude主号", "anthropic", "apikey", cred, "http", "127.0.0.1", 7890, "", "", "claude-sonnet")
+	if err != nil {
+		t.Fatalf("buildAccountReviewerTarget: %v", err)
+	}
+	if target.protocol != "anthropic" || target.authScheme != "x-api-key" || target.model != "claude-sonnet-4-5-20250929" || target.proxyURL != "http://127.0.0.1:7890" {
+		t.Fatalf("unexpected target: %+v", target)
+	}
+
+	gemTarget, err := buildAccountReviewerTarget("Gem号", "gemini", "apikey", []byte(`{"api_key":"AIzaTest"}`), "", "", 0, "", "", "")
+	if err != nil {
+		t.Fatalf("gemini target: %v", err)
+	}
+	if gemTarget.protocol != "gemini" || gemTarget.authScheme != "x-goog-api-key" || gemTarget.model != "gemini-2.5-flash" {
+		t.Fatalf("unexpected gemini target: %+v", gemTarget)
+	}
+}
+
 func TestRunReviewAgentFallbackOnCallerError(t *testing.T) {
 	svc := New(nil, false)
 	// Bypass DB settings check by calling hard-rule directly or mocking caller when DB unavailable.

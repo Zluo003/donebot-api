@@ -214,14 +214,87 @@
             </div>
           </div>
 
-          <div class="border-t border-gray-200 pt-4 dark:border-dark-700">
-            <h3 class="mb-1 text-sm font-semibold">专业安全审核 Agent 配置</h3>
-            <p class="mb-3 text-xs text-gray-500">仅填写审核模型名称时，网关会自动从现有已启用的上游 API Key 渠道中匹配调用；也可单独填写专用 OpenAI 兼容 API 地址与密钥。</p>
-            <div class="grid gap-4 sm:grid-cols-3">
-              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">审核模型名（如 deepseek-chat / gpt-4o-mini）</span><input v-model="settingsDraft.review_model" class="input" placeholder="留空则新提交全部转人工审核" /></label>
-              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">独立审核 API Base（选填）</span><input v-model="settingsDraft.review_api_base" class="input" placeholder="https://api.deepseek.com/v1" /></label>
-              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">独立审核 API Key（{{ settingsDraft.review_api_key_configured ? '已配置，留空保持不变' : '选填' }}）</span><input v-model="reviewKeyInput" type="password" class="input" placeholder="留空不修改" /></label>
+          <div class="border-t border-gray-200 pt-4 dark:border-dark-700 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 class="text-sm font-semibold">专业安全审核 Agent 配置</h3>
+                <p class="mt-0.5 text-xs text-gray-500">直接从网关已配置的上游账号与模型中选择即可，支持 OpenAI 兼容、Anthropic、Gemini 及账号已绑定的代理。</p>
+              </div>
+              <button class="btn btn-secondary text-xs" :disabled="busy || testingReviewer" @click="runReviewerTest">
+                {{ testingReviewer ? '正在测试连通性…' : '测试审核模型连通性' }}
+              </button>
             </div>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+              <label class="block text-sm">
+                <span class="mb-1 block text-gray-600 dark:text-gray-300">选择审核上游账号</span>
+                <select v-model.number="selectedReviewAccountId" class="input" @change="onReviewAccountChange">
+                  <option :value="0">自动匹配可用活跃账号</option>
+                  <option v-for="acc in reviewAccounts" :key="acc.id" :value="acc.id">
+                    {{ acc.name }}（{{ acc.platform }} · {{ acc.type }}{{ acc.status !== 'active' ? ' · 未激活' : '' }}）
+                  </option>
+                </select>
+              </label>
+
+              <label class="block text-sm">
+                <span class="mb-1 block text-gray-600 dark:text-gray-300">选择或输入审核模型</span>
+                <div class="flex gap-2">
+                  <select
+                    v-if="availableReviewModels.length"
+                    class="input w-1/2"
+                    :value="availableReviewModels.includes(settingsDraft.review_model) ? settingsDraft.review_model : ''"
+                    @change="(e) => { const v = (e.target as HTMLSelectElement).value; if (v) settingsDraft!.review_model = v }"
+                  >
+                    <option value="">从列表快速选择…</option>
+                    <option v-for="m in availableReviewModels" :key="m" :value="m">{{ m }}</option>
+                  </select>
+                  <input
+                    v-model="settingsDraft.review_model"
+                    class="input flex-1"
+                    placeholder="如 deepseek-chat / gpt-4o-mini / claude-haiku-4-5"
+                  />
+                </div>
+              </label>
+            </div>
+
+            <div
+              v-if="reviewTestResult"
+              class="rounded-xl px-3.5 py-2.5 text-xs"
+              :class="reviewTestResult.ok ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300'"
+            >
+              <template v-if="reviewTestResult.ok">
+                ✓ 测试通过 · 通道：{{ reviewTestResult.account }} · 模型：{{ reviewTestResult.model }} · 耗时 {{ reviewTestResult.latency_ms }}ms · 样本判定：{{ reviewTestResult.verdict }}（风险分 {{ reviewTestResult.risk_score }}）
+              </template>
+              <template v-else>
+                ✗ 测试失败{{ reviewTestResult.account ? `（${reviewTestResult.account} / ${reviewTestResult.model}）` : '' }}：{{ reviewTestResult.error }}
+              </template>
+            </div>
+
+            <details class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+              <summary class="cursor-pointer text-xs font-medium text-gray-600 dark:text-gray-300">
+                高级：自定义独立审核 API（选填，同时填写地址和密钥时将覆盖上方账号）
+              </summary>
+              <div class="mt-3 grid gap-4 sm:grid-cols-2">
+                <label class="block text-sm">
+                  <span class="mb-1 block text-gray-600 dark:text-gray-300">独立审核 API Base</span>
+                  <input v-model="settingsDraft.review_api_base" class="input" placeholder="留空则使用上方所选账号" />
+                </label>
+                <label class="block text-sm">
+                  <span class="mb-1 block text-gray-600 dark:text-gray-300">独立审核 API Key（{{ settingsDraft.review_api_key_configured ? '已配置，留空保持不变' : '选填' }}）</span>
+                  <div class="flex gap-2">
+                    <input v-model="reviewKeyInput" type="password" class="input flex-1" placeholder="留空不修改" />
+                    <button
+                      v-if="settingsDraft.review_api_key_configured"
+                      type="button"
+                      class="btn btn-secondary shrink-0 text-xs"
+                      @click="clearCustomReviewAPI"
+                    >
+                      清空独立密钥
+                    </button>
+                  </div>
+                </label>
+              </div>
+            </details>
           </div>
 
           <div class="flex justify-end">
@@ -314,7 +387,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -328,6 +401,8 @@ import botMarketAdmin, {
   type MarketReport,
   type MarketSettings,
   type MarketWithdrawal,
+  type ReviewAccountOption,
+  type ReviewTestResult,
 } from '@/api/admin/donebot-market'
 import { useAppStore } from '@/stores/app'
 
@@ -362,7 +437,41 @@ const withdrawStatus = ref('all')
 const reports = ref<MarketReport[]>([])
 
 const settingsDraft = ref<MarketSettings | null>(null)
+const selectedReviewAccountId = ref<number>(0)
+const reviewAccounts = ref<ReviewAccountOption[]>([])
+const reviewGlobalModels = ref<string[]>([])
 const reviewKeyInput = ref('')
+const clearReviewKeyFlag = ref(false)
+const testingReviewer = ref(false)
+const reviewTestResult = ref<ReviewTestResult | null>(null)
+
+const availableReviewModels = computed(() => {
+  const chosen = reviewAccounts.value.find(a => a.id === selectedReviewAccountId.value)
+  const merged = new Set<string>()
+  if (chosen) {
+    for (const m of chosen.models || []) merged.add(m)
+  }
+  for (const m of reviewGlobalModels.value) merged.add(m)
+  return Array.from(merged)
+})
+
+function onReviewAccountChange() {
+  reviewTestResult.value = null
+  const chosen = reviewAccounts.value.find(a => a.id === selectedReviewAccountId.value)
+  if (chosen && settingsDraft.value && chosen.default_model) {
+    if (!settingsDraft.value.review_model || !(chosen.models || []).includes(settingsDraft.value.review_model)) {
+      settingsDraft.value.review_model = chosen.default_model
+    }
+  }
+}
+
+function clearCustomReviewAPI() {
+  if (!settingsDraft.value) return
+  settingsDraft.value.review_api_base = ''
+  reviewKeyInput.value = ''
+  clearReviewKeyFlag.value = true
+  settingsDraft.value.review_api_key_configured = false
+}
 
 const detailOpen = ref(false)
 const activeDetail = ref<MarketListingDetail | null>(null)
@@ -416,15 +525,20 @@ async function loadWithdrawals() {
 async function reloadAll() {
   busy.value = true; error.value = ''
   try {
-    const [ov, cats, cfg, reps] = await Promise.all([
+    const [ov, cats, cfg, reps, opts] = await Promise.all([
       botMarketAdmin.overview(),
       botMarketAdmin.categories(),
       botMarketAdmin.settings(),
       botMarketAdmin.reports({ status: 'all', page: 1, page_size: 50 }),
+      botMarketAdmin.reviewOptions().catch(() => ({ accounts: [], models: [] })),
     ])
     overview.value = ov
     categories.value = cats || []
     settingsDraft.value = cfg
+    selectedReviewAccountId.value = cfg.review_account_id || 0
+    clearReviewKeyFlag.value = false
+    reviewAccounts.value = opts.accounts || []
+    reviewGlobalModels.value = opts.models || []
     reports.value = reps.items || []
     await Promise.all([loadListings(), loadWithdrawals()])
   } catch (c) { error.value = errMsg(c) } finally { busy.value = false }
@@ -513,6 +627,23 @@ async function resolveReport(id: number, status: 'resolved' | 'dismissed') {
   } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
 }
 
+async function runReviewerTest() {
+  if (!settingsDraft.value) return
+  testingReviewer.value = true; error.value = ''; reviewTestResult.value = null
+  try {
+    reviewTestResult.value = await stepUp.run(() => botMarketAdmin.testReviewer({
+      review_account_id: selectedReviewAccountId.value,
+      review_model: settingsDraft.value!.review_model,
+      review_api_base: settingsDraft.value!.review_api_base,
+      ...(reviewKeyInput.value.trim() ? { review_api_key: reviewKeyInput.value.trim() } : {}),
+    }))
+  } catch (c) {
+    if (!isStepUpCancelled(c)) error.value = errMsg(c)
+  } finally {
+    testingReviewer.value = false
+  }
+}
+
 async function saveSettings() {
   if (!settingsDraft.value) return
   busy.value = true; error.value = ''
@@ -520,9 +651,11 @@ async function saveSettings() {
     const saved = await stepUp.run(() => botMarketAdmin.saveSettings({
       enabled: settingsDraft.value!.enabled,
       auto_publish_on_ai_approve: settingsDraft.value!.auto_publish_on_ai_approve,
+      review_account_id: selectedReviewAccountId.value,
       review_model: settingsDraft.value!.review_model,
       review_api_base: settingsDraft.value!.review_api_base,
       ...(reviewKeyInput.value.trim() ? { review_api_key: reviewKeyInput.value.trim() } : {}),
+      ...(clearReviewKeyFlag.value ? { clear_review_api_key: true } : {}),
       attribution_days: settingsDraft.value!.attribution_days,
       freeze_days: settingsDraft.value!.freeze_days,
       min_withdraw_amount: settingsDraft.value!.min_withdraw_amount,
@@ -533,7 +666,9 @@ async function saveSettings() {
       rebate_music_percent: settingsDraft.value!.rebate_music_percent,
     }))
     settingsDraft.value = saved
+    selectedReviewAccountId.value = saved.review_account_id || 0
     reviewKeyInput.value = ''
+    clearReviewKeyFlag.value = false
     app.showSuccess('Bot 广场与分润配置已保存')
   } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
 }

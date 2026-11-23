@@ -32,6 +32,7 @@ const (
 type Settings struct {
 	Enabled                bool      `json:"enabled"`
 	AutoPublishOnAIApprove bool      `json:"auto_publish_on_ai_approve"`
+	ReviewAccountID        *int64    `json:"review_account_id,omitempty"`
 	ReviewModel            string    `json:"review_model"`
 	ReviewAPIBase          string    `json:"review_api_base"`
 	ReviewAPIKeyConfigured bool      `json:"review_api_key_configured"`
@@ -52,6 +53,7 @@ type Settings struct {
 type UpdateSettingsInput struct {
 	Enabled                *bool    `json:"enabled"`
 	AutoPublishOnAIApprove *bool    `json:"auto_publish_on_ai_approve"`
+	ReviewAccountID        *int64   `json:"review_account_id"`
 	ReviewModel            *string  `json:"review_model"`
 	ReviewAPIBase          *string  `json:"review_api_base"`
 	ReviewAPIKey           *string  `json:"review_api_key"`
@@ -64,6 +66,40 @@ type UpdateSettingsInput struct {
 	RebateImagePercent     *float64 `json:"rebate_image_percent"`
 	RebateVideoPercent     *float64 `json:"rebate_video_percent"`
 	RebateMusicPercent     *float64 `json:"rebate_music_percent"`
+}
+
+type ReviewAccountOption struct {
+	ID           int64    `json:"id"`
+	Name         string   `json:"name"`
+	Platform     string   `json:"platform"`
+	Type         string   `json:"type"`
+	Status       string   `json:"status"`
+	Schedulable  bool     `json:"schedulable"`
+	Models       []string `json:"models"`
+	DefaultModel string   `json:"default_model,omitempty"`
+}
+
+type ReviewOptions struct {
+	Accounts []ReviewAccountOption `json:"accounts"`
+	Models   []string              `json:"models"`
+}
+
+type ReviewTestInput struct {
+	ReviewAccountID *int64 `json:"review_account_id"`
+	ReviewModel     string `json:"review_model"`
+	ReviewAPIBase   string `json:"review_api_base"`
+	ReviewAPIKey    string `json:"review_api_key"`
+}
+
+type ReviewTestResult struct {
+	OK         bool   `json:"ok"`
+	Model      string `json:"model"`
+	Account    string `json:"account,omitempty"`
+	LatencyMs  int64  `json:"latency_ms"`
+	Verdict    string `json:"verdict,omitempty"`
+	RiskScore  int    `json:"risk_score,omitempty"`
+	Summary    string `json:"summary,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 type Category struct {
