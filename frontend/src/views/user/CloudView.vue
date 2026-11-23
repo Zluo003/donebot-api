@@ -20,7 +20,7 @@
         </section>
         <section v-if="!instance" class="card space-y-4 p-8 text-center">
           <h2 class="text-xl font-semibold">你的专属 DoneBot</h2>
-          <p class="text-sm text-gray-500 dark:text-dark-400">聊天、文件、记忆和配置保存在你的独立实例中。</p>
+          <p class="text-sm text-gray-500 dark:text-dark-400">2 核 CPU · 4 GiB 内存 · 20 GiB 持久数据盘，内置浏览器，聊天、文件、记忆和配置保存在你的独立实例中。</p>
           <button class="btn btn-primary" :disabled="busy || !info.plan.enabled" @click="confirm('start')">购买 Cloud 云主机</button>
           <p v-if="!info.plan.enabled" class="text-sm text-gray-500">Cloud 暂未开放开通。</p>
         </section>

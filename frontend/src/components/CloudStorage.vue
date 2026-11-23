@@ -17,7 +17,7 @@
       </li>
     </ul>
     <BaseDialog v-if="pending" :show="true" :title="pending.action === 'restore' ? '覆盖当前数据并恢复？' : pending.action === 'delete' ? '永久删除此备份？' : '停机并创建备份？'" :close-on-escape="!busy" :show-close-button="!busy" width="narrow" @close="!busy && (pending = null)">
-      <p class="text-sm text-gray-500">{{ pending.action === 'restore' ? '当前聊天、文件、记忆、配置和专属桌面资料将被备份中的数据覆盖。实例会短暂停机，完成后重新运行；桌面在下次使用时启动。' : pending.action === 'delete' ? '仅删除选中的备份，不能撤销。' : '实例和桌面将短暂停机以保存一致的数据，备份完成后实例重新运行。' }}</p>
+      <p class="text-sm text-gray-500">{{ pending.action === 'restore' ? (resources?.desktop?.enabled ? '当前聊天、文件、记忆、配置和专属桌面资料将被备份中的数据覆盖。实例会短暂停机，完成后重新运行；桌面在下次使用时启动。' : '当前聊天、文件、记忆和配置将被备份中的数据覆盖。实例会短暂停机，完成后重新运行。') : pending.action === 'delete' ? '仅删除选中的备份，不能撤销。' : (resources?.desktop?.enabled ? '实例和桌面将短暂停机以保存一致的数据，备份完成后实例重新运行。' : '实例将短暂停机以保存一致的数据，备份完成后实例重新运行。') }}</p>
       <p v-if="error" role="alert" class="mt-3 text-sm text-red-600">{{ error }}</p>
       <template #footer><button class="btn btn-secondary" :disabled="busy" @click="pending = null">返回</button><button class="btn btn-primary" :disabled="busy" @click="submit">{{ busy ? '正在处理…' : '确认' }}</button></template>
     </BaseDialog>
