@@ -12,12 +12,14 @@ import (
 )
 
 const (
-	MaxPackageBytes       = 2 << 20 // 2 MiB
+	MaxPackageBytes       = 4 << 20 // 4 MiB (matches DoneBot PACKAGE_MAX_BYTES)
 	MaxTagsPerListing     = 6
 	MaxSamplePrompts      = 3
 	MaxSkillsPerBot       = 30
 	MinSoulRunes          = 20
-	MaxSoulRunes          = 40000
+	MaxSoulRunes          = 100000
+	MaxSkillDescRunes     = 2000      // DoneBot SKILL.md DESCRIPTION_MAX=1024 with safety headroom
+	MaxSkillInstrRunes    = 256 * 1024 // Matches DoneBot SKILL_FILE_MAX_BYTES=256 KiB
 	MinTransferAmount     = 1.0
 	InstallTokenHeader    = "X-DoneBot-Market-Install"
 	DefaultAttrDays       = 180
@@ -360,4 +362,25 @@ func cleanMultiLine(raw string, maxRunes int, required bool, code, msg string) (
 		return "", infraerrors.BadRequest(code, msg)
 	}
 	return v, nil
+}
+
+func normalizeReportReason(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "token_farming", "token_abuse":
+		return "token_farming"
+	case "malicious_loop":
+		return "malicious_loop"
+	case "sensitive_file", "data_exfiltration":
+		return "sensitive_file"
+	case "prompt_injection":
+		return "prompt_injection"
+	case "illegal_content":
+		return "illegal_content"
+	case "broken", "spam_low_quality":
+		return "broken"
+	case "other":
+		return "other"
+	default:
+		return ""
+	}
 }

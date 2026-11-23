@@ -451,7 +451,7 @@ func (s *Service) PublishBot(ctx context.Context, authorUserID int64, in Publish
 
 	// Validate package JSON.
 	if len(in.Package) == 0 || len(in.Package) > MaxPackageBytes || !json.Valid(in.Package) {
-		return nil, infraerrors.BadRequest("MARKET_PACKAGE_INVALID", "Bot 模板包必须是有效的 JSON 且不超过 2 MB。")
+		return nil, infraerrors.BadRequest("MARKET_PACKAGE_INVALID", "Bot 模板包必须是有效的 JSON 且不超过 4 MB。")
 	}
 	sum := sha256.Sum256(in.Package)
 	pkgHash := hex.EncodeToString(sum[:])
@@ -476,7 +476,7 @@ func (s *Service) PublishBot(ctx context.Context, authorUserID int64, in Publish
 	prompts := make([]string, 0, MaxSamplePrompts)
 	for _, raw := range in.SamplePrompts {
 		p := strings.TrimSpace(raw)
-		if p == "" || utf8.RuneCountInString(p) > 200 {
+		if p == "" || utf8.RuneCountInString(p) > 300 {
 			continue
 		}
 		prompts = append(prompts, p)
@@ -494,11 +494,11 @@ func (s *Service) PublishBot(ctx context.Context, authorUserID int64, in Publish
 		if sErr != nil {
 			return nil, sErr
 		}
-		sd, sErr := cleanMultiLine(sk.Description, 300, false, "MARKET_SKILL_INVALID", "Skill 简介过长。")
+		sd, sErr := cleanMultiLine(sk.Description, MaxSkillDescRunes, false, "MARKET_SKILL_INVALID", fmt.Sprintf("Skill「%s」简介过长（最多 %d 字）。", sn, MaxSkillDescRunes))
 		if sErr != nil {
 			return nil, sErr
 		}
-		si, sErr := cleanMultiLine(sk.Instructions, 30000, true, "MARKET_SKILL_INVALID", "Skill 内容不能为空或过长。")
+		si, sErr := cleanMultiLine(sk.Instructions, MaxSkillInstrRunes, true, "MARKET_SKILL_INVALID", fmt.Sprintf("Skill「%s」内容不能为空或超过 %d 字。", sn, MaxSkillInstrRunes))
 		if sErr != nil {
 			return nil, sErr
 		}
@@ -993,13 +993,11 @@ func (s *Service) ReportListing(ctx context.Context, reporterUserID int64, listi
 	if !validUUID(listingID) {
 		return infraerrors.BadRequest("MARKET_LISTING_INVALID", "无效的 Bot ID。")
 	}
-	reason := strings.TrimSpace(in.ReasonType)
-	switch reason {
-	case "token_farming", "malicious_loop", "sensitive_file", "prompt_injection", "illegal_content", "broken", "other":
-	default:
+	reason := normalizeReportReason(in.ReasonType)
+	if reason == "" {
 		return infraerrors.BadRequest("MARKET_REPORT_INVALID", "请选择有效的举报原因。")
 	}
-	detail, err := cleanMultiLine(in.Detail, 1000, false, "MARKET_REPORT_INVALID", "举报详情过长。")
+	detail, err := cleanMultiLine(in.Detail, 2000, false, "MARKET_REPORT_INVALID", "举报详情过长。")
 	if err != nil {
 		return err
 	}

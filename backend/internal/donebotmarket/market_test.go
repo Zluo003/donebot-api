@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -165,5 +166,35 @@ func TestRunReviewAgentFallbackOnCallerError(t *testing.T) {
 	})
 	if rep.Verdict != "manual_review" {
 		t.Fatalf("expected manual_review fallback when settings/caller unavailable, got %+v", rep)
+	}
+}
+
+func TestSkillLimitsAndReportReasonNormalization(t *testing.T) {
+	// DoneBot SKILL.md frontmatter descriptions may be up to 1024 chars (DESCRIPTION_MAX).
+	longDesc := strings.Repeat("网文写作触发说明与适用场景描述", 60) // 900 runes (> old 300 limit)
+	if _, err := cleanMultiLine(longDesc, MaxSkillDescRunes, false, "MARKET_SKILL_INVALID", "too long"); err != nil {
+		t.Fatalf("expected 900-rune skill description to be accepted, got: %v", err)
+	}
+	tooLongDesc := strings.Repeat("a", MaxSkillDescRunes+1)
+	if _, err := cleanMultiLine(tooLongDesc, MaxSkillDescRunes, false, "MARKET_SKILL_INVALID", "too long"); err == nil {
+		t.Fatal("expected >MaxSkillDescRunes skill description to fail")
+	}
+
+	longInstr := strings.Repeat("详细写作规范与章节大纲模板。\n", 4000) // ~60k runes (> old 30k limit)
+	if _, err := cleanMultiLine(longInstr, MaxSkillInstrRunes, true, "MARKET_SKILL_INVALID", "too long"); err != nil {
+		t.Fatalf("expected ~60k-rune skill instructions to be accepted, got: %v", err)
+	}
+
+	cases := map[string]string{
+		"token_abuse":       "token_farming",
+		"data_exfiltration": "sensitive_file",
+		"spam_low_quality":  "broken",
+		"malicious_loop":    "malicious_loop",
+		"invalid_reason":    "",
+	}
+	for in, want := range cases {
+		if got := normalizeReportReason(in); got != want {
+			t.Fatalf("normalizeReportReason(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
