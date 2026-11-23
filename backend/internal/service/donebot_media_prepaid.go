@@ -450,8 +450,11 @@ func (s *OpenAIGatewayService) prepayDoneBotMedia(ctx context.Context, key *APIK
 	a, _ := amount.Float64()
 	t, _ := total.Float64()
 	err := repo.PrepayDoneBotMedia(ctx, &DoneBotMediaPrecharge{ReceiptID: DoneBotMediaReceiptID(ctx), UserID: key.UserID, APIKeyID: key.ID, AccountID: account.ID, GroupID: key.Group.ID, Model: model, Kind: snapshot.Kind, Amount: a, TotalAmount: t, Snapshot: snapshot})
-	if err == nil && s.billingCacheService != nil {
-		_ = s.billingCacheService.InvalidateUserBalance(ctx, key.UserID)
+	if err == nil {
+		NotifyDoneBotMarketMediaAdmitted(ctx, DoneBotMediaReceiptID(ctx), key.UserID, snapshot.Kind)
+		if s.billingCacheService != nil {
+			_ = s.billingCacheService.InvalidateUserBalance(ctx, key.UserID)
+		}
 	}
 	return err
 }
@@ -672,6 +675,7 @@ func (s *OpenAIGatewayService) recordDoneBotPrepaidUsage(ctx context.Context, in
 		if s.deferredService != nil {
 			finalizePostUsageBilling(ctx, params, s.billingDeps(), result)
 		}
+		NotifyDoneBotMarketMediaSettled(ctx, settlement.ReceiptID, p.UserID, settlement.ActualAmount, settlement.Failure)
 	}
 	return true, nil
 }

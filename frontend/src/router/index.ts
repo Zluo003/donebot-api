@@ -486,10 +486,15 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/donebot/market',
+    name: 'AdminDoneBotMarket',
+    component: () => import('@/views/admin/DoneBotMarketView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Bot 广场管理' }
+  },
+  {
     path: '/admin/donebot/templates',
     name: 'AdminDoneBotTemplates',
-    component: () => import('@/views/admin/DoneBotTemplatesView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'DoneBot 模板库' }
+    redirect: '/admin/donebot/market'
   },
   ...cloudAdminRoutes,
   {

@@ -1,0 +1,542 @@
+<template>
+  <AppLayout>
+    <div class="min-w-0 space-y-5">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-bold">Bot 广场管理</h1>
+          <p class="mt-1 text-sm text-gray-500">管理用户分享的 Bot 审核、分类、四品类消费返现比例、AI 审核 Agent 与创作者提现打款。</p>
+        </div>
+        <button class="btn btn-secondary gap-1.5" :disabled="busy" @click="reloadAll">
+          <Icon name="refresh" size="sm" />刷新
+        </button>
+      </div>
+
+      <!-- Overview KPI Cards -->
+      <div v-if="overview" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
+          <div class="text-xs text-gray-500">已上架 / 总 Bot</div>
+          <div class="mt-1 text-xl font-bold">{{ overview.published_listings }} / {{ overview.total_listings }}</div>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
+          <div class="text-xs text-gray-500">待审 Bot / 待处理举报</div>
+          <div class="mt-1 text-xl font-bold text-amber-600">{{ overview.pending_review_count }} / {{ overview.open_report_count }}</div>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
+          <div class="text-xs text-gray-500">累计安装 / 归因消费</div>
+          <div class="mt-1 text-xl font-bold">{{ overview.total_installs }} · ¥{{ fmt(overview.total_attributed_cost) }}</div>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
+          <div class="text-xs text-gray-500">累计创作者奖励</div>
+          <div class="mt-1 text-xl font-bold text-emerald-600">¥{{ fmt(overview.total_creator_reward) }}</div>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
+          <div class="text-xs text-gray-500">待审提现 / 累计已打款</div>
+          <div class="mt-1 text-xl font-bold">{{ overview.pending_withdrawals }} 笔 · ¥{{ fmt(overview.total_withdrawn) }}</div>
+        </div>
+      </div>
+
+      <!-- Section Tabs -->
+      <div class="flex flex-wrap gap-2 border-b border-gray-200 pb-2 dark:border-dark-700">
+        <button
+          v-for="t in tabs"
+          :key="t.id"
+          class="rounded-lg px-3.5 py-2 text-sm font-medium transition"
+          :class="tab === t.id ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700'"
+          @click="tab = t.id"
+        >
+          {{ t.label }}
+        </button>
+      </div>
+
+      <p v-if="error" role="alert" class="rounded-lg bg-red-50 px-3.5 py-2.5 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300">{{ error }}</p>
+
+      <!-- Tab 1: Bot Listings & AI Review -->
+      <section v-if="tab === 'listings'" class="space-y-4">
+        <div class="flex flex-wrap items-center gap-3">
+          <input v-model="listingQuery" class="input min-w-0 flex-1 sm:max-w-sm" placeholder="搜索 Bot 名称、简介或作者邮箱" @keyup.enter="loadListings" />
+          <select v-model="listingStatus" class="input w-auto" @change="loadListings">
+            <option value="all">全部状态</option>
+            <option value="review_queue">待审核队列</option>
+            <option value="published">已上架</option>
+            <option value="rejected">已驳回</option>
+            <option value="suspended">已封禁</option>
+            <option value="unlisted">作者下架</option>
+          </select>
+          <button class="btn btn-secondary" :disabled="busy" @click="loadListings">查询</button>
+        </div>
+
+        <p v-if="listingsLoading" class="py-10 text-center text-sm text-gray-500">加载中…</p>
+        <p v-else-if="!listings.length" class="py-12 text-center text-sm text-gray-500">暂无符合条件的 Bot</p>
+        <div v-else class="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-white dark:divide-dark-700 dark:border-dark-700 dark:bg-dark-800">
+          <article v-for="item in listings" :key="item.id" class="flex flex-wrap items-center justify-between gap-4 p-4">
+            <div class="min-w-0 flex-1 basis-72">
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="font-semibold">{{ item.name }}</h3>
+                <span class="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-dark-700">{{ item.category_name }}</span>
+                <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusBadge(item.status)">{{ statusLabel(item.status) }}</span>
+                <span v-if="item.featured" class="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">官方精选</span>
+                <span class="text-xs text-gray-500">v{{ item.latest_version }}</span>
+              </div>
+              <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">{{ item.tagline }}</p>
+              <p class="mt-1.5 text-xs text-gray-500">
+                作者：{{ item.author_name }} · Skill {{ item.skill_count }} 个 · 安装 {{ item.install_count }} 次 · 归因消费 ¥{{ fmt(item.total_attributed_cost) }} · 奖励 ¥{{ fmt(item.total_creator_reward) }}
+                <span v-if="item.report_count > 0" class="ml-2 text-red-600">举报 {{ item.report_count }}</span>
+              </p>
+              <p v-if="item.last_review_note" class="mt-1 text-xs text-amber-700 dark:text-amber-300">审核备注：{{ item.last_review_note }}</p>
+            </div>
+            <div class="flex shrink-0 flex-wrap gap-2">
+              <button class="btn btn-secondary text-xs" :disabled="busy" @click="openDetail(item.id)">查看 / 审核</button>
+              <button class="btn btn-secondary text-xs" :disabled="busy" @click="toggleFeatured(item)">{{ item.featured ? '取消精选' : '设为精选' }}</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Tab 2: Categories -->
+      <section v-else-if="tab === 'categories'" class="space-y-4">
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
+          <h2 class="mb-3 text-sm font-semibold">{{ editingCategory.id ? '编辑分类' : '新增分类' }}</h2>
+          <div class="grid gap-3 sm:grid-cols-4">
+            <input v-model="editingCategory.name" class="input" placeholder="分类名称（如：设计创作）" />
+            <input v-model="editingCategory.slug" class="input" placeholder="英文标识（如：design）" />
+            <input v-model="editingCategory.description" class="input" placeholder="分类简介（选填）" />
+            <div class="flex items-center gap-2">
+              <input v-model.number="editingCategory.sort_order" type="number" class="input w-24" placeholder="排序" />
+              <label class="flex items-center gap-1.5 text-xs whitespace-nowrap"><input v-model="editingCategory.enabled" type="checkbox" />启用</label>
+            </div>
+          </div>
+          <div class="mt-3 flex gap-2">
+            <button class="btn btn-primary text-sm" :disabled="busy" @click="saveCategory">{{ editingCategory.id ? '保存修改' : '添加分类' }}</button>
+            <button v-if="editingCategory.id" class="btn btn-secondary text-sm" :disabled="busy" @click="resetCategoryForm">取消编辑</button>
+          </div>
+        </div>
+
+        <div class="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-white dark:divide-dark-700 dark:border-dark-700 dark:bg-dark-800">
+          <div v-for="cat in categories" :key="cat.id" class="flex flex-wrap items-center justify-between gap-3 p-4">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-semibold">{{ cat.name }}</span>
+                <code class="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-dark-700">{{ cat.slug }}</code>
+                <span class="text-xs text-gray-500">排序 {{ cat.sort_order }}</span>
+                <span class="rounded px-2 py-0.5 text-xs" :class="cat.enabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-gray-100 text-gray-500'">{{ cat.enabled ? '已启用' : '已停用' }}</span>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">{{ cat.description || '无简介' }} · 已上架 Bot {{ cat.listing_count ?? 0 }} 个</p>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn btn-secondary text-xs" :disabled="busy" @click="editCategory(cat)">编辑</button>
+              <button class="btn btn-secondary text-xs text-red-600" :disabled="busy" @click="removeCategory(cat)">删除</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 3: Withdrawals -->
+      <section v-else-if="tab === 'withdrawals'" class="space-y-4">
+        <div class="flex items-center gap-3">
+          <select v-model="withdrawStatus" class="input w-auto" @change="loadWithdrawals">
+            <option value="all">全部提现单</option>
+            <option value="pending">待审核打款</option>
+            <option value="paid">已打款</option>
+            <option value="rejected">已驳回</option>
+          </select>
+        </div>
+
+        <p v-if="!withdrawals.length" class="py-12 text-center text-sm text-gray-500">暂无提现申请</p>
+        <div v-else class="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-white dark:divide-dark-700 dark:border-dark-700 dark:bg-dark-800">
+          <div v-for="w in withdrawals" :key="w.id" class="flex flex-wrap items-center justify-between gap-4 p-4">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-base font-bold text-emerald-600">¥{{ fmt(w.amount) }}</span>
+                <span class="rounded px-2 py-0.5 text-xs font-medium" :class="withdrawBadge(w.status)">{{ withdrawLabel(w.status) }}</span>
+                <span class="text-sm font-medium">{{ w.creator_name || w.creator_email }}</span>
+                <span class="text-xs text-gray-500">#{{ w.id }} · {{ fmtTime(w.created_at) }}</span>
+              </div>
+              <p class="mt-1 text-sm">支付宝账号：<strong>{{ w.alipay_account }}</strong> · 收款人实名：<strong>{{ w.alipay_real_name }}</strong></p>
+              <p v-if="w.payout_trade_no" class="mt-1 text-xs text-emerald-700 dark:text-emerald-300">打款流水号：{{ w.payout_trade_no }}</p>
+              <p v-if="w.admin_note" class="mt-1 text-xs text-gray-500">备注：{{ w.admin_note }}</p>
+            </div>
+            <div v-if="w.status === 'pending'" class="flex shrink-0 gap-2">
+              <button class="btn btn-primary text-xs" :disabled="busy" @click="openWithdrawDialog(w, 'paid')">标记已打款</button>
+              <button class="btn btn-secondary text-xs text-red-600" :disabled="busy" @click="openWithdrawDialog(w, 'rejected')">驳回退回</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 4: Reports -->
+      <section v-else-if="tab === 'reports'" class="space-y-4">
+        <p v-if="!reports.length" class="py-12 text-center text-sm text-gray-500">暂无举报记录</p>
+        <div v-else class="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-white dark:divide-dark-700 dark:border-dark-700 dark:bg-dark-800">
+          <div v-for="r in reports" :key="r.id" class="flex flex-wrap items-center justify-between gap-4 p-4">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="font-semibold">{{ r.listing_name }}</span>
+                <span class="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-300">{{ r.reason_type }}</span>
+                <span class="text-xs text-gray-500">{{ r.status }} · {{ fmtTime(r.created_at) }}</span>
+              </div>
+              <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">{{ r.detail || '无补充说明' }}</p>
+              <p class="mt-1 text-xs text-gray-500">举报人：{{ r.reporter_email }}</p>
+            </div>
+            <div class="flex shrink-0 gap-2">
+              <button class="btn btn-secondary text-xs" :disabled="busy" @click="openDetail(r.listing_id)">查看 Bot</button>
+              <button v-if="r.status === 'open'" class="btn btn-primary text-xs" :disabled="busy" @click="resolveReport(r.id, 'resolved')">标记已处理</button>
+              <button v-if="r.status === 'open'" class="btn btn-secondary text-xs" :disabled="busy" @click="resolveReport(r.id, 'dismissed')">忽略</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 5: Settings (4-category rebate rates + AI Review Agent + withdrawal rules) -->
+      <section v-else-if="tab === 'settings' && settingsDraft" class="space-y-5">
+        <div class="rounded-xl border border-gray-200 bg-white p-5 space-y-5 dark:border-dark-700 dark:bg-dark-800">
+          <div class="flex flex-wrap items-center gap-6">
+            <label class="flex items-center gap-2 text-sm font-medium"><input v-model="settingsDraft.enabled" type="checkbox" />启用 Bot 分享广场</label>
+            <label class="flex items-center gap-2 text-sm font-medium"><input v-model="settingsDraft.auto_publish_on_ai_approve" type="checkbox" />AI 安全审核通过后自动上架（取消则转人工确认）</label>
+          </div>
+
+          <div class="border-t border-gray-200 pt-4 dark:border-dark-700">
+            <h3 class="mb-3 text-sm font-semibold">四品类消费返现比例（%，设为 0 即关闭该品类分润）</h3>
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">LLM Token 返现 (%)</span><input v-model.number="settingsDraft.rebate_llm_percent" type="number" step="0.1" min="0" max="50" class="input" /></label>
+              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">图片生成返现 (%)</span><input v-model.number="settingsDraft.rebate_image_percent" type="number" step="0.1" min="0" max="50" class="input" /></label>
+              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">视频生成返现 (%)</span><input v-model.number="settingsDraft.rebate_video_percent" type="number" step="0.1" min="0" max="50" class="input" /></label>
+              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">音乐生成返现 (%)</span><input v-model.number="settingsDraft.rebate_music_percent" type="number" step="0.1" min="0" max="50" class="input" /></label>
+            </div>
+          </div>
+
+          <div class="border-t border-gray-200 pt-4 dark:border-dark-700">
+            <h3 class="mb-3 text-sm font-semibold">归因周期、冻结与提现/转算力参数</h3>
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">安装归因有效期（天）</span><input v-model.number="settingsDraft.attribution_days" type="number" min="1" max="3650" class="input" /></label>
+              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">分润冻结天数（天）</span><input v-model.number="settingsDraft.freeze_days" type="number" min="0" max="180" class="input" /></label>
+              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">最低提现金额（CNY 元）</span><input v-model.number="settingsDraft.min_withdraw_amount" type="number" step="1" min="1" class="input" /></label>
+              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">转算力余额额外赠送 (%)</span><input v-model.number="settingsDraft.transfer_bonus_percent" type="number" step="0.5" min="0" max="100" class="input" /></label>
+            </div>
+          </div>
+
+          <div class="border-t border-gray-200 pt-4 dark:border-dark-700">
+            <h3 class="mb-1 text-sm font-semibold">专业安全审核 Agent 配置</h3>
+            <p class="mb-3 text-xs text-gray-500">仅填写审核模型名称时，网关会自动从现有已启用的上游 API Key 渠道中匹配调用；也可单独填写专用 OpenAI 兼容 API 地址与密钥。</p>
+            <div class="grid gap-4 sm:grid-cols-3">
+              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">审核模型名（如 deepseek-chat / gpt-4o-mini）</span><input v-model="settingsDraft.review_model" class="input" placeholder="留空则新提交全部转人工审核" /></label>
+              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">独立审核 API Base（选填）</span><input v-model="settingsDraft.review_api_base" class="input" placeholder="https://api.deepseek.com/v1" /></label>
+              <label class="block text-sm"><span class="mb-1 block text-gray-600 dark:text-gray-300">独立审核 API Key（{{ settingsDraft.review_api_key_configured ? '已配置，留空保持不变' : '选填' }}）</span><input v-model="reviewKeyInput" type="password" class="input" placeholder="留空不修改" /></label>
+            </div>
+          </div>
+
+          <div class="flex justify-end">
+            <button class="btn btn-primary" :disabled="busy" @click="saveSettings">{{ busy ? '保存中…' : '保存配置' }}</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Listing Review Modal -->
+    <BaseDialog :show="detailOpen" :title="activeDetail ? `Bot 审核：${activeDetail.name}` : 'Bot 详情'" width="wide" @close="detailOpen = false">
+      <div v-if="activeDetail" class="space-y-4">
+        <div class="flex flex-wrap items-center gap-2 text-sm">
+          <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusBadge(activeDetail.status)">{{ statusLabel(activeDetail.status) }}</span>
+          <span>分类：{{ activeDetail.category_name }}</span>
+          <span>作者：{{ activeDetail.author_name }}</span>
+          <span>版本：v{{ activeDetail.latest_version }}</span>
+        </div>
+        <p class="text-sm text-gray-600 dark:text-gray-300">{{ activeDetail.tagline }} — {{ activeDetail.description }}</p>
+
+        <!-- AI Review Agent Report -->
+        <div v-if="activeDetail.latest_release?.ai_report" class="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm dark:border-dark-700 dark:bg-dark-900">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <strong>AI 专业审核 Agent 报告</strong>
+            <span class="text-xs">判定：<strong>{{ activeDetail.latest_release.ai_report.verdict }}</strong> · 风险分：<strong>{{ activeDetail.latest_release.ai_report.risk_score }}/100</strong> · 模型：{{ activeDetail.latest_release.ai_report.model || '—' }}</span>
+          </div>
+          <p class="mt-1.5 text-xs text-gray-600 dark:text-gray-300">{{ activeDetail.latest_release.ai_report.summary }}</p>
+          <div v-if="activeDetail.latest_release.ai_report.dimensions" class="mt-2 grid gap-2 sm:grid-cols-2">
+            <div v-for="(dim, key) in activeDetail.latest_release.ai_report.dimensions" :key="key" class="rounded bg-white p-2 text-xs dark:bg-dark-800">
+              <span :class="dim.passed ? 'text-emerald-600' : 'text-red-600'">{{ dim.passed ? '✓' : '✗' }} {{ key }} ({{ dim.score }})</span>
+              <p class="mt-0.5 text-gray-500">{{ dim.finding }}</p>
+            </div>
+          </div>
+          <ul v-if="activeDetail.latest_release.ai_report.rejection_reasons?.length" class="mt-2 list-disc pl-5 text-xs text-red-600">
+            <li v-for="(r, i) in activeDetail.latest_release.ai_report.rejection_reasons" :key="i">{{ r }}</li>
+          </ul>
+        </div>
+
+        <details open class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+          <summary class="cursor-pointer text-sm font-medium">SOUL.md 完整内容</summary>
+          <pre class="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-words text-xs">{{ activeDetail.latest_release?.soul_text || activeDetail.soul_preview }}</pre>
+        </details>
+
+        <details v-if="activeDetail.skills?.length" class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+          <summary class="cursor-pointer text-sm font-medium">内置 SKILL.md（{{ activeDetail.skills.length }} 个）</summary>
+          <div class="mt-2 space-y-3">
+            <div v-for="sk in activeDetail.skills" :key="sk.name" class="rounded bg-gray-50 p-2.5 dark:bg-dark-900">
+              <div class="text-xs font-semibold">{{ sk.name }} <span class="font-normal text-gray-500">{{ sk.description }}</span></div>
+              <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">{{ sk.instructions }}</pre>
+            </div>
+          </div>
+        </details>
+
+        <label class="block text-sm">
+          <span class="mb-1 block font-medium">审核备注 / 驳回原因</span>
+          <textarea v-model="reviewNote" class="input min-h-20" placeholder="填写审核意见、驳回原因或封禁理由…" />
+        </label>
+      </div>
+      <template #footer>
+        <button class="btn btn-secondary" :disabled="busy" @click="detailOpen = false">关闭</button>
+        <button class="btn btn-secondary" :disabled="busy" @click="submitListingReview('rerun_ai')">重跑 AI 审核</button>
+        <button class="btn btn-secondary text-red-600" :disabled="busy" @click="submitListingReview('reject')">驳回</button>
+        <button class="btn btn-secondary text-red-700" :disabled="busy" @click="submitListingReview('suspend')">封禁下架</button>
+        <button class="btn btn-primary" :disabled="busy" @click="submitListingReview('approve')">审核通过并上架</button>
+      </template>
+    </BaseDialog>
+
+    <!-- Withdrawal Process Modal -->
+    <BaseDialog :show="withdrawDialogOpen" :title="withdrawDecision === 'paid' ? '确认支付宝打款完成' : '驳回提现申请'" @close="withdrawDialogOpen = false">
+      <div v-if="activeWithdraw" class="space-y-4 text-sm">
+        <p>创作者：<strong>{{ activeWithdraw.creator_name || activeWithdraw.creator_email }}</strong> · 金额：<strong>¥{{ fmt(activeWithdraw.amount) }}</strong></p>
+        <p>支付宝：<strong>{{ activeWithdraw.alipay_account }}</strong>（{{ activeWithdraw.alipay_real_name }}）</p>
+        <label v-if="withdrawDecision === 'paid'" class="block">
+          <span class="mb-1 block font-medium">支付宝转账流水号</span>
+          <input v-model="withdrawTradeNo" class="input" placeholder="填写支付宝打款单号以便对账" />
+        </label>
+        <label class="block">
+          <span class="mb-1 block font-medium">{{ withdrawDecision === 'paid' ? '打款备注（选填）' : '驳回原因（必填）' }}</span>
+          <textarea v-model="withdrawNote" class="input min-h-20" />
+        </label>
+      </div>
+      <template #footer>
+        <button class="btn btn-secondary" :disabled="busy" @click="withdrawDialogOpen = false">取消</button>
+        <button class="btn btn-primary" :disabled="busy" @click="submitWithdrawProcess">确认提交</button>
+      </template>
+    </BaseDialog>
+
+    <TotpStepUpDialog :controller="stepUp" />
+  </AppLayout>
+</template>
+
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import AppLayout from '@/components/layout/AppLayout.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import Icon from '@/components/icons/Icon.vue'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
+import { isStepUpCancelled, useStepUp } from '@/composables/useStepUp'
+import botMarketAdmin, {
+  type MarketCategory,
+  type MarketListing,
+  type MarketListingDetail,
+  type MarketOverview,
+  type MarketReport,
+  type MarketSettings,
+  type MarketWithdrawal,
+} from '@/api/admin/donebot-market'
+import { useAppStore } from '@/stores/app'
+
+const app = useAppStore()
+const stepUp = useStepUp()
+
+const tabs = [
+  { id: 'listings', label: 'Bot 审核与上架' },
+  { id: 'categories', label: '分类管理' },
+  { id: 'withdrawals', label: '提现审核' },
+  { id: 'reports', label: '用户举报' },
+  { id: 'settings', label: '分润与 AI 审核配置' },
+] as const
+
+const tab = ref<(typeof tabs)[number]['id']>('listings')
+const busy = ref(false)
+const error = ref('')
+const overview = ref<MarketOverview | null>(null)
+
+const listings = ref<MarketListing[]>([])
+const listingsLoading = ref(false)
+const listingStatus = ref('all')
+const listingQuery = ref('')
+
+const categories = ref<MarketCategory[]>([])
+const editingCategory = ref<{ id?: number; slug: string; name: string; description: string; sort_order: number; enabled: boolean }>({
+  slug: '', name: '', description: '', sort_order: 50, enabled: true,
+})
+
+const withdrawals = ref<MarketWithdrawal[]>([])
+const withdrawStatus = ref('all')
+const reports = ref<MarketReport[]>([])
+
+const settingsDraft = ref<MarketSettings | null>(null)
+const reviewKeyInput = ref('')
+
+const detailOpen = ref(false)
+const activeDetail = ref<MarketListingDetail | null>(null)
+const reviewNote = ref('')
+
+const withdrawDialogOpen = ref(false)
+const activeWithdraw = ref<MarketWithdrawal | null>(null)
+const withdrawDecision = ref<'paid' | 'rejected'>('paid')
+const withdrawTradeNo = ref('')
+const withdrawNote = ref('')
+
+function errMsg(cause: unknown) {
+  const value = cause as { response?: { data?: { message?: string } }; message?: string }
+  return value?.response?.data?.message || value?.message || '操作失败，请重试'
+}
+function fmt(n: number) { return Number(n || 0).toFixed(2) }
+function fmtTime(iso: string) { return iso ? new Date(iso).toLocaleString() : '' }
+function statusLabel(s: string) {
+  const map: Record<string, string> = {
+    pending_review: 'AI 审核中', manual_review: '待人工复核', published: '已上架',
+    rejected: '已驳回', unlisted: '作者下架', suspended: '已封禁',
+  }
+  return map[s] || s
+}
+function statusBadge(s: string) {
+  if (s === 'published') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+  if (s === 'manual_review' || s === 'pending_review') return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+  if (s === 'rejected' || s === 'suspended') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
+}
+function withdrawLabel(s: string) { return s === 'paid' ? '已打款' : s === 'rejected' ? '已驳回' : '待打款' }
+function withdrawBadge(s: string) {
+  if (s === 'paid') return 'bg-emerald-100 text-emerald-700'
+  if (s === 'rejected') return 'bg-red-100 text-red-700'
+  return 'bg-amber-100 text-amber-800'
+}
+
+async function loadListings() {
+  listingsLoading.value = true
+  try {
+    const res = await botMarketAdmin.listings({ status: listingStatus.value, q: listingQuery.value, page: 1, page_size: 50 })
+    listings.value = res.items || []
+  } catch (c) { error.value = errMsg(c) } finally { listingsLoading.value = false }
+}
+async function loadWithdrawals() {
+  try {
+    const res = await botMarketAdmin.withdrawals({ status: withdrawStatus.value, page: 1, page_size: 50 })
+    withdrawals.value = res.items || []
+  } catch (c) { error.value = errMsg(c) }
+}
+async function reloadAll() {
+  busy.value = true; error.value = ''
+  try {
+    const [ov, cats, cfg, reps] = await Promise.all([
+      botMarketAdmin.overview(),
+      botMarketAdmin.categories(),
+      botMarketAdmin.settings(),
+      botMarketAdmin.reports({ status: 'all', page: 1, page_size: 50 }),
+    ])
+    overview.value = ov
+    categories.value = cats || []
+    settingsDraft.value = cfg
+    reports.value = reps.items || []
+    await Promise.all([loadListings(), loadWithdrawals()])
+  } catch (c) { error.value = errMsg(c) } finally { busy.value = false }
+}
+
+async function openDetail(id: string) {
+  busy.value = true; error.value = ''
+  try {
+    activeDetail.value = await botMarketAdmin.listingDetail(id)
+    reviewNote.value = activeDetail.value.last_review_note || ''
+    detailOpen.value = true
+  } catch (c) { error.value = errMsg(c) } finally { busy.value = false }
+}
+
+async function submitListingReview(decision: string) {
+  if (!activeDetail.value) return
+  busy.value = true; error.value = ''
+  try {
+    activeDetail.value = await stepUp.run(() => botMarketAdmin.reviewListing(activeDetail.value!.id, { decision, note: reviewNote.value }))
+    app.showSuccess('审核状态已更新')
+    detailOpen.value = false
+    await reloadAll()
+  } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
+}
+
+async function toggleFeatured(item: MarketListing) {
+  busy.value = true; error.value = ''
+  try {
+    await stepUp.run(() => botMarketAdmin.reviewListing(item.id, { decision: 'feature', featured: !item.featured }))
+    await loadListings()
+  } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
+}
+
+function editCategory(cat: MarketCategory) {
+  editingCategory.value = { id: cat.id, slug: cat.slug, name: cat.name, description: cat.description, sort_order: cat.sort_order, enabled: cat.enabled }
+}
+function resetCategoryForm() {
+  editingCategory.value = { slug: '', name: '', description: '', sort_order: 50, enabled: true }
+}
+async function saveCategory() {
+  busy.value = true; error.value = ''
+  try {
+    await stepUp.run(() => botMarketAdmin.saveCategory(editingCategory.value))
+    app.showSuccess('分类已保存')
+    resetCategoryForm()
+    await reloadAll()
+  } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
+}
+async function removeCategory(cat: MarketCategory) {
+  busy.value = true; error.value = ''
+  try {
+    await stepUp.run(() => botMarketAdmin.deleteCategory(cat.id))
+    app.showSuccess('分类已删除')
+    await reloadAll()
+  } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
+}
+
+function openWithdrawDialog(w: MarketWithdrawal, decision: 'paid' | 'rejected') {
+  activeWithdraw.value = w
+  withdrawDecision.value = decision
+  withdrawTradeNo.value = ''
+  withdrawNote.value = ''
+  withdrawDialogOpen.value = true
+}
+async function submitWithdrawProcess() {
+  if (!activeWithdraw.value) return
+  busy.value = true; error.value = ''
+  try {
+    await stepUp.run(() => botMarketAdmin.processWithdrawal(activeWithdraw.value!.id, {
+      decision: withdrawDecision.value,
+      payout_trade_no: withdrawTradeNo.value,
+      admin_note: withdrawNote.value,
+    }))
+    app.showSuccess(withdrawDecision.value === 'paid' ? '已标记打款完成' : '已驳回并退回创作者可用余额')
+    withdrawDialogOpen.value = false
+    await reloadAll()
+  } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
+}
+
+async function resolveReport(id: number, status: 'resolved' | 'dismissed') {
+  busy.value = true; error.value = ''
+  try {
+    await stepUp.run(() => botMarketAdmin.handleReport(id, { status }))
+    app.showSuccess('举报已处理')
+    await reloadAll()
+  } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
+}
+
+async function saveSettings() {
+  if (!settingsDraft.value) return
+  busy.value = true; error.value = ''
+  try {
+    const saved = await stepUp.run(() => botMarketAdmin.saveSettings({
+      enabled: settingsDraft.value!.enabled,
+      auto_publish_on_ai_approve: settingsDraft.value!.auto_publish_on_ai_approve,
+      review_model: settingsDraft.value!.review_model,
+      review_api_base: settingsDraft.value!.review_api_base,
+      ...(reviewKeyInput.value.trim() ? { review_api_key: reviewKeyInput.value.trim() } : {}),
+      attribution_days: settingsDraft.value!.attribution_days,
+      freeze_days: settingsDraft.value!.freeze_days,
+      min_withdraw_amount: settingsDraft.value!.min_withdraw_amount,
+      transfer_bonus_percent: settingsDraft.value!.transfer_bonus_percent,
+      rebate_llm_percent: settingsDraft.value!.rebate_llm_percent,
+      rebate_image_percent: settingsDraft.value!.rebate_image_percent,
+      rebate_video_percent: settingsDraft.value!.rebate_video_percent,
+      rebate_music_percent: settingsDraft.value!.rebate_music_percent,
+    }))
+    settingsDraft.value = saved
+    reviewKeyInput.value = ''
+    app.showSuccess('Bot 广场与分润配置已保存')
+  } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
+}
+
+onMounted(reloadAll)
+</script>

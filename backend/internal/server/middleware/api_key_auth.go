@@ -289,6 +289,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		if !billingInfoRequest {
 			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 		}
+		if marketToken := c.GetHeader(service.DoneBotMarketInstallHeader); marketToken != "" {
+			c.Request = c.Request.WithContext(service.WithDoneBotMarketInstallToken(c.Request.Context(), marketToken))
+		}
 
 		c.Next()
 	}

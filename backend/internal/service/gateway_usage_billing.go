@@ -396,6 +396,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	}
 
 	finalizePostUsageBilling(billingCtx, p, deps, result)
+	if !p.IsSubscriptionBill && !p.BalanceAlreadyApplied && !p.SimpleModeKeyRateLimitOnly && p.Cost != nil && p.Cost.ActualCost > 0 && p.User != nil {
+		NotifyDoneBotMarketLLMSettled(billingCtx, p.User.ID, requestID, p.Cost.ActualCost)
+	}
 	return true, nil
 }
 

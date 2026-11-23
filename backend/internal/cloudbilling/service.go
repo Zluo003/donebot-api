@@ -317,3 +317,10 @@ func (s *Service) Events(ctx context.Context) ([]map[string]any, error) {
 	}
 	return out, rows.Err()
 }
+
+func (s *Service) InvalidateUserBalance(ctx context.Context, userID int64) {
+	if s == nil || s.cache == nil || userID <= 0 {
+		return
+	}
+	_ = s.cache.InvalidateUserBalance(ctx, userID)
+}

@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
+	"github.com/Wei-Shaw/sub2api/internal/donebotmarket"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -22,6 +23,7 @@ type DoneBotHandler struct {
 	mobile         *mobilehub.Service
 	mobileSettings *service.DoneBotMobileSettings
 	cloud          *cloudbilling.Service
+	market         *donebotmarket.Service
 	templates      *service.DoneBotTemplateService
 	installs       doneBotInstallAdmin
 	catalog        *service.DoneBotAdminService
@@ -146,6 +148,7 @@ func ProvideDoneBotHandler(installs *service.DoneBotService, catalog *service.Do
 	}
 	h.mobileSettings = mobileSettings
 	h.cloud = cloud
+	h.market = donebotmarket.Shared(db, db != nil)
 	h.storage = storage
 	h.releases = service.NewClientReleaseService(storage)
 	h.webTools = webTools

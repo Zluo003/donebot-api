@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/donebotcollab"
+	"github.com/Wei-Shaw/sub2api/internal/donebotmarket"
 	"github.com/Wei-Shaw/sub2api/internal/mobilehub"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -49,6 +50,7 @@ type DoneBotHandler struct {
 	mobileAuth   *service.AuthService
 	cloud        *cloudbilling.Service
 	collab       *donebotcollab.Service
+	market       *donebotmarket.Service
 	templates    *service.DoneBotTemplateService
 	installs     doneBotClaimer
 	settings     service.SettingRepository
