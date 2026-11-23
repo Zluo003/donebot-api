@@ -423,6 +423,7 @@ func (w *apimartSettlementWorker) recoverDoneBotMedia(ctx context.Context, now t
 			result, err = w.service.doneBotPrepaidRepository().SettleDoneBotMediaPrecharge(ctx, *p.Settlement)
 			if err == nil && result != nil && result.Applied {
 				w.finalizeRecoveredDoneBotMedia(ctx, p)
+				NotifyDoneBotMarketMediaSettled(ctx, p.Settlement.ReceiptID, p.UserID, p.Settlement.ActualAmount, p.Settlement.Failure)
 			}
 			if err == nil && w.service.billingCacheService != nil {
 				_ = w.service.billingCacheService.InvalidateUserBalance(ctx, p.UserID)

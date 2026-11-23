@@ -262,6 +262,7 @@ func usageRecordContext(parent context.Context, base context.Context) context.Co
 	if requestID, _ := parent.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
 		base = context.WithValue(base, ctxkey.RequestID, strings.TrimSpace(requestID))
 	}
+	base = service.CopyDoneBotMarketContext(parent, base)
 	return service.CopyDoneBotTeamUsageContext(parent, base)
 }
 

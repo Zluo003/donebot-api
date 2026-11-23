@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/cloudbilling"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/donebotcollab"
+	"github.com/Wei-Shaw/sub2api/internal/donebotmarket"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -44,6 +45,11 @@ func ProvideDoneBotUserHandler(installs *service.DoneBotService, settings servic
 			chatDir = filepath.Join(d, "collab-chat")
 		}
 		h.collab.SetChatStorageDir(chatDir)
+		h.market = donebotmarket.Shared(db, true)
+		if cloud != nil {
+			h.market.SetBalanceInvalidator(cloud.InvalidateUserBalance)
+		}
+		service.RegisterDoneBotMarketBillingHook(donebotmarket.NewBillingHookAdapter(h.market))
 	}
 	h.catalog, h.account = catalog, account
 	h.media = media
