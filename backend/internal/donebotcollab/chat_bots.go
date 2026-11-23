@@ -153,6 +153,7 @@ type ClaimedBotInvocation struct {
 	MessageID      int64         `json:"message_id"`
 	ScopeType      string        `json:"scope_type"`
 	TargetID       string        `json:"target_id"`
+	TeamID         string        `json:"team_id,omitempty"`
 	ChatName       string        `json:"chat_name"`
 	LocalBotID     string        `json:"local_bot_id"`
 	BotName        string        `json:"bot_name"`
@@ -604,7 +605,7 @@ func (s *Service) enqueueMentionedBots(
 	body string,
 	explicitBotIDs []string,
 ) (triggered []string, deniedNames []string, err error) {
-	if scopeType != "team" && scopeType != "group" {
+	if scopeType != "team" && scopeType != "group" && scopeType != "channel" {
 		return nil, nil, nil
 	}
 	explicit := map[string]bool{}
@@ -617,11 +618,28 @@ func (s *Service) enqueueMentionedBots(
 		return nil, nil, nil
 	}
 
+	botScopeType := scopeType
+	botScopeKey := scopeKey
+	privateChannelID := ""
+	if scopeType == "channel" {
+		var chTeamID string
+		var isPrivate bool
+		if err = tx.QueryRowContext(ctx, `SELECT team_id::text, is_private FROM donebot_team_channels WHERE id = $1::uuid`, scopeKey).Scan(&chTeamID, &isPrivate); err != nil {
+			return nil, nil, err
+		}
+		botScopeType = "team"
+		botScopeKey = chTeamID
+		if isPrivate {
+			privateChannelID = scopeKey
+		}
+	}
+
 	rows, err := tx.QueryContext(ctx, `SELECT b.id::text, b.owner_user_id, b.installation_id::text, b.local_bot_id, b.bot_name, b.allow_all_members,
-		EXISTS(SELECT 1 FROM donebot_collab_chat_bot_grants g WHERE g.chat_bot_id = b.id AND g.user_id = $3) AS granted
+		EXISTS(SELECT 1 FROM donebot_collab_chat_bot_grants g WHERE g.chat_bot_id = b.id AND g.user_id = $3) AS granted,
+		($4 = '' OR EXISTS(SELECT 1 FROM donebot_team_channel_members cm WHERE cm.channel_id = NULLIF($4, '')::uuid AND cm.user_id = b.owner_user_id)) AS owner_in_channel
 		FROM donebot_collab_chat_bots b
 		WHERE b.scope_type = $1 AND b.scope_key = $2
-		ORDER BY b.created_at ASC`, scopeType, scopeKey, actor)
+		ORDER BY b.created_at ASC`, botScopeType, botScopeKey, actor, privateChannelID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -633,13 +651,17 @@ func (s *Service) enqueueMentionedBots(
 		botName        string
 		allowAll       bool
 		granted        bool
+		ownerInChannel bool
 	}
 	candidates := make([]candidate, 0)
 	for rows.Next() {
 		var c candidate
-		if err = rows.Scan(&c.id, &c.ownerID, &c.installationID, &c.localBotID, &c.botName, &c.allowAll, &c.granted); err != nil {
+		if err = rows.Scan(&c.id, &c.ownerID, &c.installationID, &c.localBotID, &c.botName, &c.allowAll, &c.granted, &c.ownerInChannel); err != nil {
 			_ = rows.Close()
 			return nil, nil, err
+		}
+		if !c.ownerInChannel {
+			continue
 		}
 		candidates = append(candidates, c)
 	}
@@ -721,9 +743,20 @@ func (s *Service) ClaimBotInvocation(ctx context.Context, actor int64, installat
 		return nil, err
 	}
 
-	if inv.ScopeType == "team" {
+	switch inv.ScopeType {
+	case "team":
+		inv.TeamID = inv.TargetID
 		_ = s.db.QueryRowContext(ctx, `SELECT name FROM donebot_teams WHERE id = $1::uuid`, inv.TargetID).Scan(&inv.ChatName)
-	} else {
+	case "channel":
+		var teamID, teamName, chName string
+		if err = s.db.QueryRowContext(ctx, `SELECT c.team_id::text, t.name, c.name
+			FROM donebot_team_channels c
+			JOIN donebot_teams t ON t.id = c.team_id
+			WHERE c.id = $1::uuid`, inv.TargetID).Scan(&teamID, &teamName, &chName); err == nil {
+			inv.TeamID = teamID
+			inv.ChatName = teamName + " · #" + chName
+		}
+	default:
 		_ = s.db.QueryRowContext(ctx, `SELECT name FROM donebot_collab_groups WHERE id = $1::uuid`, inv.TargetID).Scan(&inv.ChatName)
 	}
 	recent, err := s.ListChatMessages(ctx, actor, inv.ScopeType, inv.TargetID, 0, 0, 20)

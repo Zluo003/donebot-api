@@ -66,7 +66,7 @@ type ChatMessage struct {
 }
 
 type ChatSummary struct {
-	ScopeType      string     `json:"scope_type"` // "friend" | "team"
+	ScopeType      string     `json:"scope_type"` // "friend" | "team" | "group" | "channel"
 	TargetID       string     `json:"target_id"`
 	LastMessageID  int64      `json:"last_message_id"`
 	LastKind       string     `json:"last_kind,omitempty"`
@@ -250,6 +250,15 @@ func (s *Service) authorizeChatScope(ctx context.Context, actor int64, scopeType
 			return "", "", infraerrors.Forbidden("COLLAB_CHAT_FORBIDDEN", "你不在该好友群聊中，无法访问消息。")
 		}
 		return "group", targetID, nil
+	case "channel":
+		ch, err := s.authorizeTeamChannel(ctx, actor, targetID)
+		if err != nil {
+			return "", "", err
+		}
+		if ch.IsDefault {
+			return "team", ch.TeamID, nil
+		}
+		return "channel", ch.ID, nil
 	default:
 		return "", "", infraerrors.BadRequest("COLLAB_CHAT_SCOPE_INVALID", "不支持的聊天类型。")
 	}
@@ -273,6 +282,9 @@ func (s *Service) verifyScopeKeyAccess(ctx context.Context, actor int64, scopeTy
 		return err
 	case "group":
 		_, _, err := s.authorizeChatScope(ctx, actor, "group", scopeKey)
+		return err
+	case "channel":
+		_, _, err := s.authorizeChatScope(ctx, actor, "channel", scopeKey)
 		return err
 	default:
 		return infraerrors.Forbidden("COLLAB_CHAT_FORBIDDEN", "无权访问该文件。")
@@ -435,6 +447,33 @@ func (s *Service) ChatSummaries(ctx context.Context, actor int64) ([]ChatSummary
 		})
 	}
 	if err = gRows.Err(); err != nil {
+		return nil, err
+	}
+
+	cRows, err := s.db.QueryContext(ctx, `SELECT c.id::text
+		FROM donebot_team_channels c
+		JOIN donebot_teams t ON t.id = c.team_id AND t.state = 'active'
+		JOIN donebot_team_members m ON m.team_id = c.team_id AND m.user_id = $1 AND m.removed_at IS NULL
+		WHERE c.is_default = FALSE AND c.archived_at IS NULL
+			AND (c.is_private = FALSE OR EXISTS(
+				SELECT 1 FROM donebot_team_channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = $1
+			))`, actor)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = cRows.Close() }()
+	for cRows.Next() {
+		var channelID string
+		if err = cRows.Scan(&channelID); err != nil {
+			return nil, err
+		}
+		scopes = append(scopes, scopeTarget{
+			scopeType: "channel",
+			scopeKey:  channelID,
+			targetID:  channelID,
+		})
+	}
+	if err = cRows.Err(); err != nil {
 		return nil, err
 	}
 
