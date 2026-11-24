@@ -90,6 +90,11 @@ func (s *Service) StartBackgroundWorkers() {
 			defer thawTick.Stop()
 			// Process any pending or previously stranded releases immediately on boot.
 			s.kickReviewWorker()
+			{
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				_, _ = s.RollupAllCreatorDailySummaries(ctx, time.Now())
+				cancel()
+			}
 			for {
 				select {
 				case <-s.stopCh:
@@ -105,6 +110,7 @@ func (s *Service) StartBackgroundWorkers() {
 				case <-thawTick.C:
 					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 					_, _ = s.ThawAllMaturedRewards(ctx)
+					_, _ = s.RollupAllCreatorDailySummaries(ctx, time.Now())
 					cancel()
 				}
 			}

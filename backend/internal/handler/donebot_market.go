@@ -170,6 +170,19 @@ func (h *DoneBotHandler) MarketCreatorLedger(c *gin.Context) {
 	response.Success(c, gin.H{"items": items, "total": total, "page": page, "page_size": pageSize})
 }
 
+func (h *DoneBotHandler) MarketCreatorDailySummaries(c *gin.Context) {
+	svc, userID, ok := h.marketActor(c)
+	if !ok {
+		return
+	}
+	page, pageSize := response.ParsePagination(c)
+	items, total, err := svc.ListCreatorDailySummaries(c.Request.Context(), userID, page, pageSize)
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	response.Success(c, gin.H{"items": items, "total": total, "page": page, "page_size": pageSize})
+}
+
 func (h *DoneBotHandler) MarketCreatorTransfer(c *gin.Context) {
 	svc, userID, ok := h.marketActor(c)
 	if !ok {

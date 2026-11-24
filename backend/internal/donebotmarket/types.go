@@ -349,6 +349,7 @@ type RewardLedgerEntry struct {
 	ListingName  string     `json:"listing_name,omitempty"`
 	EntryType    string     `json:"entry_type"`
 	Category     string     `json:"category"`
+	Tokens       int64      `json:"tokens"`
 	BaseCost     float64    `json:"base_cost"`
 	RatePercent  float64    `json:"rate_percent"`
 	RewardAmount float64    `json:"reward_amount"`
@@ -357,6 +358,22 @@ type RewardLedgerEntry struct {
 	AvailableAt  *time.Time `json:"available_at,omitempty"`
 	Note         string     `json:"note,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
+}
+
+type DailyRewardSummary struct {
+	Date           string     `json:"date"`
+	InstalledCount int        `json:"installed_count"`
+	NewInstalls    int        `json:"new_installs"`
+	LLMTokens      int64      `json:"llm_tokens"`
+	LLMCalls       int        `json:"llm_calls"`
+	MediaCount     int        `json:"media_count"`
+	ImageCount     int        `json:"image_count"`
+	VideoCount     int        `json:"video_count"`
+	MusicCount     int        `json:"music_count"`
+	BaseCost       float64    `json:"base_cost"`
+	RewardAmount   float64    `json:"reward_amount"`
+	Status         string     `json:"status"`
+	AvailableAt    *time.Time `json:"available_at,omitempty"`
 }
 
 type WithdrawalRecord struct {

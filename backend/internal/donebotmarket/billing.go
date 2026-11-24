@@ -81,8 +81,10 @@ func (s *Service) RecordMediaAttribution(ctx context.Context, receiptID string, 
 		strings.TrimSpace(receiptID), cat, claims.InstallID, installerUserID)
 }
 
+var shanghaiTZ = time.FixedZone("Asia/Shanghai", 8*3600)
+
 // AccrueLLMUsage credits the bot author for a settled paid LLM usage event (idempotent by usageKey).
-func (s *Service) AccrueLLMUsage(ctx context.Context, installerUserID int64, usageKey string, actualCost float64, installToken string) error {
+func (s *Service) AccrueLLMUsage(ctx context.Context, installerUserID int64, usageKey string, actualCost float64, tokens int64, installToken string) error {
 	if !s.Enabled() || installerUserID <= 0 || strings.TrimSpace(usageKey) == "" || actualCost <= 0 || strings.TrimSpace(installToken) == "" {
 		return nil
 	}
@@ -98,7 +100,10 @@ func (s *Service) AccrueLLMUsage(ctx context.Context, installerUserID int64, usa
 	if err != nil || claims.InstallerUserID != installerUserID || claims.AuthorUserID == installerUserID {
 		return nil
 	}
-	return s.accrueVerifiedReward(ctx, settings, claims.InstallID, claims.ListingID, claims.AuthorUserID, installerUserID, "llm", "llm:"+strings.TrimSpace(usageKey), actualCost, rate)
+	if tokens < 0 {
+		tokens = 0
+	}
+	return s.accrueVerifiedReward(ctx, settings, claims.InstallID, claims.ListingID, claims.AuthorUserID, installerUserID, "llm", "llm:"+strings.TrimSpace(usageKey), actualCost, tokens, rate)
 }
 
 // AccrueMediaSettlement credits the bot author once an async image/video/music task settles cleanly (non-failure).
@@ -129,7 +134,7 @@ func (s *Service) AccrueMediaSettlement(ctx context.Context, receiptID string, i
 	if rate <= 0 {
 		return nil
 	}
-	return s.accrueVerifiedReward(ctx, settings, installID, listingID, authorUserID, installerUserID, category, "media:"+strings.TrimSpace(receiptID), actualCost, rate)
+	return s.accrueVerifiedReward(ctx, settings, installID, listingID, authorUserID, installerUserID, category, "media:"+strings.TrimSpace(receiptID), actualCost, 0, rate)
 }
 
 func (s *Service) accrueVerifiedReward(
@@ -138,7 +143,9 @@ func (s *Service) accrueVerifiedReward(
 	installID, listingID string,
 	authorUserID, installerUserID int64,
 	category, sourceKey string,
-	baseCost, ratePercent float64,
+	baseCost float64,
+	tokens int64,
+	ratePercent float64,
 ) error {
 	if authorUserID <= 0 || installerUserID <= 0 || authorUserID == installerUserID {
 		return nil
@@ -182,12 +189,12 @@ func (s *Service) accrueVerifiedReward(
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO donebot_creator_reward_ledger (
 			creator_user_id, listing_id, install_id, installer_user_id,
-			entry_type, category, source_key, base_cost, rate_percent,
+			entry_type, category, source_key, tokens, base_cost, rate_percent,
 			reward_amount, status, available_at, note
-		) VALUES ($1,$2,$3,$4,'accrue',$5,$6,$7,$8,$9,$10,$11,$12)
+		) VALUES ($1,$2,$3,$4,'accrue',$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		ON CONFLICT (source_key) DO NOTHING`,
 		authorUserID, listingID, installID, installerUserID,
-		category, sourceKey, round6(baseCost), ratePercent,
+		category, sourceKey, tokens, round6(baseCost), ratePercent,
 		reward, status, availableAt, fmt.Sprintf("%s 消费返现 (%.2f%%)", strings.ToUpper(category), ratePercent))
 	if err != nil {
 		return err
@@ -493,7 +500,7 @@ func (s *Service) ListCreatorLedger(ctx context.Context, userID int64, page, pag
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT r.id, COALESCE(r.listing_id::text, ''), COALESCE(l.name, ''),
-		       r.entry_type, r.category, r.base_cost, r.rate_percent, r.reward_amount, r.bonus_amount,
+		       r.entry_type, r.category, r.tokens, r.base_cost, r.rate_percent, r.reward_amount, r.bonus_amount,
 		       r.status, r.available_at, r.note, r.created_at
 		FROM donebot_creator_reward_ledger r
 		LEFT JOIN donebot_market_listings l ON l.id = r.listing_id
@@ -509,10 +516,229 @@ func (s *Service) ListCreatorLedger(ctx context.Context, userID int64, page, pag
 	for rows.Next() {
 		var e RewardLedgerEntry
 		if err := rows.Scan(&e.ID, &e.ListingID, &e.ListingName, &e.EntryType, &e.Category,
-			&e.BaseCost, &e.RatePercent, &e.RewardAmount, &e.BonusAmount, &e.Status, &e.AvailableAt, &e.Note, &e.CreatedAt); err != nil {
+			&e.Tokens, &e.BaseCost, &e.RatePercent, &e.RewardAmount, &e.BonusAmount, &e.Status, &e.AvailableAt, &e.Note, &e.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		items = append(items, e)
+	}
+	return items, total, rows.Err()
+}
+
+// RollupCreatorDailySummaries materializes one immutable summary row per closed Asia/Shanghai calendar day
+// (strictly before today) for the creator, and syncs thawed status on previously materialized rows.
+func (s *Service) RollupCreatorDailySummaries(ctx context.Context, creatorUserID int64, now time.Time) error {
+	if !s.Enabled() || creatorUserID <= 0 {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	today := now.In(shanghaiTZ).Format("2006-01-02")
+	nowUTC := now.UTC()
+
+	if _, err := s.db.ExecContext(ctx, `
+		WITH closed_ledger AS (
+			SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS summary_date,
+			       COALESCE(SUM(tokens) FILTER (WHERE category = 'llm'), 0) AS llm_tokens,
+			       COUNT(*) FILTER (WHERE category = 'llm') AS llm_calls,
+			       COUNT(*) FILTER (WHERE category IN ('image', 'video', 'music')) AS media_count,
+			       COUNT(*) FILTER (WHERE category = 'image') AS image_count,
+			       COUNT(*) FILTER (WHERE category = 'video') AS video_count,
+			       COUNT(*) FILTER (WHERE category = 'music') AS music_count,
+			       COALESCE(SUM(base_cost), 0) AS base_cost,
+			       COALESCE(SUM(reward_amount), 0) AS reward_amount,
+			       BOOL_OR(status = 'frozen') AS has_frozen,
+			       MAX(available_at) AS max_available_at
+			FROM donebot_creator_reward_ledger
+			WHERE creator_user_id = $1
+			  AND entry_type = 'accrue'
+			  AND (created_at AT TIME ZONE 'Asia/Shanghai')::date < $2::date
+			  AND NOT EXISTS (
+			      SELECT 1 FROM donebot_creator_daily_summaries ds
+			      WHERE ds.creator_user_id = $1
+			        AND ds.summary_date = (donebot_creator_reward_ledger.created_at AT TIME ZONE 'Asia/Shanghai')::date
+			  )
+			GROUP BY 1
+		),
+		closed_installs AS (
+			SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS summary_date,
+			       COUNT(*) AS new_installs
+			FROM donebot_market_installs
+			WHERE author_user_id = $1
+			  AND author_user_id <> installer_user_id
+			  AND (created_at AT TIME ZONE 'Asia/Shanghai')::date < $2::date
+			  AND NOT EXISTS (
+			      SELECT 1 FROM donebot_creator_daily_summaries ds
+			      WHERE ds.creator_user_id = $1
+			        AND ds.summary_date = (donebot_market_installs.created_at AT TIME ZONE 'Asia/Shanghai')::date
+			  )
+			GROUP BY 1
+		),
+		merged AS (
+			SELECT COALESCE(l.summary_date, i.summary_date) AS summary_date,
+			       COALESCE(i.new_installs, 0) AS new_installs,
+			       COALESCE(l.llm_tokens, 0) AS llm_tokens,
+			       COALESCE(l.llm_calls, 0) AS llm_calls,
+			       COALESCE(l.media_count, 0) AS media_count,
+			       COALESCE(l.image_count, 0) AS image_count,
+			       COALESCE(l.video_count, 0) AS video_count,
+			       COALESCE(l.music_count, 0) AS music_count,
+			       COALESCE(l.base_cost, 0) AS base_cost,
+			       COALESCE(l.reward_amount, 0) AS reward_amount,
+			       COALESCE(l.has_frozen, FALSE) AS has_frozen,
+			       l.max_available_at
+			FROM closed_ledger l
+			FULL OUTER JOIN closed_installs i ON i.summary_date = l.summary_date
+		)
+		INSERT INTO donebot_creator_daily_summaries (
+			creator_user_id, summary_date, installed_count, new_installs,
+			llm_tokens, llm_calls, media_count, image_count, video_count, music_count,
+			base_cost, reward_amount, status, available_at
+		)
+		SELECT $1,
+		       m.summary_date,
+		       (
+		           SELECT COUNT(*)
+		           FROM donebot_market_installs inst
+		           WHERE inst.author_user_id = $1
+		             AND inst.author_user_id <> inst.installer_user_id
+		             AND inst.created_at < ((m.summary_date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Asia/Shanghai')
+		       ),
+		       m.new_installs,
+		       m.llm_tokens,
+		       m.llm_calls,
+		       m.media_count,
+		       m.image_count,
+		       m.video_count,
+		       m.music_count,
+		       m.base_cost,
+		       m.reward_amount,
+		       CASE
+		           WHEN m.reward_amount <= 0 THEN 'settled'
+		           WHEN m.has_frozen AND (m.max_available_at IS NULL OR m.max_available_at > $3) THEN 'frozen'
+		           ELSE 'available'
+		       END,
+		       m.max_available_at
+		FROM merged m
+		ON CONFLICT (creator_user_id, summary_date) DO NOTHING`, creatorUserID, today, nowUTC); err != nil {
+		return err
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE donebot_creator_daily_summaries
+		SET status = 'available', updated_at = NOW()
+		WHERE creator_user_id = $1
+		  AND status = 'frozen'
+		  AND available_at IS NOT NULL
+		  AND available_at <= $2`, creatorUserID, nowUTC)
+	return err
+}
+
+// RollupAllCreatorDailySummaries rolls up closed previous-day summaries for creators with unarchived activity.
+func (s *Service) RollupAllCreatorDailySummaries(ctx context.Context, now time.Time) (int, error) {
+	if !s.Enabled() {
+		return 0, nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	today := now.In(shanghaiTZ).Format("2006-01-02")
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT creator_user_id FROM (
+			SELECT DISTINCT r.creator_user_id
+			FROM donebot_creator_reward_ledger r
+			WHERE r.entry_type = 'accrue'
+			  AND (r.created_at AT TIME ZONE 'Asia/Shanghai')::date < $1::date
+			  AND NOT EXISTS (
+			      SELECT 1 FROM donebot_creator_daily_summaries ds
+			      WHERE ds.creator_user_id = r.creator_user_id
+			        AND ds.summary_date = (r.created_at AT TIME ZONE 'Asia/Shanghai')::date
+			  )
+			UNION
+			SELECT DISTINCT i.author_user_id AS creator_user_id
+			FROM donebot_market_installs i
+			WHERE i.author_user_id <> i.installer_user_id
+			  AND (i.created_at AT TIME ZONE 'Asia/Shanghai')::date < $1::date
+			  AND NOT EXISTS (
+			      SELECT 1 FROM donebot_creator_daily_summaries ds
+			      WHERE ds.creator_user_id = i.author_user_id
+			        AND ds.summary_date = (i.created_at AT TIME ZONE 'Asia/Shanghai')::date
+			  )
+		) pending
+		LIMIT 200`, today)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	userIDs := make([]int64, 0)
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err == nil {
+			userIDs = append(userIDs, uid)
+		}
+	}
+	rolled := 0
+	for _, uid := range userIDs {
+		if err := s.RollupCreatorDailySummaries(ctx, uid, now); err == nil {
+			rolled++
+		}
+	}
+	_, _ = s.db.ExecContext(ctx, `
+		UPDATE donebot_creator_daily_summaries
+		SET status = 'available', updated_at = NOW()
+		WHERE status = 'frozen' AND available_at IS NOT NULL AND available_at <= $1`, now.UTC())
+	return rolled, nil
+}
+
+// ListCreatorDailySummaries returns closed daily creator reward summaries (one row per day, excluding today).
+func (s *Service) ListCreatorDailySummaries(ctx context.Context, userID int64, page, pageSize int) ([]DailyRewardSummary, int, error) {
+	if err := s.available(); err != nil {
+		return nil, 0, err
+	}
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 30
+	}
+	if err := s.RollupCreatorDailySummaries(ctx, userID, time.Now()); err != nil {
+		return nil, 0, err
+	}
+
+	var total int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM donebot_creator_daily_summaries WHERE creator_user_id = $1`, userID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT to_char(summary_date, 'YYYY-MM-DD'),
+		       installed_count, new_installs,
+		       llm_tokens, llm_calls,
+		       media_count, image_count, video_count, music_count,
+		       base_cost, reward_amount, status, available_at
+		FROM donebot_creator_daily_summaries
+		WHERE creator_user_id = $1
+		ORDER BY summary_date DESC
+		LIMIT $2 OFFSET $3`, userID, pageSize, (page-1)*pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := make([]DailyRewardSummary, 0)
+	for rows.Next() {
+		var item DailyRewardSummary
+		if err := rows.Scan(
+			&item.Date, &item.InstalledCount, &item.NewInstalls,
+			&item.LLMTokens, &item.LLMCalls,
+			&item.MediaCount, &item.ImageCount, &item.VideoCount, &item.MusicCount,
+			&item.BaseCost, &item.RewardAmount, &item.Status, &item.AvailableAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		item.BaseCost = round6(item.BaseCost)
+		item.RewardAmount = round6(item.RewardAmount)
+		items = append(items, item)
 	}
 	return items, total, rows.Err()
 }

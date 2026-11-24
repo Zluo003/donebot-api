@@ -179,6 +179,7 @@ func RegisterGatewayRoutes(
 		runtime.POST("/market/bots/:id/report", h.DoneBot.MarketReport)
 		runtime.GET("/market/creator/wallet", h.DoneBot.MarketCreatorWallet)
 		runtime.GET("/market/creator/ledger", h.DoneBot.MarketCreatorLedger)
+		runtime.GET("/market/creator/daily-summary", h.DoneBot.MarketCreatorDailySummaries)
 		runtime.GET("/market/creator/withdrawals", h.DoneBot.MarketCreatorWithdrawals)
 		runtime.GET("/market/spend-summary", h.DoneBot.MarketSpendSummary)
 	}

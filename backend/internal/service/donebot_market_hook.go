@@ -16,7 +16,7 @@ type doneBotBotIDKey struct{}
 
 // DoneBotMarketBillingHook decouples core usage/media billing settlement from the bot market ledger and per-bot spend tracking.
 type DoneBotMarketBillingHook interface {
-	OnLLMSettled(ctx context.Context, installerUserID int64, usageKey string, actualCost float64, installToken string, botID string)
+	OnLLMSettled(ctx context.Context, installerUserID int64, usageKey string, actualCost float64, tokens int64, installToken string, botID string)
 	OnMediaAdmitted(ctx context.Context, receiptID string, installerUserID int64, category string, installToken string, botID string)
 	OnMediaSettled(ctx context.Context, receiptID string, installerUserID int64, actualCost float64, failed bool)
 }
@@ -82,7 +82,7 @@ func CopyDoneBotMarketContext(parent, base context.Context) context.Context {
 	return out
 }
 
-func NotifyDoneBotMarketLLMSettled(ctx context.Context, installerUserID int64, usageKey string, actualCost float64) {
+func NotifyDoneBotMarketLLMSettled(ctx context.Context, installerUserID int64, usageKey string, actualCost float64, tokens int64) {
 	token := DoneBotMarketInstallToken(ctx)
 	botID := DoneBotBotID(ctx)
 	if (token == "" && botID == "") || installerUserID <= 0 || actualCost <= 0 || strings.TrimSpace(usageKey) == "" {
@@ -92,7 +92,10 @@ func NotifyDoneBotMarketLLMSettled(ctx context.Context, installerUserID int64, u
 	if hook == nil {
 		return
 	}
-	hook.OnLLMSettled(ctx, installerUserID, usageKey, actualCost, token, botID)
+	if tokens < 0 {
+		tokens = 0
+	}
+	hook.OnLLMSettled(ctx, installerUserID, usageKey, actualCost, tokens, token, botID)
 }
 
 func NotifyDoneBotMarketMediaAdmitted(ctx context.Context, receiptID string, installerUserID int64, category string) {

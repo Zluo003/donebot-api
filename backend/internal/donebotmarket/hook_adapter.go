@@ -44,14 +44,14 @@ func NewBillingHookAdapter(svc *Service) *BillingHookAdapter {
 	return &BillingHookAdapter{svc: svc}
 }
 
-func (a *BillingHookAdapter) OnLLMSettled(ctx context.Context, installerUserID int64, usageKey string, actualCost float64, installToken string, botID string) {
+func (a *BillingHookAdapter) OnLLMSettled(ctx context.Context, installerUserID int64, usageKey string, actualCost float64, tokens int64, installToken string, botID string) {
 	if a == nil || a.svc == nil {
 		return
 	}
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	if installToken != "" {
-		_ = a.svc.AccrueLLMUsage(runCtx, installerUserID, usageKey, actualCost, installToken)
+		_ = a.svc.AccrueLLMUsage(runCtx, installerUserID, usageKey, actualCost, tokens, installToken)
 	}
 	if botID != "" {
 		_ = a.svc.RecordBotLLMSpend(runCtx, installerUserID, botID, usageKey, actualCost)

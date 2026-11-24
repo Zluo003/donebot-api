@@ -95,6 +95,7 @@ func TestPostgresFullReviewLifecycle(t *testing.T) {
 		"287_donebot_bot_market.sql",
 		"288_donebot_market_review_account.sql",
 		"289_donebot_market_studio_and_spend.sql",
+		"290_donebot_market_daily_summary.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", mig))
 		if err != nil {
@@ -233,7 +234,7 @@ func TestPostgresFullReviewLifecycle(t *testing.T) {
 	if err != nil || !selfInst.SelfInstall {
 		t.Fatalf("self InstallListing: err=%v selfInst=%+v", err, selfInst)
 	}
-	if err := svc.AccrueLLMUsage(ctx, 1, "req-self-llm-1", 5000.0, selfInst.InstallToken); err != nil {
+	if err := svc.AccrueLLMUsage(ctx, 1, "req-self-llm-1", 5000.0, 12000, selfInst.InstallToken); err != nil {
 		t.Fatalf("self AccrueLLMUsage: %v", err)
 	}
 	svc.RecordMediaAttribution(ctx, "rcpt-self-img-1", 1, "image", selfInst.InstallToken)
@@ -256,7 +257,7 @@ func TestPostgresFullReviewLifecycle(t *testing.T) {
 	}
 
 	// 5. Billing: LLM + Media attribution + Thaw + Wallet + Ledger + Transfer + Withdraw + Admin process
-	if err := svc.AccrueLLMUsage(ctx, 2, "req-llm-1", 4000.0, inst.InstallToken); err != nil {
+	if err := svc.AccrueLLMUsage(ctx, 2, "req-llm-1", 4000.0, 150000, inst.InstallToken); err != nil {
 		t.Fatalf("AccrueLLMUsage: %v", err)
 	}
 	svc.RecordMediaAttribution(ctx, "rcpt-img-1", 2, "image", inst.InstallToken)
@@ -395,13 +396,32 @@ func TestPostgresFullReviewLifecycle(t *testing.T) {
 
 	// Per-bot actual spend tracking via BillingHookAdapter (studio bots share installToken + have individual bot_ids)
 	adapter := NewBillingHookAdapter(svc)
-	adapter.OnLLMSettled(ctx, 2, "studio-llm-1", 12.5, studioInstall.InstallToken, "bot-editor-1")
-	adapter.OnLLMSettled(ctx, 2, "studio-llm-1", 12.5, studioInstall.InstallToken, "bot-editor-1") // idempotent retry
-	adapter.OnLLMSettled(ctx, 2, "studio-llm-2", 4.25, "", "bot-private-self")                      // non-market personal bot!
+	adapter.OnLLMSettled(ctx, 2, "studio-llm-1", 12.5, 42000, studioInstall.InstallToken, "bot-editor-1")
+	adapter.OnLLMSettled(ctx, 2, "studio-llm-1", 12.5, 42000, studioInstall.InstallToken, "bot-editor-1") // idempotent retry
+	adapter.OnLLMSettled(ctx, 2, "studio-llm-2", 4.25, 9500, "", "bot-private-self")                      // non-market personal bot!
 	adapter.OnMediaAdmitted(ctx, "rcpt-studio-img-1", 2, "image", studioInstall.InstallToken, "bot-cover-3")
 	adapter.OnMediaSettled(ctx, "rcpt-studio-img-1", 2, 3.0, false)
 	adapter.OnMediaAdmitted(ctx, "rcpt-studio-vid-failed", 2, "video", studioInstall.InstallToken, "bot-cover-3")
 	adapter.OnMediaSettled(ctx, "rcpt-studio-vid-failed", 2, 10.0, true) // failed must not be recorded
+
+	// Same-day events must not appear in daily summary (non-realtime closed-day rollup).
+	if dailyNow, totalNow, err := svc.ListCreatorDailySummaries(ctx, 1, 1, 20); err != nil || totalNow != 0 || len(dailyNow) != 0 {
+		t.Fatalf("expected 0 closed daily summaries before day rollover, err=%v total=%d items=%+v", err, totalNow, dailyNow)
+	}
+	// Backdate installs & accruals to yesterday (Asia/Shanghai) to verify one rolled-up row per day.
+	if _, err := db.Exec(`UPDATE donebot_market_installs SET created_at = NOW() - INTERVAL '1 day'`); err != nil {
+		t.Fatalf("backdate installs: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE donebot_creator_reward_ledger SET created_at = NOW() - INTERVAL '1 day' WHERE entry_type = 'accrue'`); err != nil {
+		t.Fatalf("backdate ledger: %v", err)
+	}
+	dailyRows, dailyTotal, err := svc.ListCreatorDailySummaries(ctx, 1, 1, 20)
+	if err != nil || dailyTotal != 1 || len(dailyRows) != 1 {
+		t.Fatalf("ListCreatorDailySummaries after rollover: err=%v total=%d items=%+v", err, dailyTotal, dailyRows)
+	}
+	if dailyRows[0].InstalledCount != 2 || dailyRows[0].LLMTokens != 192000 || dailyRows[0].MediaCount != 2 || dailyRows[0].ImageCount != 2 || dailyRows[0].RewardAmount <= 0 {
+		t.Fatalf("unexpected rolled-up daily summary row: %+v", dailyRows[0])
+	}
 
 	spend, err := svc.GetUserBotSpendSummary(ctx, 2, 30)
 	if err != nil {
