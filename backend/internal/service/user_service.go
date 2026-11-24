@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/nickname"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"image"
 	"image/color"
@@ -36,6 +37,9 @@ var (
 	ErrAvatarInvalid            = infraerrors.BadRequest("AVATAR_INVALID", "avatar must be a valid image data URL or http(s) URL")
 	ErrAvatarTooLarge           = infraerrors.BadRequest("AVATAR_TOO_LARGE", "avatar image must be 100KB or smaller")
 	ErrAvatarNotImage           = infraerrors.BadRequest("AVATAR_NOT_IMAGE", "avatar content must be an image")
+	ErrNicknameTooLong          = infraerrors.BadRequest("NICKNAME_TOO_LONG", "昵称最多 64 个字符。")
+	ErrNicknameInvalidChars     = infraerrors.BadRequest("NICKNAME_INVALID_CHARS", "昵称不能包含控制字符或换行。")
+	ErrNicknameForbidden        = infraerrors.BadRequest("NICKNAME_FORBIDDEN", "昵称包含受限制或易产生误解的词汇（如官方、管理员、客服、系统等），请更换其他昵称。")
 	ErrIdentityProviderInvalid  = infraerrors.BadRequest("IDENTITY_PROVIDER_INVALID", "identity provider is invalid")
 	ErrIdentityRedirectInvalid  = infraerrors.BadRequest("IDENTITY_REDIRECT_INVALID", "identity redirect path is invalid")
 	ErrIdentityUnbindLastMethod = infraerrors.Conflict(
@@ -520,7 +524,18 @@ func (s *UserService) updateProfile(ctx context.Context, userID int64, req Updat
 	}
 
 	if req.Username != nil {
-		user.Username = *req.Username
+		trimmedUsername := strings.TrimSpace(*req.Username)
+		if err := nickname.Validate(trimmedUsername); err != nil {
+			switch err {
+			case nickname.ErrTooLong:
+				return nil, oldConcurrency, ErrNicknameTooLong
+			case nickname.ErrControl:
+				return nil, oldConcurrency, ErrNicknameInvalidChars
+			default:
+				return nil, oldConcurrency, ErrNicknameForbidden
+			}
+		}
+		user.Username = trimmedUsername
 		fields.Username = true
 	}
 

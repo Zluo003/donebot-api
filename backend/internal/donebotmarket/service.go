@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/nickname"
 	"github.com/google/uuid"
 )
 
@@ -419,6 +420,30 @@ func (s *Service) PublishBot(ctx context.Context, authorUserID int64, in Publish
 		return nil, infraerrors.Forbidden("BOT_MARKET_DISABLED", "Bot 广场暂未开放。")
 	}
 
+	var authorUsername, authorEmail, authorRole string
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(username, ''), COALESCE(email, ''), COALESCE(role, 'user') FROM users WHERE id = $1`, authorUserID).Scan(&authorUsername, &authorEmail, &authorRole); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, infraerrors.NotFound("MARKET_AUTHOR_NOT_FOUND", "当前账号不存在。")
+		}
+		return nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(authorRole), "admin") {
+		trimmedAuthor := strings.TrimSpace(authorUsername)
+		if trimmedAuthor != "" {
+			if nickname.Validate(trimmedAuthor) != nil {
+				return nil, infraerrors.BadRequest("MARKET_AUTHOR_NICKNAME_FORBIDDEN", "当前账号昵称包含受限制或易产生误解的词汇，请先在个人资料中修改昵称后再发布到 Bot 广场。")
+			}
+		} else {
+			emailLocal := authorEmail
+			if at := strings.IndexByte(emailLocal, '@'); at >= 0 {
+				emailLocal = emailLocal[:at]
+			}
+			if strings.TrimSpace(emailLocal) != "" && nickname.Validate(emailLocal) != nil {
+				return nil, infraerrors.BadRequest("MARKET_AUTHOR_NICKNAME_REQUIRED", "当前邮箱前缀包含受限制词汇，请先在个人资料中设置合规昵称后再发布到 Bot 广场。")
+			}
+		}
+	}
+
 	name, err := cleanLine(in.Name, 80, "MARKET_NAME_INVALID", "请填写 Bot 名称（最多 80 字）。")
 	if err != nil {
 		return nil, err
@@ -752,7 +777,7 @@ func (s *Service) ListMarketplace(ctx context.Context, filter MarketplaceFilter)
 	listArgs := append(args, filter.PageSize, offset)
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT l.id, l.listing_type, l.bot_count, l.bots_summary_json, l.eval_verified, l.eval_samples_json, l.cost_tier,
-		       l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(ua.url, ''),
+		       l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(u.role, 'user'), COALESCE(ua.url, ''),
 		       l.category_id, c.name, c.slug, l.source_bot_id, l.name, l.tagline, l.description,
 		       l.tags_json, l.sample_prompts_json, l.appearance_json,
 		       l.has_soul, l.skill_count, l.skill_names_json,
@@ -782,15 +807,27 @@ func (s *Service) ListMarketplace(ctx context.Context, filter MarketplaceFilter)
 	return items, total, rows.Err()
 }
 
+func safePublicAuthorName(userID int64, role, rawName string) string {
+	trimmed := strings.TrimSpace(rawName)
+	if strings.EqualFold(strings.TrimSpace(role), "admin") {
+		return trimmed
+	}
+	if trimmed == "" || nickname.Validate(trimmed) != nil {
+		return fmt.Sprintf("创作者 #%d", userID)
+	}
+	return trimmed
+}
+
 func scanPublicListing(scanner interface{ Scan(...any) error }) (ListingSummary, error) {
 	var (
 		item                                                    ListingSummary
+		authorRole                                              string
 		botsSummaryRaw, evalSamplesRaw                          []byte
 		tagsRaw, promptsRaw, appRaw, snRaw                      []byte
 	)
 	err := scanner.Scan(
 		&item.ID, &item.ListingType, &item.BotCount, &botsSummaryRaw, &item.EvalVerified, &evalSamplesRaw, &item.CostTier,
-		&item.AuthorUserID, &item.AuthorName, &item.AuthorAvatarURL,
+		&item.AuthorUserID, &item.AuthorName, &authorRole, &item.AuthorAvatarURL,
 		&item.CategoryID, &item.CategoryName, &item.CategorySlug, &item.SourceBotID,
 		&item.Name, &item.Tagline, &item.Description,
 		&tagsRaw, &promptsRaw, &appRaw,
@@ -802,6 +839,7 @@ func scanPublicListing(scanner interface{ Scan(...any) error }) (ListingSummary,
 	if err != nil {
 		return item, err
 	}
+	item.AuthorName = safePublicAuthorName(item.AuthorUserID, authorRole, item.AuthorName)
 	_ = json.Unmarshal(botsSummaryRaw, &item.BotsSummary)
 	_ = json.Unmarshal(evalSamplesRaw, &item.EvalSamples)
 	_ = json.Unmarshal(tagsRaw, &item.Tags)
@@ -844,12 +882,13 @@ func (s *Service) GetListingDetail(ctx context.Context, listingID string, viewer
 	}
 	var (
 		item                               ListingSummary
+		authorRole                         string
 		botsSummaryRaw, evalSamplesRaw     []byte
 		tagsRaw, promptsRaw, appRaw, snRaw []byte
 	)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT l.id, l.listing_type, l.bot_count, l.bots_summary_json, l.eval_verified, l.eval_samples_json, l.cost_tier,
-		       l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(ua.url, ''),
+		       l.author_user_id, COALESCE(NULLIF(u.username, ''), SPLIT_PART(u.email, '@', 1)), COALESCE(u.role, 'user'), COALESCE(ua.url, ''),
 		       l.category_id, c.name, c.slug, l.source_bot_id, l.name, l.tagline, l.description,
 		       l.tags_json, l.sample_prompts_json, l.appearance_json,
 		       l.has_soul, l.skill_count, l.skill_names_json,
@@ -863,7 +902,7 @@ func (s *Service) GetListingDetail(ctx context.Context, listingID string, viewer
 		LEFT JOIN user_avatars ua ON ua.user_id = u.id
 		WHERE l.id = $1`, listingID).Scan(
 		&item.ID, &item.ListingType, &item.BotCount, &botsSummaryRaw, &item.EvalVerified, &evalSamplesRaw, &item.CostTier,
-		&item.AuthorUserID, &item.AuthorName, &item.AuthorAvatarURL,
+		&item.AuthorUserID, &item.AuthorName, &authorRole, &item.AuthorAvatarURL,
 		&item.CategoryID, &item.CategoryName, &item.CategorySlug, &item.SourceBotID,
 		&item.Name, &item.Tagline, &item.Description,
 		&tagsRaw, &promptsRaw, &appRaw,
@@ -879,6 +918,7 @@ func (s *Service) GetListingDetail(ctx context.Context, listingID string, viewer
 	if err != nil {
 		return nil, err
 	}
+	item.AuthorName = safePublicAuthorName(item.AuthorUserID, authorRole, item.AuthorName)
 	canSeePrivate := isAdmin || (viewerUserID > 0 && viewerUserID == item.AuthorUserID)
 	if item.Status != "published" && !canSeePrivate {
 		return nil, infraerrors.NotFound("MARKET_LISTING_NOT_FOUND", "Bot 不存在或已下架。")

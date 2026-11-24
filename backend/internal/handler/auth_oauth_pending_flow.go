@@ -19,6 +19,7 @@ import (
 	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/nickname"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/oauth"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -493,11 +494,7 @@ func mergeOAuthMetadata(base map[string]any, overlay map[string]any) map[string]
 }
 
 func normalizeAdoptedOAuthDisplayName(value string) string {
-	value = strings.TrimSpace(value)
-	if len([]rune(value)) > 100 {
-		value = string([]rune(value)[:100])
-	}
-	return value
+	return nickname.SanitizeOAuthDisplayName(value)
 }
 
 func (h *AuthHandler) entClient() *dbent.Client {

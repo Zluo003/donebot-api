@@ -914,3 +914,26 @@ func TestGetProfile_HydratesAvatarFromRepository(t *testing.T) {
 	require.Equal(t, "https://cdn.example.com/profile.png", user.AvatarURL)
 	require.Equal(t, "remote_url", user.AvatarSource)
 }
+
+func TestUpdateProfile_RejectsForbiddenNicknames(t *testing.T) {
+	for _, bad := range []string{"root", "Admin", "administrator", "管理员", "在线客服", "DoneBot官方", "官方认证", "a-d-m-i-n", "D0neB0t"} {
+		repo := &mockUserRepo{
+			getByIDUser: &User{ID: 20, Email: "normal@example.com", Username: "老罗"},
+		}
+		svc := NewUserService(repo, nil, nil, nil)
+		candidate := bad
+		_, err := svc.UpdateProfile(context.Background(), 20, UpdateProfileRequest{Username: &candidate})
+		require.ErrorIs(t, err, ErrNicknameForbidden, "nickname %q should be rejected", bad)
+		require.Equal(t, 0, repo.updateCalls)
+	}
+
+	repo := &mockUserRepo{
+		getByIDUser: &User{ID: 21, Email: "normal@example.com", Username: "old"},
+	}
+	svc := NewUserService(repo, nil, nil, nil)
+	okName := "  阿泽  "
+	updated, err := svc.UpdateProfile(context.Background(), 21, UpdateProfileRequest{Username: &okName})
+	require.NoError(t, err)
+	require.Equal(t, "阿泽", updated.Username)
+	require.Equal(t, 1, repo.updateCalls)
+}

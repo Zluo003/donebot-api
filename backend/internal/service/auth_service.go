@@ -18,6 +18,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/nickname"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -588,10 +589,7 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 		return "", nil, infraerrors.BadRequest("INVALID_EMAIL", "invalid email")
 	}
 
-	username = strings.TrimSpace(username)
-	if len([]rune(username)) > 100 {
-		username = string([]rune(username)[:100])
-	}
+	username = nickname.SanitizeOAuthDisplayName(username)
 
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
@@ -716,10 +714,7 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 		return nil, nil, infraerrors.BadRequest("INVALID_EMAIL", "invalid email")
 	}
 
-	username = strings.TrimSpace(username)
-	if len([]rune(username)) > 100 {
-		username = string([]rune(username)[:100])
-	}
+	username = nickname.SanitizeOAuthDisplayName(username)
 
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	created := false

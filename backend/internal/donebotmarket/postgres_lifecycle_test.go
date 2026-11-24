@@ -46,6 +46,7 @@ func TestPostgresFullReviewLifecycle(t *testing.T) {
 			id BIGSERIAL PRIMARY KEY,
 			email VARCHAR(255) NOT NULL DEFAULT '',
 			username VARCHAR(120) NOT NULL DEFAULT '',
+			role VARCHAR(20) NOT NULL DEFAULT 'user',
 			balance NUMERIC(20, 6) NOT NULL DEFAULT 0,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			deleted_at TIMESTAMPTZ
