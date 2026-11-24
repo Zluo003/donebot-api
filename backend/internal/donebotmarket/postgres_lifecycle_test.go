@@ -171,6 +171,14 @@ func TestPostgresFullReviewLifecycle(t *testing.T) {
 	if after.Status != "published" || after.LatestRelease.ReviewStatus != "approved" {
 		t.Fatalf("expected published/approved, got status=%s review_status=%s", after.Status, after.LatestRelease.ReviewStatus)
 	}
+	// Non-admin user view must hide internal review notes/reports for approved published listings.
+	if after.LastReviewNote != "" || after.LatestRelease.ReviewNote != "" || after.LatestRelease.AIReport != nil {
+		t.Fatalf("expected published listing review note/report hidden from user view, got note=%q relNote=%q report=%+v", after.LastReviewNote, after.LatestRelease.ReviewNote, after.LatestRelease.AIReport)
+	}
+	adminView, err := svc.GetListingDetail(ctx, published.ID, 1, true)
+	if err != nil || adminView.LastReviewNote == "" || adminView.LatestRelease.AIReport == nil {
+		t.Fatalf("expected admin view to retain review note and AI report, err=%v view=%+v", err, adminView)
+	}
 
 	// 3. Stale 'reviewing' recovery test + manual_review path
 	svc.SetReviewCaller(func(_ context.Context, _ *Settings, _, _ string) (string, string, error) {
@@ -214,11 +222,28 @@ func TestPostgresFullReviewLifecycle(t *testing.T) {
 	if mine, err := svc.ListMyListings(ctx, 1); err != nil || len(mine) != 2 {
 		t.Fatalf("ListMyListings: err=%v len=%d", err, len(mine))
 	}
-	if err := svc.SetAuthorListingVisibility(ctx, 1, published.ID, false); err != nil {
-		t.Fatalf("unlist: %v", err)
+	// Approved/published listing cannot be unlisted by author.
+	if err := svc.SetAuthorListingVisibility(ctx, 1, published.ID, false); err == nil {
+		t.Fatalf("expected author unlist of approved listing to be forbidden")
 	}
-	if err := svc.SetAuthorListingVisibility(ctx, 1, published.ID, true); err != nil {
-		t.Fatalf("relist: %v", err)
+
+	// Self-install by author must succeed for local use, mark SelfInstall=true, not increment install_count, and accrue zero rebates.
+	selfInst, err := svc.InstallListing(ctx, 1, published.ID, "inst-author-self")
+	if err != nil || !selfInst.SelfInstall {
+		t.Fatalf("self InstallListing: err=%v selfInst=%+v", err, selfInst)
+	}
+	if err := svc.AccrueLLMUsage(ctx, 1, "req-self-llm-1", 5000.0, selfInst.InstallToken); err != nil {
+		t.Fatalf("self AccrueLLMUsage: %v", err)
+	}
+	svc.RecordMediaAttribution(ctx, "rcpt-self-img-1", 1, "image", selfInst.InstallToken)
+	if err := svc.AccrueMediaSettlement(ctx, "rcpt-self-img-1", 1, 200.0, false); err != nil {
+		t.Fatalf("self AccrueMediaSettlement: %v", err)
+	}
+	if w, err := svc.GetCreatorWallet(ctx, 1); err != nil || w.TotalEarned != 0 || w.FrozenAmount != 0 || w.AvailableAmount != 0 {
+		t.Fatalf("expected zero creator reward from self-install, err=%v wallet=%+v", err, w)
+	}
+	if detailAfterSelf, err := svc.GetListingDetail(ctx, published.ID, 1, false); err != nil || detailAfterSelf.InstallCount != 0 {
+		t.Fatalf("expected self-install not to increment install_count, err=%v count=%d", err, detailAfterSelf.InstallCount)
 	}
 
 	inst, err := svc.InstallListing(ctx, 2, published.ID, "inst-device-1")
@@ -339,7 +364,11 @@ func TestPostgresFullReviewLifecycle(t *testing.T) {
 			},
 		},
 		SoulText: "本工作室包含选题总监、主笔写手与封面视觉三位 AI 员工，按需求依次完成选题、成稿与配图交付，不进行无关循环调用。",
-		Package:  json.RawMessage(`{"version":1,"studio":true,"package":{"agents":[{"name":"选题总监"},{"name":"主笔写手"},{"name":"封面视觉"}]}}`),
+		Package: json.RawMessage(`{"version":2,"studio":true,"package":{"team":{"name":"自媒体爆款编辑部","brief":"仅围绕用户给定方向输出原创内容，不擅自触发高频任务。"},"agents":[
+			{"key":"topic","name":"选题总监","soul":"你是自媒体爆款编辑部选题总监，负责调研热点方向、拆解受众痛点并输出清晰选题大纲交由主笔撰写。"},
+			{"key":"writer","name":"主笔写手","soul":"你是自媒体爆款编辑部主笔写手，根据选题总监的大纲撰写逻辑严谨、可读性强的中文图文成稿并标注配图建议。"},
+			{"key":"visual","name":"封面视觉","soul":"你是自媒体爆款编辑部封面视觉设计师，根据主笔成稿提炼视觉焦点与配色方案，待老板确认后再出图。"}
+		]}}`),
 	})
 	if err != nil {
 		t.Fatalf("PublishBot studio failed: %v", err)

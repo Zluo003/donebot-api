@@ -590,11 +590,11 @@ func (s *Service) PublishBot(ctx context.Context, authorUserID int64, in Publish
 		appearance = json.RawMessage(`{}`)
 	}
 
-	// Synchronous hard-rule pre-check: fast immediate rejection for secrets/obvious attacks/empty SOUL.
+	// Synchronous hard-rule pre-check: fast immediate rejection for secrets/obvious attacks/empty SOUL/department hazards.
 	if hardReject := RunHardRuleCheck(ReviewInput{
 		ListingType: listingType, BotsSummary: botsSummary,
 		Name: name, Tagline: tagline, Description: desc, CategoryName: catName,
-		SamplePrompts: prompts, SoulText: soulText, Skills: skills,
+		SamplePrompts: prompts, SoulText: soulText, Skills: skills, PackageJSON: in.Package,
 	}); hardReject != nil {
 		return nil, infraerrors.BadRequest("BOT_REVIEW_REJECTED", strings.Join(hardReject.RejectionReasons, "；"))
 	}
@@ -914,6 +914,8 @@ func (s *Service) GetListingDetail(ctx context.Context, listingID string, viewer
 		item.TotalCreatorReward = 0
 		item.ReportCount = 0
 		item.LastReviewNote = ""
+	} else if !isAdmin && item.Status == "published" {
+		item.LastReviewNote = ""
 	}
 
 	releaseID := item.PublishedReleaseID
@@ -927,6 +929,10 @@ func (s *Service) GetListingDetail(ctx context.Context, listingID string, viewer
 			detail.SoulPreview = truncateSnippet(rel.SoulText, 1200)
 			detail.Skills = rel.Skills
 			if canSeePrivate {
+				if !isAdmin && item.Status == "published" && rel.ReviewStatus == "approved" {
+					rel.ReviewNote = ""
+					rel.AIReport = nil
+				}
 				detail.LatestRelease = rel
 			}
 		}
@@ -1023,14 +1029,16 @@ func (s *Service) SetAuthorListingVisibility(ctx context.Context, authorUserID i
 	if status == "suspended" {
 		return infraerrors.Forbidden("MARKET_SUSPENDED", "该 Bot 已被管理员封禁。")
 	}
-	nextStatus := "unlisted"
-	if listed {
-		if !publishedRelease.Valid || publishedRelease.String == "" {
-			return infraerrors.BadRequest("MARKET_NOT_APPROVED", "该 Bot 尚未通过审核，无法上架。")
+	if !listed {
+		if status == "published" || (publishedRelease.Valid && publishedRelease.String != "") {
+			return infraerrors.Forbidden("MARKET_UNLIST_FORBIDDEN", "已审核通过并上架的 Bot 或部门不支持自助下架，如需处理请联系管理员。")
 		}
-		nextStatus = "published"
+		return infraerrors.BadRequest("MARKET_NOT_PUBLISHED", "当前条目尚未上架，无需下架。")
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE donebot_market_listings SET status = $1, updated_at = NOW() WHERE id = $2`, nextStatus, listingID)
+	if !publishedRelease.Valid || publishedRelease.String == "" {
+		return infraerrors.BadRequest("MARKET_NOT_APPROVED", "该 Bot 尚未通过审核，无法上架。")
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE donebot_market_listings SET status = 'published', updated_at = NOW() WHERE id = $1`, listingID)
 	return err
 }
 
@@ -1080,6 +1088,12 @@ func (s *Service) InstallListing(ctx context.Context, installerUserID int64, lis
 
 	installID := uuid.NewString()
 	expiresAt := time.Now().UTC().Add(time.Duration(settings.AttributionDays) * 24 * time.Hour)
+	selfInstall := authorUserID == installerUserID
+	installStatus := "active"
+	if selfInstall {
+		// Self-installs never accrue creator rebates or inflate marketplace install counts.
+		installStatus = "revoked"
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1090,12 +1104,14 @@ func (s *Service) InstallListing(ctx context.Context, installerUserID int64, lis
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO donebot_market_installs (
 			id, listing_id, release_id, release_version, author_user_id, installer_user_id, installation_id, status, expires_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8)`,
-		installID, listingID, releaseID, publishedVersion, authorUserID, installerUserID, strings.TrimSpace(installationID), expiresAt); err != nil {
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		installID, listingID, releaseID, publishedVersion, authorUserID, installerUserID, strings.TrimSpace(installationID), installStatus, expiresAt); err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE donebot_market_listings SET install_count = install_count + 1, updated_at = NOW() WHERE id = $1`, listingID); err != nil {
-		return nil, err
+	if !selfInstall {
+		if _, err := tx.ExecContext(ctx, `UPDATE donebot_market_listings SET install_count = install_count + 1, updated_at = NOW() WHERE id = $1`, listingID); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -1135,6 +1151,7 @@ func (s *Service) InstallListing(ctx context.Context, installerUserID int64, lis
 		Version:       publishedVersion,
 		Name:          name,
 		InstallToken:  token,
+		SelfInstall:   selfInstall,
 		ExpiresAt:     expiresAt,
 		Package:       rel.Package,
 		Skills:        rel.Skills,

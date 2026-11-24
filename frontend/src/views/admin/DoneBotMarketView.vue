@@ -343,7 +343,7 @@
           <p class="mt-1.5 text-xs text-gray-600 dark:text-gray-300">{{ activeDetail.latest_release.ai_report.summary }}</p>
           <div v-if="activeDetail.latest_release.ai_report.dimensions" class="mt-2 grid gap-2 sm:grid-cols-2">
             <div v-for="(dim, key) in activeDetail.latest_release.ai_report.dimensions" :key="key" class="rounded bg-white p-2 text-xs dark:bg-dark-800">
-              <span :class="dim.passed ? 'text-emerald-600' : 'text-red-600'">{{ dim.passed ? '✓' : '✗' }} {{ key }} ({{ dim.score }})</span>
+              <span :class="dim.passed ? 'text-emerald-600' : 'text-red-600'">{{ dim.passed ? '✓' : '✗' }} {{ reviewDimensionLabel(String(key)) }} ({{ dim.score }})</span>
               <p class="mt-0.5 text-gray-500">{{ dim.finding }}</p>
             </div>
           </div>
@@ -436,6 +436,19 @@ const tabs = [
   { id: 'reports', label: '用户举报' },
   { id: 'settings', label: '分润与 AI 审核配置' },
 ] as const
+
+const REVIEW_DIMENSION_LABELS: Record<string, string> = {
+  token_farming: '刷量与算力消费',
+  malicious_loop: '恶意循环与跨 Bot 乒乓',
+  sensitive_data_exfil: '敏感文件与外泄风险',
+  prompt_injection: '越权与指令注入',
+  routine_and_automation_safety: '例行任务与自动化安全',
+  org_architecture_coherence: '组织分工与协作合理性',
+  content_compliance: '内容合规与实用价值',
+}
+function reviewDimensionLabel(key: string): string {
+  return REVIEW_DIMENSION_LABELS[key] || key
+}
 
 const tab = ref<(typeof tabs)[number]['id']>('listings')
 const busy = ref(false)

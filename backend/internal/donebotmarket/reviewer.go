@@ -28,6 +28,7 @@ type ReviewInput struct {
 	SamplePrompts []string           `json:"sample_prompts"`
 	SoulText      string             `json:"soul_text"`
 	Skills        []SkillDocument    `json:"skills"`
+	PackageJSON   json.RawMessage    `json:"-"`
 }
 
 // ReviewCaller allows tests or custom hosts to override the LLM call used by the Review Agent.
@@ -65,7 +66,15 @@ func RunHardRuleCheck(in ReviewInput) *AIReviewReport {
 		suggestions = append(suggestions, "请完善 SOUL.md，写明角色定位、工作流程、输出格式和质量要求。")
 	}
 
-	corpus := buildReviewCorpus(in)
+	dept := ExtractDepartmentReviewContext(in.PackageJSON, in.ListingType)
+	if dept != nil {
+		dReasons, dSuggestions, dFlagged := runDepartmentHardRules(in, dept)
+		reasons = append(reasons, dReasons...)
+		suggestions = append(suggestions, dSuggestions...)
+		flagged = append(flagged, dFlagged...)
+	}
+
+	corpus := buildReviewCorpus(in, dept)
 	for _, re := range secretPatterns {
 		if m := re.FindString(corpus); m != "" {
 			reasons = append(reasons, "检测到疑似密钥、令牌或私钥内容，禁止在公开 Bot 模板中携带凭据。")
@@ -106,7 +115,7 @@ func RunHardRuleCheck(in ReviewInput) *AIReviewReport {
 	}
 }
 
-func buildReviewCorpus(in ReviewInput) string {
+func buildReviewCorpus(in ReviewInput, dept *DepartmentReviewContext) string {
 	var b strings.Builder
 	b.WriteString(in.Name)
 	b.WriteByte('\n')
@@ -129,6 +138,7 @@ func buildReviewCorpus(in ReviewInput) string {
 		b.WriteByte('\n')
 		b.WriteString(s.Instructions)
 	}
+	appendDepartmentCorpus(&b, dept)
 	return b.String()
 }
 
@@ -1064,7 +1074,14 @@ func (s *Service) RunReviewAgent(ctx context.Context, in ReviewInput) *AIReviewR
 	if caller == nil {
 		caller = s.callDefaultReviewModel
 	}
-	raw, modelUsed, callErr := caller(ctx, settings, reviewAgentSystemPrompt, buildReviewAgentUserPrompt(in))
+	dept := ExtractDepartmentReviewContext(in.PackageJSON, in.ListingType)
+	sysPrompt := reviewAgentSystemPrompt
+	userPrompt := buildReviewAgentUserPrompt(in)
+	if dept != nil && dept.HasDepartmentStructure {
+		sysPrompt = departmentReviewAgentSystemPrompt
+		userPrompt = buildDepartmentReviewAgentUserPrompt(in, dept)
+	}
+	raw, modelUsed, callErr := caller(ctx, settings, sysPrompt, userPrompt)
 	if callErr != nil {
 		return &AIReviewReport{
 			Verdict:          "manual_review",
@@ -1085,6 +1102,7 @@ func (s *Service) RunReviewAgent(ctx context.Context, in ReviewInput) *AIReviewR
 			CheckedAt:        time.Now().UTC().Format(time.RFC3339),
 		}
 	}
+	applyDepartmentSafetyClamps(report, dept)
 	return report
 }
 
@@ -1149,6 +1167,7 @@ func (s *Service) processOnePendingRelease(ctx context.Context) bool {
 		version        int
 		soulText       string
 		skillsRaw      []byte
+		packageRaw     []byte
 		name           string
 		tagline        string
 		description    string
@@ -1156,7 +1175,7 @@ func (s *Service) processOnePendingRelease(ctx context.Context) bool {
 		categoryName   string
 	)
 	err = tx.QueryRowContext(ctx, `
-		SELECT r.id, r.listing_id, l.listing_type, l.bots_summary_json, r.version, r.soul_text, r.skills_json,
+		SELECT r.id, r.listing_id, l.listing_type, l.bots_summary_json, r.version, r.soul_text, r.skills_json, r.package_json,
 		       l.name, l.tagline, l.description, l.sample_prompts_json, c.name
 		FROM donebot_market_releases r
 		JOIN donebot_market_listings l ON l.id = r.listing_id
@@ -1164,7 +1183,7 @@ func (s *Service) processOnePendingRelease(ctx context.Context) bool {
 		WHERE r.review_status = 'pending'
 		ORDER BY r.created_at ASC
 		FOR UPDATE OF r SKIP LOCKED
-		LIMIT 1`).Scan(&releaseID, &listingID, &listingType, &botsSummaryRaw, &version, &soulText, &skillsRaw,
+		LIMIT 1`).Scan(&releaseID, &listingID, &listingType, &botsSummaryRaw, &version, &soulText, &skillsRaw, &packageRaw,
 		&name, &tagline, &description, &promptsRaw, &categoryName)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -1203,6 +1222,7 @@ func (s *Service) processOnePendingRelease(ctx context.Context) bool {
 		SamplePrompts: prompts,
 		SoulText:      soulText,
 		Skills:        skills,
+		PackageJSON:   packageRaw,
 	})
 	if err := s.applyAIReviewOutcome(ctx, listingID, releaseID, version, report); err != nil {
 		log.Printf("[donebotmarket] applyAIReviewOutcome failed (listing=%s release=%s verdict=%s): %v", listingID, releaseID, report.Verdict, err)

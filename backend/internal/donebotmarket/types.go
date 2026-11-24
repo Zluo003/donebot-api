@@ -270,6 +270,7 @@ type InstallResult struct {
 	Version       int                `json:"version"`
 	Name          string             `json:"name"`
 	InstallToken  string             `json:"install_token"`
+	SelfInstall   bool               `json:"self_install,omitempty"`
 	ExpiresAt     time.Time          `json:"expires_at"`
 	Package       json.RawMessage    `json:"package"`
 	Skills        []SkillDocument    `json:"skills"`

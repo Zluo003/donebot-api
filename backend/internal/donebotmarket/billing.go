@@ -154,13 +154,14 @@ func (s *Service) accrueVerifiedReward(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Verify active, unexpired install and published listing under DB authority.
+	// Verify active, unexpired, non-self install and published listing under DB authority.
 	var valid int
 	err = tx.QueryRowContext(ctx, `
 		SELECT 1
 		FROM donebot_market_installs i
 		JOIN donebot_market_listings l ON l.id = i.listing_id
 		WHERE i.id = $1 AND i.listing_id = $2 AND i.author_user_id = $3 AND i.installer_user_id = $4
+		  AND i.author_user_id <> i.installer_user_id
 		  AND i.status = 'active' AND i.expires_at > NOW()
 		  AND l.status = 'published'`,
 		installID, listingID, authorUserID, installerUserID).Scan(&valid)
