@@ -358,11 +358,29 @@
         </details>
 
         <details v-if="activeDetail.skills?.length" class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
-          <summary class="cursor-pointer text-sm font-medium">内置 SKILL.md（{{ activeDetail.skills.length }} 个）</summary>
+          <summary class="cursor-pointer text-sm font-medium">内置 Skill（{{ activeDetail.skills.length }} 个）</summary>
           <div class="mt-2 space-y-3">
             <div v-for="sk in activeDetail.skills" :key="sk.name" class="rounded bg-gray-50 p-2.5 dark:bg-dark-900">
-              <div class="text-xs font-semibold">{{ sk.name }} <span class="font-normal text-gray-500">{{ sk.description }}</span></div>
+              <div class="text-xs font-semibold">
+                {{ sk.name }}
+                <span class="font-normal text-gray-500">{{ sk.description }}</span>
+                <span v-if="sk.files?.length" class="ml-1.5 rounded bg-blue-100 px-1.5 py-0.5 text-[11px] font-normal text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                  +{{ sk.files.length }} 个附属文件
+                </span>
+              </div>
               <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">{{ sk.instructions }}</pre>
+              <div v-if="sk.files?.length" class="mt-2 space-y-1.5 border-t border-gray-200 pt-2 dark:border-dark-700">
+                <details
+                  v-for="file in sk.files"
+                  :key="file.path"
+                  class="rounded border border-gray-200 bg-white px-2 py-1.5 dark:border-dark-700 dark:bg-dark-800"
+                >
+                  <summary class="cursor-pointer font-mono text-[11px] font-medium text-gray-700 dark:text-gray-200">
+                    {{ file.path }}
+                  </summary>
+                  <pre class="mt-1.5 max-h-44 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] text-gray-600 dark:text-gray-300">{{ file.content }}</pre>
+                </details>
+              </div>
             </div>
           </div>
         </details>

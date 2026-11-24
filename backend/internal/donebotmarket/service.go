@@ -581,7 +581,11 @@ func (s *Service) PublishBot(ctx context.Context, authorUserID int64, in Publish
 		if sErr != nil {
 			return nil, sErr
 		}
-		skills = append(skills, SkillDocument{Name: sn, Description: sd, Instructions: si})
+		sf, sErr := cleanSkillSupportFiles(sn, sk.Files)
+		if sErr != nil {
+			return nil, sErr
+		}
+		skills = append(skills, SkillDocument{Name: sn, Description: sd, Instructions: si, Files: sf})
 		skillNames = append(skillNames, sn)
 	}
 

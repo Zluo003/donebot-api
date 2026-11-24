@@ -85,10 +85,16 @@ export interface MarketCategory {
   listing_count?: number
 }
 
+export interface MarketSkillSupportFile {
+  path: string
+  content: string
+}
+
 export interface MarketSkillDocument {
   name: string
   description?: string
   instructions: string
+  files?: MarketSkillSupportFile[]
 }
 
 export interface AIReviewDimension {

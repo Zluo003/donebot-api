@@ -2,6 +2,7 @@ package donebotmarket
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 	"unicode"
@@ -21,8 +22,11 @@ const (
 	MaxEvalSamples        = 5
 	MinSoulRunes          = 20
 	MaxSoulRunes          = 100000
-	MaxSkillDescRunes     = 2000      // DoneBot SKILL.md DESCRIPTION_MAX=1024 with safety headroom
-	MaxSkillInstrRunes    = 256 * 1024 // Matches DoneBot SKILL_FILE_MAX_BYTES=256 KiB
+	MaxSkillDescRunes       = 2000       // DoneBot SKILL.md DESCRIPTION_MAX=1024 with safety headroom
+	MaxSkillInstrRunes      = 256 * 1024 // Matches DoneBot SKILL_FILE_MAX_BYTES=256 KiB
+	MaxSupportFilesPerSkill = 30         // Matches DoneBot SKILL_FILE_LIMITS.files
+	MaxSupportFileBytes     = 128 * 1024 // Matches DoneBot SKILL_FILE_LIMITS.fileBytes
+	MaxSupportBytesPerSkill = 512 * 1024 // Matches DoneBot SKILL_FILE_LIMITS.bytes
 	MinTransferAmount     = 1.0
 	InstallTokenHeader    = "X-DoneBot-Market-Install"
 	BotIDHeader           = "X-DoneBot-Bot-Id"
@@ -129,10 +133,16 @@ type SaveCategoryInput struct {
 	Enabled     *bool  `json:"enabled,omitempty"`
 }
 
+type SkillSupportFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
 type SkillDocument struct {
-	Name         string `json:"name"`
-	Description  string `json:"description,omitempty"`
-	Instructions string `json:"instructions"`
+	Name         string             `json:"name"`
+	Description  string             `json:"description,omitempty"`
+	Instructions string             `json:"instructions"`
+	Files        []SkillSupportFile `json:"files,omitempty"`
 }
 
 type StudioBotSummary struct {
@@ -420,6 +430,51 @@ func cleanMultiLine(raw string, maxRunes int, required bool, code, msg string) (
 		return "", infraerrors.BadRequest(code, msg)
 	}
 	return v, nil
+}
+
+func cleanSkillSupportFiles(skillName string, raw []SkillSupportFile) ([]SkillSupportFile, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	if len(raw) > MaxSupportFilesPerSkill {
+		return nil, infraerrors.BadRequest("MARKET_SKILL_FILES_TOO_MANY", fmt.Sprintf("Skill「%s」最多附带 %d 个附属文件。", skillName, MaxSupportFilesPerSkill))
+	}
+	cleaned := make([]SkillSupportFile, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	totalBytes := 0
+	for _, f := range raw {
+		p := strings.TrimSpace(f.Path)
+		if p == "" || len(p) > 300 || !utf8.ValidString(p) || strings.HasPrefix(p, "/") || strings.Contains(p, "\\") || strings.IndexFunc(p, unicode.IsControl) >= 0 {
+			return nil, infraerrors.BadRequest("MARKET_SKILL_FILE_INVALID", fmt.Sprintf("Skill「%s」附属文件路径无效：%s", skillName, truncateSnippet(p, 60)))
+		}
+		parts := strings.Split(p, "/")
+		if len(parts) > 6 {
+			return nil, infraerrors.BadRequest("MARKET_SKILL_FILE_INVALID", fmt.Sprintf("Skill「%s」附属文件目录层级过深：%s", skillName, truncateSnippet(p, 60)))
+		}
+		for _, part := range parts {
+			if part == "" || part == "." || part == ".." || strings.HasPrefix(part, ".") || len(part) > 120 || strings.EqualFold(part, "SKILL.md") {
+				return nil, infraerrors.BadRequest("MARKET_SKILL_FILE_INVALID", fmt.Sprintf("Skill「%s」附属文件路径不合规：%s", skillName, truncateSnippet(p, 60)))
+			}
+		}
+		key := strings.ToLower(p)
+		if _, dup := seen[key]; dup {
+			return nil, infraerrors.BadRequest("MARKET_SKILL_FILE_INVALID", fmt.Sprintf("Skill「%s」包含重复的附属文件路径：%s", skillName, p))
+		}
+		seen[key] = struct{}{}
+		if !utf8.ValidString(f.Content) || strings.ContainsRune(f.Content, '\x00') {
+			return nil, infraerrors.BadRequest("MARKET_SKILL_FILE_INVALID", fmt.Sprintf("Skill「%s」附属文件「%s」必须是有效的 UTF-8 文本。", skillName, p))
+		}
+		size := len(f.Content)
+		if size > MaxSupportFileBytes {
+			return nil, infraerrors.BadRequest("MARKET_SKILL_FILE_TOO_LARGE", fmt.Sprintf("Skill「%s」附属文件「%s」超过 128 KB 限制。", skillName, p))
+		}
+		totalBytes += size
+		if totalBytes > MaxSupportBytesPerSkill {
+			return nil, infraerrors.BadRequest("MARKET_SKILL_FILES_TOO_LARGE", fmt.Sprintf("Skill「%s」附属文件总大小超过 512 KB 限制。", skillName))
+		}
+		cleaned = append(cleaned, SkillSupportFile{Path: p, Content: f.Content})
+	}
+	return cleaned, nil
 }
 
 func normalizeReportReason(raw string) string {
