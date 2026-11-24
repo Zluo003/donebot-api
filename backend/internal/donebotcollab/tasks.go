@@ -53,7 +53,7 @@ var taskStatusLabels = map[string]string{
 	"in_review":         "待验收",
 	"bot_reviewing":     "Bot 初审中",
 	"bot_revising":      "Bot 自动返工中",
-	"ready_for_review":  "待终审拍板",
+	"ready_for_review":  "待终审确认",
 	"changes_requested": "待修改",
 	"blocked":           "已阻塞",
 	"done":              "已完成",

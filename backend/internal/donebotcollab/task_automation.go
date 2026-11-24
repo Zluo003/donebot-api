@@ -129,7 +129,7 @@ func (s *Service) BotReviewTeamTask(ctx context.Context, actor int64, teamID, ta
 	switch verdict {
 	case "pass":
 		if summary == "" {
-			summary = "初审已通过硬性核验，请验收人做最终拍板。"
+			summary = "初审已通过硬性核验，请验收人做最终确认。"
 		}
 		snap := BotReviewSnapshot{
 			Verdict:        "pass",
