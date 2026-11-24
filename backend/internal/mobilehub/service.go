@@ -24,6 +24,8 @@ type Identity struct {
 type SessionCheck func(context.Context, Identity) error
 type Service struct {
 	delivery      sync.Mutex
+	streamMu      sync.Mutex
+	streamWaiters map[int64]map[chan struct{}]struct{}
 	DB            *sql.DB
 	Config        *Config
 	Check         SessionCheck
@@ -305,7 +307,47 @@ func (s *Service) Disconnect(ctx context.Context, who Identity, device string) e
 		return invalid()
 	}
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM donebot_mobile_devices WHERE id=$1::uuid AND user_id=$2 AND session_id=$3`, device, who.Owner, who.Session)
+	if err == nil {
+		s.notifyPushWaiters(who.Owner)
+	}
 	return err
+}
+
+func (s *Service) WatchPush(owner int64) (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	s.streamMu.Lock()
+	if s.streamWaiters == nil {
+		s.streamWaiters = map[int64]map[chan struct{}]struct{}{}
+	}
+	if s.streamWaiters[owner] == nil {
+		s.streamWaiters[owner] = map[chan struct{}]struct{}{}
+	}
+	s.streamWaiters[owner][ch] = struct{}{}
+	s.streamMu.Unlock()
+	return ch, func() {
+		s.streamMu.Lock()
+		if set := s.streamWaiters[owner]; set != nil {
+			delete(set, ch)
+			if len(set) == 0 {
+				delete(s.streamWaiters, owner)
+			}
+		}
+		s.streamMu.Unlock()
+	}
+}
+
+func (s *Service) notifyPushWaiters(owner int64) {
+	if s == nil {
+		return
+	}
+	s.streamMu.Lock()
+	defer s.streamMu.Unlock()
+	for ch := range s.streamWaiters[owner] {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
 }
 
 func (s *Service) config() *Config {

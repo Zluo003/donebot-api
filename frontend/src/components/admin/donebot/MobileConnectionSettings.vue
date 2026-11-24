@@ -23,7 +23,7 @@
           <label class="text-sm">Apple Team ID<input v-model.trim="form.apns_team_id" :required="form.push_enabled || !!form.apns_key || settings.apns_key_configured" pattern="[A-Z0-9]{10}" maxlength="10" class="input mt-1" placeholder="10 位 Team ID" /></label>
         </div>
         <label class="block text-sm">APNs .p8 私钥<input ref="keyFile" type="file" accept=".p8" class="mt-2 block w-full text-sm" @change="readKey" /><span class="mt-2 block text-xs text-gray-500">{{ keySelected ? '已选择新私钥，保存后生效。' : settings.apns_key_configured ? '已保存私钥。未选择新文件时保留原私钥。' : '从 Apple Developer 获取启用 APNs 的 .p8 密钥。' }}</span></label>
-        <p class="text-xs leading-relaxed text-gray-500">App 标识：cn.donebot.mobile。开发签名与正式签名分别使用 sandbox 和 production，App 会自动选择，无需上架后才能接收推送。</p>
+        <p class="text-xs leading-relaxed text-gray-500">App 标识：cn.donebot.mobile。开发签名与正式签名分别使用 sandbox 和 production，App 会自动选择，无需上架后才能接收推送。Android 手机端默认通过网关自有免费实时通道（SSE）接收脱敏消息提醒，无需额外配置第三方推送密钥。</p>
       </fieldset>
       <div class="flex flex-wrap items-center gap-3"><button type="submit" class="btn btn-primary" :disabled="saving || !settings.encryption_configured">{{ saving ? '正在保存…' : '保存连接与推送配置' }}</button><span v-if="saved" role="status" class="text-sm text-green-600">已保存并生效</span><span class="text-xs text-gray-500">{{ settings.source === 'database' ? '当前使用后台配置' : '尚未保存后台配置；兼容读取已有部署环境' }}</span></div>
     </form>

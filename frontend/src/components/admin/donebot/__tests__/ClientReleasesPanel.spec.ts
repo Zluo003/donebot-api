@@ -4,10 +4,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AxiosProgressEvent } from 'axios'
 import ClientReleasesPanel from '../ClientReleasesPanel.vue'
 import donebot from '@/api/admin/donebot'
-import type { ClientRelease } from '@/api/admin/donebot'
+import type { ClientRelease, MobileRelease } from '@/api/admin/donebot'
 
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showSuccess: vi.fn() }) }))
-vi.mock('@/api/admin/donebot', () => ({ default: { clientReleases: vi.fn(), uploadClientRelease: vi.fn(), publishClientRelease: vi.fn(), deleteClientRelease: vi.fn() } }))
+vi.mock('@/api/admin/donebot', () => ({
+  default: {
+    clientReleases: vi.fn(),
+    uploadClientRelease: vi.fn(),
+    publishClientRelease: vi.fn(),
+    deleteClientRelease: vi.fn(),
+    mobileReleases: vi.fn(),
+    uploadMobileRelease: vi.fn(),
+    publishMobileRelease: vi.fn(),
+    deleteMobileRelease: vi.fn(),
+  }
+}))
 vi.mock('@/components/auth/TotpStepUpDialog.vue', () => ({ default: defineComponent({ name: 'TotpStepUpDialog', props: ['controller'], template: '<div />' }) }))
 vi.mock('@/components/common/ConfirmDialog.vue', () => ({ default: defineComponent({ name: 'ConfirmDialog', props: ['show', 'message'], emits: ['confirm', 'cancel'], template: '<div v-if="show" role="dialog">{{ message }}</div>' }) }))
 
@@ -15,6 +26,8 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(donebot.clientReleases).mockResolvedValue({ releases: [] })
   vi.mocked(donebot.uploadClientRelease).mockResolvedValue({ version: '0.1.0', status: 'draft', created_at: '', platforms: {} })
+  vi.mocked(donebot.mobileReleases).mockResolvedValue({ releases: [] })
+  vi.mocked(donebot.uploadMobileRelease).mockResolvedValue({ version: '0.1.0', version_code: 1, status: 'draft', created_at: '', platforms: {} })
 })
 
 describe('client release deletion', () => {
@@ -182,5 +195,70 @@ describe('client installer uploads', () => {
     finish()
     await flushPromises()
     expect(wrapper.find('[role=status]').exists()).toBe(false)
+  })
+})
+
+describe('mobile android apk releases', () => {
+  const mobileRelease = (version: string, versionCode: number, status: MobileRelease['status'] = 'published', forceUpdate = false): MobileRelease => ({
+    version,
+    version_code: versionCode,
+    status,
+    force_update: forceUpdate,
+    created_at: '',
+    platforms: {
+      'android-apk': {
+        filename: `DoneBot-${version}-android.apk`,
+        size_bytes: 8_300_000,
+        sha256: 'a'.repeat(64),
+        sha512: 'b'.repeat(64),
+        download_url: `/api/v1/client/mobile-releases/${version}/android-apk/DoneBot-${version}-android.apk`,
+      },
+    },
+  })
+
+  it('uploads and publishes an Android APK with versionCode and force_update flag', async () => {
+    vi.mocked(donebot.mobileReleases).mockResolvedValueOnce({ releases: [mobileRelease('0.1.0', 1)] })
+    const wrapper = mount(ClientReleasesPanel)
+    await flushPromises()
+
+    await wrapper.get('[data-testid=tab-mobile-releases]').trigger('click')
+    await flushPromises()
+
+    // Auto-suggests next versionCode = 2
+    expect((wrapper.get('[data-testid=mobile-release-version-code]').element as HTMLInputElement).value).toBe('2')
+    await wrapper.get('[data-testid=mobile-release-version]').setValue('0.2.0')
+    await wrapper.get('[data-testid=mobile-release-notes]').setValue('支持推送与自升级')
+    await wrapper.get('[data-testid=mobile-release-force-update]').setValue(true)
+
+    // Rejects non-.apk files before uploading
+    await chooseFile(wrapper, 'release-android-apk-file', 'DoneBot.zip', 1024)
+    expect(wrapper.get('[role=alert]').text()).toContain('.apk')
+    expect(donebot.uploadMobileRelease).not.toHaveBeenCalled()
+
+    const apk = await chooseFile(wrapper, 'release-android-apk-file', 'DoneBot-0.2.0-android.apk', 8_500_000)
+    vi.mocked(donebot.mobileReleases).mockResolvedValueOnce({
+      releases: [mobileRelease('0.2.0', 2, 'draft', true), mobileRelease('0.1.0', 1)],
+    })
+    await wrapper.get('[data-testid=upload-android-apk]').trigger('click')
+    await flushPromises()
+
+    const form = vi.mocked(donebot.uploadMobileRelease).mock.calls[0][0]
+    expect(form.get('version')).toBe('0.2.0')
+    expect(form.get('version_code')).toBe('2')
+    expect(form.get('platform')).toBe('android-apk')
+    expect(form.get('notes')).toBe('支持推送与自升级')
+    expect(form.get('force_update')).toBe('true')
+    expect(form.get('file')).toBe(apk)
+
+    vi.mocked(donebot.publishMobileRelease).mockResolvedValueOnce(mobileRelease('0.2.0', 2, 'published', true))
+    vi.mocked(donebot.mobileReleases).mockResolvedValueOnce({
+      releases: [mobileRelease('0.2.0', 2, 'published', true), mobileRelease('0.1.0', 1)],
+    })
+    await wrapper.get('[data-testid=publish-mobile-release]').trigger('click')
+    await flushPromises()
+
+    expect(donebot.publishMobileRelease).toHaveBeenCalledWith('0.2.0')
+    expect(wrapper.get('[data-testid="delete-mobile-release-0.2.0"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="delete-mobile-release-0.1.0"]').attributes('disabled')).toBeUndefined()
   })
 })

@@ -73,7 +73,7 @@ func mobilePostgres(t *testing.T) *Service {
  CREATE TABLE api_keys(id BIGINT PRIMARY KEY,status TEXT DEFAULT 'active',deleted_at TIMESTAMPTZ,expires_at TIMESTAMPTZ);INSERT INTO api_keys(id) VALUES(1),(2),(3);
  CREATE TABLE donebot_installs(installation_id UUID UNIQUE NOT NULL,user_id BIGINT,api_key_id BIGINT,status TEXT DEFAULT 'active',fingerprint TEXT,name TEXT DEFAULT 'Fixture desktop',last_seen_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT now());
  INSERT INTO donebot_installs(installation_id,user_id,api_key_id) VALUES('11111111-1111-4111-8111-111111111111',101,1),('33333333-3333-4333-8333-333333333333',202,2);
- CREATE TABLE donebot_cloud_instances(id UUID PRIMARY KEY,user_id BIGINT,deleted_at TIMESTAMPTZ);
+ CREATE TABLE donebot_cloud_instances(id UUID PRIMARY KEY,user_id BIGINT,team_id UUID,deleted_at TIMESTAMPTZ);
  CREATE TABLE donebot_cloud_subscriptions(instance_id UUID PRIMARY KEY,state TEXT,paid_until TIMESTAMPTZ,purge_locked BOOLEAN DEFAULT FALSE);`)
 	require.NoError(t, err)
 	migration, err := os.ReadFile("../../migrations/265_donebot_mobile.sql")
@@ -81,6 +81,10 @@ func mobilePostgres(t *testing.T) *Service {
 	_, err = db.Exec(string(migration))
 	require.NoError(t, err)
 	migration, err = os.ReadFile("../../migrations/266_donebot_mobile_management.sql")
+	require.NoError(t, err)
+	_, err = db.Exec(string(migration))
+	require.NoError(t, err)
+	migration, err = os.ReadFile("../../migrations/291_donebot_mobile_android_push.sql")
 	require.NoError(t, err)
 	_, err = db.Exec(string(migration))
 	require.NoError(t, err)

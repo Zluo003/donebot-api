@@ -1,7 +1,9 @@
 import "./site.css";
 
 type Theme = "light" | "dark";
-type Platform = "windows-x64" | "macos-arm64-dmg";
+type DesktopPlatform = "windows-x64" | "macos-arm64-dmg";
+type MobilePlatform = "android-apk";
+type Platform = DesktopPlatform | MobilePlatform;
 type Artifact = { filename: string; size_bytes: number; download_url: string };
 type Release = {
   version: string;
@@ -138,7 +140,7 @@ function home() {
   return `<main id="main">
     <section class="hero container">
       ${heroWordmark()}
-      <div class="hero-copy"><p class="eyebrow"><span class="online-dot"></span> 你的 7×24 机器人团队</p><h1>让<span class="rotating-word" data-rotating-word>日常工作</span>，自动向前。</h1><p class="hero-description">会研究、能创作、懂协作。<br class="mobile-only" />从一句交代，到一份能用的结果。<br class="desktop-only" />把重复的工作交给 DoneBot，把时间留给更重要的事。</p><div class="hero-actions"><a class="button primary" href="/download">${icon("download")} 下载 DoneBot</a><a class="button secondary" href="#demo">看看它怎么工作 ${icon("arrow-right")}</a></div><p class="platform-note">${icon("apple")} macOS Apple 芯片 <span>·</span> ${icon("windows")} Windows x64</p></div>
+      <div class="hero-copy"><p class="eyebrow"><span class="online-dot"></span> 你的 7×24 机器人团队</p><h1>让<span class="rotating-word" data-rotating-word>日常工作</span>，自动向前。</h1><p class="hero-description">会研究、能创作、懂协作。<br class="mobile-only" />从一句交代，到一份能用的结果。<br class="desktop-only" />把重复的工作交给 DoneBot，把时间留给更重要的事。</p><div class="hero-actions"><a class="button primary" href="/download">${icon("download")} 下载 DoneBot</a><a class="button secondary" href="#demo">看看它怎么工作 ${icon("arrow-right")}</a></div><p class="platform-note">${icon("apple")} macOS Apple 芯片 <span>·</span> ${icon("windows")} Windows x64 <span>·</span> ${icon("android")} Android</p></div>
       <div id="demo" class="hero-demo">${demo()}<p class="demo-caption">你定方向，机器人把工作接着做。</p></div>
     </section>
     <section class="section container getting-started"><div class="section-heading"><p class="eyebrow">从第一句话开始</p><h2>多一位同事，<br class="mobile-only" />少一些琐事。</h2><p>不用先学一套复杂流程。像交代同事一样，把目标告诉它。</p></div><div class="steps-grid">${[
@@ -184,7 +186,7 @@ function home() {
       ],
       [
         "支持什么系统？怎样升级？",
-        "目前支持 Windows x64 和搭载 Apple 芯片的 macOS。安装后通过客户端检查更新即可获取新版，官网也会提供最新已发布版本。",
+        "目前支持 Windows x64、搭载 Apple 芯片的 macOS 以及 Android 手机端（APK）。手机端需配合已登录的电脑客户端或 Cloud 工作空间使用；安装后通过客户端或手机端设置检查更新即可获取新版，官网也会提供最新已发布版本。",
       ],
     ]
       .map(
@@ -192,7 +194,7 @@ function home() {
           `<details><summary>${q}${icon("chevron-down")}</summary><p>${a}</p></details>`,
       )
       .join("")}</div></section>
-    <section class="final-cta container">${mascot("happy", "cta-mascot")}<p class="eyebrow">你的下一位同事，准备好了。</p><h2>把工作交给 DoneBot。<br />把时间，还给你。</h2><a class="button primary" href="/download">${icon("download")} 下载 DoneBot</a><p class="small-note">macOS Apple 芯片 · Windows x64</p></section>
+    <section class="final-cta container">${mascot("happy", "cta-mascot")}<p class="eyebrow">你的下一位同事，准备好了。</p><h2>把工作交给 DoneBot。<br />把时间，还给你。</h2><a class="button primary" href="/download">${icon("download")} 下载 DoneBot</a><p class="small-note">macOS Apple 芯片 · Windows x64 · Android</p></section>
   </main>`;
 }
 function download() {
@@ -213,6 +215,14 @@ function download() {
       "下载 EXE",
       "打开安装程序，按提示完成安装。",
     ],
+    [
+      "android-apk",
+      "android",
+      "Android",
+      "Android 8.0+ · APK",
+      "下载 APK",
+      "手机 App 需配合已登录的 DoneBot 电脑客户端或云端工作空间使用，无法独立运行。",
+    ],
   ]
     .map(
       ([platform, symbol, title, description, label, hint]) =>
@@ -220,7 +230,7 @@ function download() {
     )
     .join(
       "",
-    )}</div><p class="download-footnote">已安装 DoneBot？在客户端检查更新即可。</p><button class="retry-release" type="button" hidden>重新获取版本</button></main>`;
+    )}</div><p class="download-footnote">已安装 DoneBot？在客户端或手机端检查更新即可。手机 App 需连接已登录的电脑客户端或云端工作空间才能正常运行。</p><button class="retry-release" type="button" hidden>重新获取版本</button></main>`;
 }
 const root = document.querySelector<HTMLDivElement>("#donebot-site")!;
 root.innerHTML = header() + (isDownload ? download() : home()) + footer();
@@ -390,12 +400,57 @@ function downloadURL(value: unknown): string | null {
   try {
     const url = new URL(value, location.origin);
     return url.origin === location.origin &&
-      url.pathname.startsWith("/api/v1/client/releases/")
+      (url.pathname.startsWith("/api/v1/client/releases/") ||
+        url.pathname.startsWith("/api/v1/client/mobile-releases/"))
       ? url.href
       : null;
   } catch {
     return null;
   }
+}
+async function fetchLatestRelease(
+  endpoint: string,
+  signal: AbortSignal,
+): Promise<{ status: "ok"; release: Release } | { status: "empty" } | { status: "error" }> {
+  try {
+    const response = await fetch(endpoint, { cache: "no-store", signal });
+    if (response.status === 404) return { status: "empty" };
+    if (!response.ok) return { status: "error" };
+    const envelope = await response.json();
+    const release = envelope.data as Release;
+    if (!release || typeof release.version !== "string" || !release.platforms) {
+      return { status: "error" };
+    }
+    return { status: "ok", release };
+  } catch {
+    return { status: "error" };
+  }
+}
+function applyPlatformArtifact(
+  platform: Platform,
+  release: Release | null,
+  fallbackText: string,
+) {
+  const link = document.querySelector<HTMLAnchorElement>(
+    `[data-download-platform="${platform}"]`,
+  );
+  const meta = document.querySelector(`[data-package-meta="${platform}"]`);
+  if (!link || !meta) return;
+  const artifact = release?.platforms[platform];
+  const url = artifact && downloadURL(artifact.download_url);
+  if (!release || !artifact || !url) {
+    link.removeAttribute("href");
+    link.classList.add("is-disabled");
+    link.setAttribute("aria-disabled", "true");
+    link.setAttribute("tabindex", "-1");
+    meta.textContent = fallbackText;
+    return;
+  }
+  link.href = url;
+  link.classList.remove("is-disabled");
+  link.removeAttribute("aria-disabled");
+  link.removeAttribute("tabindex");
+  meta.textContent = `v${release.version} · ${(artifact.size_bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 async function loadRelease() {
   if (!isDownload) return;
@@ -403,57 +458,72 @@ async function loadRelease() {
   const retry = document.querySelector<HTMLButtonElement>(".retry-release")!;
   retry.hidden = true;
   status.textContent = "正在获取最新版本…";
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 10000);
+  let desktopResult: Awaited<ReturnType<typeof fetchLatestRelease>>;
+  let mobileResult: Awaited<ReturnType<typeof fetchLatestRelease>>;
   try {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 10000);
-    let response: Response;
-    try {
-      response = await fetch("/api/v1/client/releases/latest", {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
-    if (response.status === 404) {
-      status.textContent = "新版本即将发布";
-      document
-        .querySelectorAll("[data-package-meta]")
-        .forEach((el) => (el.textContent = "安装包准备中"));
-      return;
-    }
-    if (!response.ok) throw new Error("release unavailable");
-    const envelope = await response.json();
-    const release = envelope.data as Release;
-    if (!release || typeof release.version !== "string" || !release.platforms)
-      throw new Error("invalid release");
-    status.textContent = `最新版本 v${release.version}`;
-    document
-      .querySelectorAll<HTMLAnchorElement>("[data-download-platform]")
-      .forEach((link) => {
-        const platform = link.dataset.downloadPlatform as Platform;
-        const artifact = release.platforms[platform];
-        const url = artifact && downloadURL(artifact.download_url);
-        const meta = document.querySelector(
-          `[data-package-meta="${platform}"]`,
-        )!;
-        if (!artifact || !url) {
-          meta.textContent = "此平台安装包暂未发布";
-          return;
-        }
-        link.href = url;
-        link.classList.remove("is-disabled");
-        link.removeAttribute("aria-disabled");
-        link.removeAttribute("tabindex");
-        meta.textContent = `v${release.version} · ${(artifact.size_bytes / 1024 / 1024).toFixed(1)} MB`;
-      });
-  } catch {
-    status.textContent = "暂时无法获取版本，请稍后重试";
-    document
-      .querySelectorAll("[data-package-meta]")
-      .forEach((el) => (el.textContent = "暂不可用"));
-    retry.hidden = false;
+    [desktopResult, mobileResult] = await Promise.all([
+      fetchLatestRelease("/api/v1/client/releases/latest", controller.signal),
+      fetchLatestRelease(
+        "/api/v1/client/mobile-releases/latest",
+        controller.signal,
+      ),
+    ]);
+  } finally {
+    clearTimeout(timeout);
   }
+
+  const desktopRelease =
+    desktopResult.status === "ok" ? desktopResult.release : null;
+  const mobileRelease =
+    mobileResult.status === "ok" ? mobileResult.release : null;
+
+  applyPlatformArtifact(
+    "macos-arm64-dmg",
+    desktopRelease,
+    desktopResult.status === "error"
+      ? "暂不可用"
+      : desktopResult.status === "empty"
+        ? "安装包准备中"
+        : "此平台安装包暂未发布",
+  );
+  applyPlatformArtifact(
+    "windows-x64",
+    desktopRelease,
+    desktopResult.status === "error"
+      ? "暂不可用"
+      : desktopResult.status === "empty"
+        ? "安装包准备中"
+        : "此平台安装包暂未发布",
+  );
+  applyPlatformArtifact(
+    "android-apk",
+    mobileRelease,
+    mobileResult.status === "error"
+      ? "暂不可用"
+      : mobileResult.status === "empty"
+        ? "安装包准备中"
+        : "此平台安装包暂未发布",
+  );
+
+  const labels: string[] = [];
+  if (desktopRelease) labels.push(`桌面端 v${desktopRelease.version}`);
+  if (mobileRelease) labels.push(`Android v${mobileRelease.version}`);
+
+  if (labels.length > 0) {
+    status.textContent = `最新版本：${labels.join(" · ")}`;
+    if (desktopResult.status === "error" || mobileResult.status === "error") {
+      retry.hidden = false;
+    }
+    return;
+  }
+  if (desktopResult.status === "error" || mobileResult.status === "error") {
+    status.textContent = "暂时无法获取版本，请稍后重试";
+    retry.hidden = false;
+    return;
+  }
+  status.textContent = "新版本即将发布";
 }
 document
   .querySelector(".retry-release")

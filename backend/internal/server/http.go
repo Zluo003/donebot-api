@@ -180,7 +180,7 @@ func isCollabFileTransferUpload(r *http.Request) bool {
 func limitRequestBody(next http.Handler, globalMaxSize int64) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		maxSize := globalMaxSize
-		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/donebot/releases/upload" {
+		if r.Method == http.MethodPost && (r.URL.Path == "/api/v1/admin/donebot/releases/upload" || r.URL.Path == "/api/v1/admin/donebot/mobile-releases/upload") {
 			maxSize = service.MaxClientReleaseUploadBytes
 			ctx, cancel := context.WithTimeout(r.Context(), time.Hour)
 			defer cancel()

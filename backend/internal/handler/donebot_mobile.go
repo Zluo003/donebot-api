@@ -4,11 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/mobilehub"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -181,6 +184,106 @@ func (h *DoneBotHandler) MobileUnsubscribe(c *gin.Context) {
 	}
 	if !response.ErrorFrom(c, h.mobile.Unsubscribe(c.Request.Context(), who, in.Installation)) {
 		c.Status(204)
+	}
+}
+func (h *DoneBotHandler) MobilePushStream(c *gin.Context) {
+	who, ok := h.mobileIdentity(c)
+	if !ok {
+		return
+	}
+	installation := strings.TrimSpace(c.Query("installationId"))
+	ctx := c.Request.Context()
+	if response.ErrorFrom(c, h.mobile.VerifyStreamDevice(ctx, who, installation)) {
+		return
+	}
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		response.Error(c, http.StatusInternalServerError, "Streaming is unsupported")
+		return
+	}
+	c.Header("Content-Type", "text/event-stream; charset=utf-8")
+	c.Header("Cache-Control", "no-cache, no-store, no-transform")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(http.StatusOK)
+	controller := http.NewResponseController(c.Writer)
+	_ = controller.SetWriteDeadline(time.Time{})
+
+	wake, stopWatch := h.mobile.WatchPush(who.Owner)
+	defer stopWatch()
+
+	writeEvent := func(eventName string, id int64, payload any) bool {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return false
+		}
+		if id > 0 {
+			if _, err = fmt.Fprintf(c.Writer, "id: %d\n", id); err != nil {
+				return false
+			}
+		}
+		if _, err = fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", eventName, raw); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
+
+	if !writeEvent("ready", 0, map[string]bool{"ok": true}) {
+		return
+	}
+
+	drain := func() bool {
+		events, err := h.mobile.PullStreamEvents(ctx, who, installation)
+		if err != nil {
+			if code := infraerrors.Code(err); code == 401 || code == 403 || code == 404 {
+				_ = writeEvent("revoked", 0, map[string]string{"reason": "unsubscribed"})
+				return false
+			}
+			return true
+		}
+		for _, ev := range events {
+			if !writeEvent("message", ev.ID, ev) {
+				return false
+			}
+		}
+		return true
+	}
+
+	if !drain() {
+		return
+	}
+
+	pollTicker := time.NewTicker(3 * time.Second)
+	defer pollTicker.Stop()
+	pingTicker := time.NewTicker(25 * time.Second)
+	defer pingTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-wake:
+			if !drain() {
+				return
+			}
+		case <-pollTicker.C:
+			if !drain() {
+				return
+			}
+		case <-pingTicker.C:
+			if err := h.mobile.VerifyStreamDevice(ctx, who, installation); err != nil {
+				if code := infraerrors.Code(err); code == 401 || code == 403 || code == 404 {
+					_ = writeEvent("revoked", 0, map[string]string{"reason": "unsubscribed"})
+					return
+				}
+				continue
+			}
+			if _, err := io.WriteString(c.Writer, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
 	}
 }
 func (h *DoneBotHandler) MobileDisconnect(c *gin.Context) {

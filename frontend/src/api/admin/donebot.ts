@@ -50,8 +50,10 @@ export interface StorageSettingsInput { upload: StoragePolicyInput; generated: S
 export interface StorageSettings { upload: StoragePolicy; generated: StoragePolicy }
 export interface ClientReleaseStorageSettings { driver: 'local' | 's3' | 'oss'; local_path: string; s3: StoragePolicyInput['s3']; oss?: ObjectStorageSettings; secret_configured?: boolean }
 export type ClientReleasePlatform = 'windows-x64' | 'macos-arm64' | 'macos-arm64-dmg'
+export type MobileReleasePlatform = 'android-apk'
 export interface ClientReleaseArtifact { filename: string; size_bytes: number; sha256: string; sha512: string; download_url: string }
 export interface ClientRelease { version: string; notes?: string; status: 'draft' | 'published' | 'deleting'; created_at: string; published_at?: string; platforms: Partial<Record<ClientReleasePlatform, ClientReleaseArtifact>> }
+export interface MobileRelease { version: string; version_code: number; notes?: string; force_update?: boolean; status: 'draft' | 'published' | 'deleting'; created_at: string; published_at?: string; platforms: Partial<Record<MobileReleasePlatform, ClientReleaseArtifact>> }
 export interface WebToolsSettings { enabled: boolean; key_configured: boolean }
 export interface WebToolsSettingsInput { enabled: boolean; api_key?: string; clear_api_key?: boolean }
 export interface CloudRuntimePolicy { outage_grace_minutes: number }
@@ -82,6 +84,10 @@ const donebot = {
  async uploadClientRelease(input: FormData, onUploadProgress?: (event: AxiosProgressEvent) => void) { return (await apiClient.post<ClientRelease>('/admin/donebot/releases/upload', input, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 3_600_000, onUploadProgress })).data },
  async publishClientRelease(version: string) { return (await apiClient.post<ClientRelease>(`/admin/donebot/releases/${encodeURIComponent(version)}/publish`)).data },
  async deleteClientRelease(version: string) { await apiClient.delete(`/admin/donebot/releases/${encodeURIComponent(version)}`) },
+ async mobileReleases() { return (await apiClient.get<{ releases: MobileRelease[] }>('/admin/donebot/mobile-releases')).data },
+ async uploadMobileRelease(input: FormData, onUploadProgress?: (event: AxiosProgressEvent) => void) { return (await apiClient.post<MobileRelease>('/admin/donebot/mobile-releases/upload', input, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 3_600_000, onUploadProgress })).data },
+ async publishMobileRelease(version: string) { return (await apiClient.post<MobileRelease>(`/admin/donebot/mobile-releases/${encodeURIComponent(version)}/publish`)).data },
+ async deleteMobileRelease(version: string) { await apiClient.delete(`/admin/donebot/mobile-releases/${encodeURIComponent(version)}`) },
  async codingGroups() { return (await apiClient.get<CodingGroup[]>('/admin/donebot/coding')).data },
  async overview() { return (await apiClient.get<Overview>('/admin/donebot/overview')).data },
  async getModels(kind: Modality) { return (await apiClient.get<ModelsResult>(`/admin/donebot/${kind}/models`)).data },
