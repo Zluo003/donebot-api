@@ -40,7 +40,7 @@ func New(db *sql.DB, enabled bool) *Service {
 	return &Service{
 		db:         db,
 		enabled:    enabled,
-		httpClient: &http.Client{Timeout: 55 * time.Second},
+		httpClient: &http.Client{Timeout: 95 * time.Second},
 		reviewKick: make(chan struct{}, 16),
 		stopCh:     make(chan struct{}),
 	}
@@ -100,11 +100,11 @@ func (s *Service) StartBackgroundWorkers() {
 				case <-s.stopCh:
 					return
 				case <-s.reviewKick:
-					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 					s.ProcessPendingReviews(ctx, 5)
 					cancel()
 				case <-reviewTick.C:
-					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 					s.ProcessPendingReviews(ctx, 5)
 					cancel()
 				case <-thawTick.C:

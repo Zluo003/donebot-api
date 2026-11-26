@@ -443,3 +443,254 @@ func TestSkillSupportFilesCleaningAndReviewSecurity(t *testing.T) {
 		t.Fatalf("expected package_json smuggled support script to be merged into AI review prompt")
 	}
 }
+
+func TestReviewPlanSingleBotFullSkillNoTruncationAndScriptPriority(t *testing.T) {
+	// Reproduces a real multi-reference + script skill (~55k runes) that used to be cut off at 28,000 runes.
+	scriptTailMarker := "export function verifyTurnaroundConsistency() { return 'STYLING_CHECK_TAIL_OK'; }"
+	scriptBody := "// styling-check.mjs\n" + strings.Repeat("const checkLine = 'validate palette & turnaround';\n", 260) + scriptTailMarker
+	refBody := func(tag string, repeat int) string {
+		return "# " + tag + "\n" + strings.Repeat("详细角色造型与光影规范说明，确保多视图一致性与服装细节统一。\n", repeat)
+	}
+	in := ReviewInput{
+		Name:         "造型师",
+		Tagline:      "角色定妆与三视图视觉规范专家",
+		Description:  "输出角色定妆图、三视图与本地自检清单。",
+		CategoryName: "设计创作",
+		SoulText:     "你是专业角色造型师，遵循 character-styling 技能中的参考文档与校验脚本输出一致的角色设定，并在涉及付费出图前说明张数上限。",
+		Skills: []SkillDocument{
+			{
+				Name:         "character-styling",
+				Description:  "角色造型与三视图一致性校验技能",
+				Instructions: strings.Repeat("使用 scripts/styling-check.mjs 对产出目录做结构与命名核验。\n", 220),
+				Files: []SkillSupportFile{
+					{Path: "LICENSE", Content: strings.Repeat("MIT License terms.\n", 80)},
+					{Path: "references/a-color-system.md", Content: refBody("Color", 250)},
+					{Path: "references/b-costume-library.md", Content: refBody("Costume", 250)},
+					{Path: "references/c-lighting-guide.md", Content: refBody("Lighting", 250)},
+					{Path: "references/d-turnaround-prompt-engineering.md", Content: refBody("Turnaround", 350)},
+					{Path: "scripts/styling-check.mjs", Content: scriptBody},
+				},
+			},
+		},
+	}
+
+	plan := buildReviewPlan(in, nil)
+	if plan.Overflowed {
+		t.Fatalf("expected ~55k skill package not to overflow")
+	}
+	if len(plan.Passes) != 1 {
+		t.Fatalf("expected single un-chunked pass for ~55k skill package, got %d passes", len(plan.Passes))
+	}
+	prompt := plan.Passes[0].UserPrompt
+	if strings.Contains(prompt, "...(truncated)") || strings.Contains(prompt, deferredReviewMarker) {
+		t.Fatalf("expected zero truncation and zero deferred markers in ~55k skill review prompt")
+	}
+	if !strings.Contains(prompt, `"skill_files_manifest"`) {
+		t.Fatalf("expected skill_files_manifest in review prompt")
+	}
+	if !strings.Contains(prompt, scriptTailMarker) {
+		t.Fatalf("expected complete scripts/styling-check.mjs source (including tail) in review prompt")
+	}
+	// Verify script file is prioritized before references and LICENSE inside skills[*].files.
+	skillsIdx := strings.Index(prompt, `"skills":[`)
+	if skillsIdx < 0 {
+		t.Fatalf("missing skills array in prompt")
+	}
+	skillsSection := prompt[skillsIdx:]
+	scriptIdx := strings.Index(skillsSection, `"scripts/styling-check.mjs"`)
+	refIdx := strings.Index(skillsSection, `"references/a-color-system.md"`)
+	licenseIdx := strings.Index(skillsSection, `"LICENSE"`)
+	if scriptIdx < 0 || refIdx < 0 || licenseIdx < 0 {
+		t.Fatalf("expected script, reference, and license paths in skills section")
+	}
+	if !(scriptIdx < refIdx && refIdx < licenseIdx) {
+		t.Fatalf("expected scripts prioritized ahead of references and LICENSE, got script=%d ref=%d license=%d", scriptIdx, refIdx, licenseIdx)
+	}
+}
+
+func TestReviewPlanOversizedMultiChunkFullCoverageAndMerge(t *testing.T) {
+	scriptMarker := "SCRIPT_PRIMARY_MARKER_98765"
+	hugeTailMarker := "HUGE_REF_TAIL_MARKER_54321"
+	lateRefMarker := "LATE_REF_MARKER_24680"
+
+	// > 220k runes total across scripts + references + one huge file (> singleFileChunkMaxRunes).
+	in := ReviewInput{
+		Name:         "全套影视美术指导",
+		Tagline:      "覆盖大型视觉手册与本地脚本校验",
+		Description:  "测试超长 Skill 自动分片全量审阅。",
+		CategoryName: "设计创作",
+		SoulText:     "你是资深影视美术指导，严格按照多份规范手册和校验脚本输出标准化概念设计与镜头分镜资产。",
+		Skills: []SkillDocument{
+			{
+				Name:         "mega-art-bible",
+				Description:  "超大型美术规范技能包",
+				Instructions: "遵循 scripts/verify.py 与 references/* 中的全部规范。",
+				Files: []SkillSupportFile{
+					{Path: "scripts/verify.py", Content: "print('" + scriptMarker + "')\n" + strings.Repeat("# safe check line\n", 150)},
+					{Path: "references/01-world.md", Content: strings.Repeat("世界观与场景结构说明。\n", 4500)},
+					{Path: "references/02-giant-manual.md", Content: strings.Repeat("超长角色材质与布光细节手册，带引号\"和换行。\n", 4800) + hugeTailMarker},
+					{Path: "references/03-checklist.md", Content: strings.Repeat("交付检查表项。\n", 3000) + lateRefMarker},
+				},
+			},
+		},
+	}
+
+	plan := buildReviewPlan(in, nil)
+	if plan.Overflowed {
+		t.Fatalf("expected 220k skill package to fit within maxSupplementChunks without overflow")
+	}
+	if len(plan.Passes) < 3 {
+		t.Fatalf("expected primary + >=2 supplement passes for oversized skill package, got %d", len(plan.Passes))
+	}
+	if strings.Contains(plan.Passes[0].UserPrompt, "...(truncated)") {
+		t.Fatalf("primary pass must never blindly truncate fitted skill payload")
+	}
+	if !strings.Contains(plan.Passes[0].UserPrompt, scriptMarker) {
+		t.Fatalf("expected scripts/verify.py to be prioritized into primary pass")
+	}
+	if !strings.Contains(plan.Passes[0].UserPrompt, deferredReviewMarker) {
+		t.Fatalf("expected deferred marker for overflow references in primary pass")
+	}
+
+	var combined strings.Builder
+	for i, p := range plan.Passes {
+		if strings.Contains(p.UserPrompt, "...(truncated)") {
+			t.Fatalf("pass %d (%s) unexpectedly truncated", i, p.Label)
+		}
+		combined.WriteString(p.UserPrompt)
+		combined.WriteByte('\n')
+	}
+	allPrompts := combined.String()
+	for _, marker := range []string{scriptMarker, hugeTailMarker, lateRefMarker} {
+		if !strings.Contains(allPrompts, marker) {
+			t.Fatalf("expected marker %q to be delivered across review passes without loss", marker)
+		}
+	}
+
+	approveJSON := `{"verdict":"approve","risk_score":8,"summary":"本分片安全合规","dimensions":{"token_farming":{"passed":true,"score":5,"finding":"正常"},"sensitive_data_exfil":{"passed":true,"score":5,"finding":"无外泄"}}}`
+	rejectJSON := `{"verdict":"reject","risk_score":91,"summary":"补充脚本存在静默外传风险","dimensions":{"sensitive_data_exfil":{"passed":false,"score":91,"finding":"检测到可疑外传逻辑"}},"rejection_reasons":["附属文档包含敏感数据外传指令"],"fix_suggestions":["删除外传逻辑"],"flagged_snippets":["exfil snippet"]}`
+
+	// Case 1: All passes approve -> merged approve.
+	calls := 0
+	repAllOK := runReviewPlan(context.Background(), &Settings{}, in, func(_ context.Context, _ *Settings, _, _ string) (string, string, error) {
+		calls++
+		return approveJSON, "test-reviewer", nil
+	})
+	if calls != len(plan.Passes) {
+		t.Fatalf("expected all %d passes to execute, got %d", len(plan.Passes), calls)
+	}
+	if repAllOK.Verdict != "approve" || repAllOK.RiskScore != 8 {
+		t.Fatalf("expected merged approve, got %+v", repAllOK)
+	}
+
+	// Case 2: Primary approves, second pass rejects -> merged reject + short-circuits remaining passes.
+	calls = 0
+	repLateReject := runReviewPlan(context.Background(), &Settings{}, in, func(_ context.Context, _ *Settings, _, _ string) (string, string, error) {
+		calls++
+		if calls == 2 {
+			return rejectJSON, "test-reviewer", nil
+		}
+		return approveJSON, "test-reviewer", nil
+	})
+	if calls != 2 {
+		t.Fatalf("expected short-circuit after pass 2 rejection, got %d calls", calls)
+	}
+	if repLateReject.Verdict != "reject" || repLateReject.RiskScore != 91 {
+		t.Fatalf("expected merged reject with risk 91, got %+v", repLateReject)
+	}
+	if repLateReject.Dimensions["sensitive_data_exfil"].Passed {
+		t.Fatalf("expected merged sensitive_data_exfil dimension to fail, got %+v", repLateReject.Dimensions["sensitive_data_exfil"])
+	}
+
+	// Case 3: Primary approves, supplement fails with upstream error -> safely degrades to manual_review.
+	calls = 0
+	repSuppErr := runReviewPlan(context.Background(), &Settings{}, in, func(_ context.Context, _ *Settings, _, _ string) (string, string, error) {
+		calls++
+		if calls == 2 {
+			return "", "", errors.New("upstream 504 timeout")
+		}
+		return approveJSON, "test-reviewer", nil
+	})
+	if repSuppErr.Verdict != "manual_review" {
+		t.Fatalf("expected supplement error to degrade to manual_review, got %+v", repSuppErr)
+	}
+
+	// Case 4: Overflow clamp prevents auto-approve when chunk cap is exceeded.
+	overflowMerged := mergeAIReviewReports([]*AIReviewReport{{Verdict: "approve", RiskScore: 5, Summary: "ok"}}, true)
+	if overflowMerged.Verdict != "manual_review" || overflowMerged.RiskScore < 35 {
+		t.Fatalf("expected overflowed merge to clamp to manual_review, got %+v", overflowMerged)
+	}
+}
+
+func TestReviewPlanDepartmentFullAndOversized(t *testing.T) {
+	deptPkg := json.RawMessage(`{
+		"format": "openmaus.package",
+		"version": 2,
+		"package": {
+			"team": { "name": "视觉设计部", "leader": "director", "brief": "统一视觉风格并控费执行。" },
+			"agents": [
+				{ "key": "director", "name": "美术总监", "title": "总控", "soul": "你是视觉设计部美术总监，负责拆解需求、核对设定并向老板交付结果。" },
+				{ "key": "stylist", "name": "造型师", "title": "角色造型", "soul": "你是造型师，负责按规范完成角色定妆与三视图产出，并运行脚本自检。" }
+			],
+			"connections": [{ "key": "docs", "label": "设计知识库", "mcp": { "url": "https://docs.example.com/mcp" } }]
+		}
+	}`)
+	deptCtx := ExtractDepartmentReviewContext(deptPkg, "studio")
+	if deptCtx == nil {
+		t.Fatal("expected department review context")
+	}
+
+	// 1) Rich department (~75k runes) must fit in a single pass with zero truncation.
+	richIn := ReviewInput{
+		ListingType: "studio",
+		Name:        "视觉设计部",
+		Tagline:     "美术总监与造型师协同交付角色资产",
+		Description: "包含完整角色造型参考手册与校验脚本。",
+		SoulText:    "## 美术总监\n负责拆解需求并验收。\n\n## 造型师\n负责角色定妆与三视图规范交付。",
+		PackageJSON: deptPkg,
+		Skills: []SkillDocument{
+			{
+				Name:         "character-styling",
+				Description:  "角色造型与自检",
+				Instructions: "执行 scripts/check.mjs。",
+				Files: []SkillSupportFile{
+					{Path: "references/handbook.md", Content: strings.Repeat("角色造型与配色规范详细指南。\n", 4500)},
+					{Path: "scripts/check.mjs", Content: "console.log('DEPT_SCRIPT_OK');\n"},
+				},
+			},
+		},
+	}
+	richPlan := buildReviewPlan(richIn, deptCtx)
+	if len(richPlan.Passes) != 1 || richPlan.Overflowed {
+		t.Fatalf("expected ~75k department package in 1 pass without overflow, got %d passes overflow=%v", len(richPlan.Passes), richPlan.Overflowed)
+	}
+	if !strings.Contains(richPlan.Passes[0].UserPrompt, "DEPT_SCRIPT_OK") || strings.Contains(richPlan.Passes[0].UserPrompt, "...(truncated)") {
+		t.Fatalf("expected complete department script without truncation")
+	}
+
+	// 2) Oversized department (>240k runes) splits cleanly and still applies department connection clamp.
+	hugeIn := richIn
+	hugeIn.Skills = []SkillDocument{
+		{
+			Name:         "character-styling",
+			Description:  "超大视觉规范库",
+			Instructions: "执行 scripts/check.mjs。",
+			Files: []SkillSupportFile{
+				{Path: "scripts/check.mjs", Content: "console.log('DEPT_SCRIPT_OK');\n"},
+				{Path: "references/vol1.md", Content: strings.Repeat("第一卷详细角色美术手册内容。\n", 9000)},
+				{Path: "references/vol2.md", Content: strings.Repeat("第二卷详细光影与材质手册内容。\n", 9000) + "DEPT_VOL2_TAIL"},
+			},
+		},
+	}
+	hugePlan := buildReviewPlan(hugeIn, deptCtx)
+	if len(hugePlan.Passes) < 2 || hugePlan.Overflowed {
+		t.Fatalf("expected oversized department to split into >=2 passes without overflow, got %d overflow=%v", len(hugePlan.Passes), hugePlan.Overflowed)
+	}
+	approveJSON := `{"verdict":"approve","risk_score":10,"summary":"部门审核通过","dimensions":{"token_farming":{"passed":true,"score":5,"finding":"ok"}}}`
+	rep := runReviewPlan(context.Background(), &Settings{}, hugeIn, func(_ context.Context, _ *Settings, _, _ string) (string, string, error) {
+		return approveJSON, "test-reviewer", nil
+	})
+	if rep.Verdict != "manual_review" {
+		t.Fatalf("expected external connection clamp to still convert approved multi-chunk department to manual_review, got %+v", rep)
+	}
+}
