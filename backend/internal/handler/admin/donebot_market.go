@@ -173,6 +173,34 @@ func (h *DoneBotHandler) ReviewMarketListing(c *gin.Context) {
 	}
 }
 
+func (h *DoneBotHandler) UpdateMarketListingCategory(c *gin.Context) {
+	svc, adminID, ok := h.marketService(c)
+	if !ok {
+		return
+	}
+	var in struct {
+		CategoryID int64 `json:"category_id"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil || in.CategoryID <= 0 {
+		response.BadRequest(c, "请选择有效的目标分类")
+		return
+	}
+	out, err := svc.AdminUpdateListingCategory(c.Request.Context(), adminID, c.Param("id"), in.CategoryID)
+	if !response.ErrorFrom(c, err) {
+		response.Success(c, out)
+	}
+}
+
+func (h *DoneBotHandler) DeleteMarketListing(c *gin.Context) {
+	svc, _, ok := h.marketService(c)
+	if !ok {
+		return
+	}
+	if !response.ErrorFrom(c, svc.AdminDeleteSuspendedListing(c.Request.Context(), c.Param("id"))) {
+		response.Success(c, gin.H{"ok": true})
+	}
+}
+
 func (h *DoneBotHandler) MarketReports(c *gin.Context) {
 	svc, _, ok := h.marketService(c)
 	if !ok {

@@ -252,6 +252,12 @@ const botMarketAdmin = {
   async reviewListing(id: string, input: { decision: string; note?: string; featured?: boolean }) {
     return (await apiClient.post<MarketListingDetail>(`/admin/donebot/market/bots/${encodeURIComponent(id)}/review`, input)).data
   },
+  async updateListingCategory(id: string, category_id: number) {
+    return (await apiClient.patch<MarketListingDetail>(`/admin/donebot/market/bots/${encodeURIComponent(id)}/category`, { category_id })).data
+  },
+  async deleteListing(id: string) {
+    await apiClient.delete(`/admin/donebot/market/bots/${encodeURIComponent(id)}`)
+  },
   async reports(params: { status?: string; page?: number; page_size?: number } = {}) {
     return (await apiClient.get<{ items: MarketReport[]; total: number }>('/admin/donebot/market/reports', { params })).data
   },

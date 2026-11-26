@@ -433,4 +433,64 @@ func TestPostgresFullReviewLifecycle(t *testing.T) {
 	if spend.Bots[0].BotID != "bot-editor-1" || spend.Bots[0].LLMCost != 12.5 {
 		t.Fatalf("expected top bot bot-editor-1 with 12.5, got %+v", spend.Bots[0])
 	}
+
+	// 8. Admin category reassignment (published bot & studio) and permanent deletion (suspended only)
+	if len(cats) < 2 {
+		t.Fatalf("expected at least 2 categories for category reassignment test, got %d", len(cats))
+	}
+	altCat := cats[1]
+	// Published bot can switch category.
+	reCatBot, err := svc.AdminUpdateListingCategory(ctx, 1, published.ID, altCat.ID)
+	if err != nil || reCatBot.CategoryID != altCat.ID {
+		t.Fatalf("AdminUpdateListingCategory(published bot): err=%v out=%+v", err, reCatBot)
+	}
+	// Published studio/department can switch category.
+	reCatStudio, err := svc.AdminUpdateListingCategory(ctx, 1, studio.ID, altCat.ID)
+	if err != nil || reCatStudio.CategoryID != altCat.ID {
+		t.Fatalf("AdminUpdateListingCategory(published studio): err=%v out=%+v", err, reCatStudio)
+	}
+	// Suspended listing cannot switch category.
+	if _, err := svc.AdminUpdateListingCategory(ctx, 1, published2.ID, altCat.ID); err == nil {
+		t.Fatal("expected AdminUpdateListingCategory on suspended listing to fail")
+	}
+	// Disabled category cannot be assigned.
+	disabledFlag := false
+	disabledCat, err := svc.SaveCategory(ctx, SaveCategoryInput{Slug: "disabled-cat", Name: "停用分类", SortOrder: 99, Enabled: &disabledFlag})
+	if err != nil {
+		t.Fatalf("SaveCategory(disabled): %v", err)
+	}
+	if _, err := svc.AdminUpdateListingCategory(ctx, 1, published.ID, disabledCat.ID); err == nil {
+		t.Fatal("expected AdminUpdateListingCategory to disabled category to fail")
+	}
+
+	// Non-suspended listing (published bot or studio) cannot be deleted.
+	if err := svc.AdminDeleteSuspendedListing(ctx, published.ID); err == nil {
+		t.Fatal("expected AdminDeleteSuspendedListing on published bot to fail")
+	}
+	if err := svc.AdminDeleteSuspendedListing(ctx, studio.ID); err == nil {
+		t.Fatal("expected AdminDeleteSuspendedListing on published studio to fail")
+	}
+
+	// Suspended bot (published2) can be permanently deleted.
+	if err := svc.AdminDeleteSuspendedListing(ctx, published2.ID); err != nil {
+		t.Fatalf("AdminDeleteSuspendedListing(suspended bot): %v", err)
+	}
+	if _, err := svc.GetListingDetail(ctx, published2.ID, 1, true); err == nil {
+		t.Fatal("expected deleted suspended bot to be gone")
+	}
+
+	// Suspend studio then permanently delete it; verify ledger rows survive with NULL listing_id.
+	if _, err := svc.AdminReviewListing(ctx, 1, studio.ID, "suspend", "测试封禁部门", nil); err != nil {
+		t.Fatalf("suspend studio: %v", err)
+	}
+	if err := svc.AdminDeleteSuspendedListing(ctx, studio.ID); err != nil {
+		t.Fatalf("AdminDeleteSuspendedListing(suspended studio): %v", err)
+	}
+	if _, err := svc.GetListingDetail(ctx, studio.ID, 1, true); err == nil {
+		t.Fatal("expected deleted suspended studio to be gone")
+	}
+	var ledgerCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM donebot_creator_reward_ledger WHERE creator_user_id = 1 AND entry_type = 'accrue'`).Scan(&ledgerCount); err != nil || ledgerCount == 0 {
+		t.Fatalf("expected historical reward ledger rows to be preserved after deleting suspended listing, count=%d err=%v", ledgerCount, err)
+	}
 }

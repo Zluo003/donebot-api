@@ -694,3 +694,23 @@ func TestReviewPlanDepartmentFullAndOversized(t *testing.T) {
 		t.Fatalf("expected external connection clamp to still convert approved multi-chunk department to manual_review, got %+v", rep)
 	}
 }
+
+func TestAdminCategoryUpdateAndDeleteValidation(t *testing.T) {
+	// Service disabled / unavailable fails closed cleanly.
+	disabledSvc := New(nil, false)
+	if _, err := disabledSvc.AdminUpdateListingCategory(context.Background(), 1, uuid.NewString(), 1); err == nil {
+		t.Fatal("expected unavailable error when service disabled")
+	}
+	if err := disabledSvc.AdminDeleteSuspendedListing(context.Background(), uuid.NewString()); err == nil {
+		t.Fatal("expected unavailable error when service disabled")
+	}
+
+	// Enabled service with nil DB still fails closed at available().
+	nilDBSvc := New(nil, true)
+	if _, err := nilDBSvc.AdminUpdateListingCategory(context.Background(), 1, "not-a-uuid", 1); err == nil {
+		t.Fatal("expected error with nil db")
+	}
+	if err := nilDBSvc.AdminDeleteSuspendedListing(context.Background(), "not-a-uuid"); err == nil {
+		t.Fatal("expected error with nil db")
+	}
+}

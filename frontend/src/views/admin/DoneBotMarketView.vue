@@ -88,7 +88,9 @@
             </div>
             <div class="flex shrink-0 flex-wrap gap-2">
               <button class="btn btn-secondary text-xs" :disabled="busy" @click="openDetail(item.id)">查看 / 审核</button>
+              <button v-if="item.status === 'published'" class="btn btn-secondary text-xs" :disabled="busy" @click="openCategoryDialog(item)">修改分类</button>
               <button class="btn btn-secondary text-xs" :disabled="busy" @click="toggleFeatured(item)">{{ item.featured ? '取消精选' : '设为精选' }}</button>
+              <button v-if="item.status === 'suspended'" class="btn btn-secondary text-xs text-red-600" :disabled="busy" @click="openDeleteDialog(item)">永久删除</button>
             </div>
           </article>
         </div>
@@ -324,11 +326,25 @@
     </div>
 
     <!-- Listing Review Modal -->
-    <BaseDialog :show="detailOpen" :title="activeDetail ? `Bot 审核：${activeDetail.name}` : 'Bot 详情'" width="wide" @close="detailOpen = false">
+    <BaseDialog :show="detailOpen" :title="activeDetail ? `${listingKindLabel(activeDetail)}审核：${activeDetail.name}` : '详情'" width="wide" @close="detailOpen = false">
       <div v-if="activeDetail" class="space-y-4">
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusBadge(activeDetail.status)">{{ statusLabel(activeDetail.status) }}</span>
-          <span>分类：{{ activeDetail.category_name }}</span>
+          <span v-if="activeDetail.listing_type === 'studio'" class="rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">部门 / AI 工作室 · {{ activeDetail.bot_count }} 位员工</span>
+          <template v-if="activeDetail.status === 'published'">
+            <span class="text-gray-500">分类：</span>
+            <select v-model.number="detailCategoryId" class="input w-auto py-1 text-xs" :disabled="busy">
+              <option v-for="cat in enabledCategories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+            </select>
+            <button
+              class="btn btn-secondary py-1 text-xs"
+              :disabled="busy || detailCategoryId <= 0 || detailCategoryId === activeDetail.category_id"
+              @click="saveDetailCategory"
+            >
+              保存分类
+            </button>
+          </template>
+          <span v-else>分类：{{ activeDetail.category_name }}</span>
           <span>作者：{{ activeDetail.author_name }}</span>
           <span>版本：v{{ activeDetail.latest_version }}</span>
         </div>
@@ -394,8 +410,51 @@
         <button class="btn btn-secondary" :disabled="busy" @click="detailOpen = false">关闭</button>
         <button class="btn btn-secondary" :disabled="busy" @click="submitListingReview('rerun_ai')">重跑 AI 审核</button>
         <button class="btn btn-secondary text-red-600" :disabled="busy" @click="submitListingReview('reject')">驳回</button>
-        <button class="btn btn-secondary text-red-700" :disabled="busy" @click="submitListingReview('suspend')">封禁下架</button>
+        <button v-if="activeDetail?.status !== 'suspended'" class="btn btn-secondary text-red-700" :disabled="busy" @click="submitListingReview('suspend')">封禁下架</button>
+        <button v-if="activeDetail?.status === 'suspended'" class="btn btn-secondary text-red-700" :disabled="busy" @click="openDeleteDialog(activeDetail)">永久删除</button>
         <button class="btn btn-primary" :disabled="busy" @click="submitListingReview('approve')">审核通过并上架</button>
+      </template>
+    </BaseDialog>
+
+    <!-- Change Category Modal -->
+    <BaseDialog :show="categoryDialogOpen" :title="categoryTarget ? `修改${listingKindLabel(categoryTarget)}分类：${categoryTarget.name}` : '修改分类'" @close="categoryDialogOpen = false">
+      <div v-if="categoryTarget" class="space-y-4 text-sm">
+        <p class="text-gray-600 dark:text-gray-300">
+          当前分类：<strong>{{ categoryTarget.category_name }}</strong>
+        </p>
+        <label class="block">
+          <span class="mb-1 block font-medium">目标分类</span>
+          <select v-model.number="targetCategoryId" class="input" :disabled="busy">
+            <option v-for="cat in enabledCategories" :key="cat.id" :value="cat.id">{{ cat.name }}（{{ cat.slug }}）</option>
+          </select>
+        </label>
+        <p class="text-xs text-gray-500">仅更新广场展示分类，不影响已上架版本、安装记录与创作者分润统计。</p>
+      </div>
+      <template #footer>
+        <button class="btn btn-secondary" :disabled="busy" @click="categoryDialogOpen = false">取消</button>
+        <button
+          class="btn btn-primary"
+          :disabled="busy || !categoryTarget || targetCategoryId <= 0 || targetCategoryId === categoryTarget.category_id"
+          @click="submitCategoryChange"
+        >
+          保存分类
+        </button>
+      </template>
+    </BaseDialog>
+
+    <!-- Delete Suspended Listing Confirmation Modal -->
+    <BaseDialog :show="deleteDialogOpen" :title="deleteTarget ? `永久删除已封禁${listingKindLabel(deleteTarget)}` : '永久删除'" @close="deleteDialogOpen = false">
+      <div v-if="deleteTarget" class="space-y-3 text-sm">
+        <p>
+          确认永久删除已封禁{{ listingKindLabel(deleteTarget) }} <strong>{{ deleteTarget.name }}</strong>（作者：{{ deleteTarget.author_name }} · v{{ deleteTarget.latest_version }}）？
+        </p>
+        <p class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">
+          此操作不可撤销：将同时清除该条目的历史发布版本、已吊销的安装归因记录与相关举报；已结算的创作者财务分润账本仍会保留以供对账。
+        </p>
+      </div>
+      <template #footer>
+        <button class="btn btn-secondary" :disabled="busy" @click="deleteDialogOpen = false">取消</button>
+        <button class="btn btn-danger" :disabled="busy" @click="confirmDeleteListing">确认永久删除</button>
       </template>
     </BaseDialog>
 
@@ -543,7 +602,21 @@ function clearCustomReviewAPI() {
 
 const detailOpen = ref(false)
 const activeDetail = ref<MarketListingDetail | null>(null)
+const detailCategoryId = ref<number>(0)
 const reviewNote = ref('')
+
+const categoryDialogOpen = ref(false)
+const categoryTarget = ref<MarketListing | null>(null)
+const targetCategoryId = ref<number>(0)
+
+const deleteDialogOpen = ref(false)
+const deleteTarget = ref<MarketListing | null>(null)
+
+const enabledCategories = computed(() => categories.value.filter(c => c.enabled))
+
+function listingKindLabel(item: Pick<MarketListing, 'listing_type'>) {
+  return item.listing_type === 'studio' ? '部门' : 'Bot'
+}
 
 const withdrawDialogOpen = ref(false)
 const activeWithdraw = ref<MarketWithdrawal | null>(null)
@@ -619,9 +692,65 @@ async function openDetail(id: string) {
   busy.value = true; error.value = ''
   try {
     activeDetail.value = await botMarketAdmin.listingDetail(id)
+    detailCategoryId.value = activeDetail.value.category_id
     reviewNote.value = activeDetail.value.last_review_note || ''
     detailOpen.value = true
   } catch (c) { error.value = errMsg(c) } finally { busy.value = false }
+}
+
+function openCategoryDialog(item: MarketListing) {
+  categoryTarget.value = item
+  targetCategoryId.value = item.category_id
+  categoryDialogOpen.value = true
+}
+
+async function submitCategoryChange() {
+  if (!categoryTarget.value || targetCategoryId.value <= 0) return
+  busy.value = true; error.value = ''
+  try {
+    const updated = await stepUp.run(() => botMarketAdmin.updateListingCategory(categoryTarget.value!.id, targetCategoryId.value))
+    if (activeDetail.value && activeDetail.value.id === updated.id) {
+      activeDetail.value = updated
+      detailCategoryId.value = updated.category_id
+    }
+    app.showSuccess(`${listingKindLabel(updated)}分类已更新为「${updated.category_name}」`)
+    categoryDialogOpen.value = false
+    await reloadAll()
+  } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
+}
+
+async function saveDetailCategory() {
+  if (!activeDetail.value || detailCategoryId.value <= 0) return
+  busy.value = true; error.value = ''
+  try {
+    const updated = await stepUp.run(() => botMarketAdmin.updateListingCategory(activeDetail.value!.id, detailCategoryId.value))
+    activeDetail.value = updated
+    detailCategoryId.value = updated.category_id
+    app.showSuccess(`${listingKindLabel(updated)}分类已更新为「${updated.category_name}」`)
+    await reloadAll()
+  } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
+}
+
+function openDeleteDialog(item: MarketListing) {
+  deleteTarget.value = item
+  deleteDialogOpen.value = true
+}
+
+async function confirmDeleteListing() {
+  if (!deleteTarget.value) return
+  const target = deleteTarget.value
+  busy.value = true; error.value = ''
+  try {
+    await stepUp.run(() => botMarketAdmin.deleteListing(target.id))
+    app.showSuccess(`已永久删除封禁${listingKindLabel(target)}「${target.name}」`)
+    deleteDialogOpen.value = false
+    deleteTarget.value = null
+    if (activeDetail.value && activeDetail.value.id === target.id) {
+      detailOpen.value = false
+      activeDetail.value = null
+    }
+    await reloadAll()
+  } catch (c) { if (!isStepUpCancelled(c)) error.value = errMsg(c) } finally { busy.value = false }
 }
 
 async function submitListingReview(decision: string) {

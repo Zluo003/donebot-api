@@ -1476,6 +1476,97 @@ func (s *Service) AdminReviewListing(ctx context.Context, adminUserID int64, lis
 	return s.GetListingDetail(ctx, listingID, adminUserID, true)
 }
 
+// AdminUpdateListingCategory updates the category of a currently published bot or department/studio listing.
+func (s *Service) AdminUpdateListingCategory(ctx context.Context, adminUserID int64, listingID string, categoryID int64) (*ListingDetail, error) {
+	if err := s.available(); err != nil {
+		return nil, err
+	}
+	if !validUUID(listingID) {
+		return nil, infraerrors.BadRequest("MARKET_LISTING_INVALID", "无效的 Bot 或部门 ID。")
+	}
+	if categoryID <= 0 {
+		return nil, infraerrors.BadRequest("MARKET_CATEGORY_INVALID", "请选择有效的目标分类。")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var curStatus string
+	err = tx.QueryRowContext(ctx, `SELECT status FROM donebot_market_listings WHERE id = $1 FOR UPDATE`, listingID).Scan(&curStatus)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, infraerrors.NotFound("MARKET_LISTING_NOT_FOUND", "Bot 或部门不存在。")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if curStatus != "published" {
+		return nil, infraerrors.Conflict("MARKET_LISTING_NOT_PUBLISHED", "仅允许修改已上架的 Bot 或部门的分类。")
+	}
+
+	var catEnabled bool
+	err = tx.QueryRowContext(ctx, `SELECT enabled FROM donebot_market_categories WHERE id = $1`, categoryID).Scan(&catEnabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, infraerrors.NotFound("MARKET_CATEGORY_NOT_FOUND", "目标分类不存在。")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !catEnabled {
+		return nil, infraerrors.BadRequest("MARKET_CATEGORY_DISABLED", "目标分类已停用，请选择已启用的分类。")
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE donebot_market_listings
+		SET category_id = $1, updated_at = NOW()
+		WHERE id = $2`, categoryID, listingID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.GetListingDetail(ctx, listingID, adminUserID, true)
+}
+
+// AdminDeleteSuspendedListing permanently deletes a suspended bot or department/studio listing while preserving financial ledger history.
+func (s *Service) AdminDeleteSuspendedListing(ctx context.Context, listingID string) error {
+	if err := s.available(); err != nil {
+		return err
+	}
+	if !validUUID(listingID) {
+		return infraerrors.BadRequest("MARKET_LISTING_INVALID", "无效的 Bot 或部门 ID。")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var curStatus string
+	err = tx.QueryRowContext(ctx, `SELECT status FROM donebot_market_listings WHERE id = $1 FOR UPDATE`, listingID).Scan(&curStatus)
+	if errors.Is(err, sql.ErrNoRows) {
+		return infraerrors.NotFound("MARKET_LISTING_NOT_FOUND", "Bot 或部门不存在。")
+	}
+	if err != nil {
+		return err
+	}
+	if curStatus != "suspended" {
+		return infraerrors.Conflict("MARKET_LISTING_NOT_SUSPENDED", "仅允许删除已封禁的 Bot 或部门，请先执行封禁下架。")
+	}
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM donebot_market_listings WHERE id = $1`, listingID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return infraerrors.NotFound("MARKET_LISTING_NOT_FOUND", "Bot 或部门不存在。")
+	}
+	return tx.Commit()
+}
+
 func (s *Service) AdminListReports(ctx context.Context, status string, page, pageSize int) ([]MarketReport, int, error) {
 	if err := s.available(); err != nil {
 		return nil, 0, err
