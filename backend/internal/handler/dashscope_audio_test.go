@@ -745,3 +745,130 @@ func TestMobileVoiceASRTicketCapabilityAndPricingGuards(t *testing.T) {
 	doneBot.MobileVoiceASRTicket(c)
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
+
+func TestMobileVoiceTTSRealtimeBidirectionalStreamingAndTicketIsolation(t *testing.T) {
+	var seenModel string
+	var seenChunks []string
+	upstreamWS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		for {
+			msgType, payload, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			if msgType != coderws.MessageText {
+				continue
+			}
+			action := gjson.GetBytes(payload, "header.action").String()
+			tid := gjson.GetBytes(payload, "header.task_id").String()
+			switch action {
+			case "run-task":
+				seenModel = gjson.GetBytes(payload, "payload.model").String()
+				_ = conn.Write(r.Context(), coderws.MessageText, []byte(`{"header":{"event":"task-started","task_id":"`+tid+`"},"payload":{}}`))
+			case "continue-task":
+				chunk := gjson.GetBytes(payload, "payload.input.text").String()
+				seenChunks = append(seenChunks, chunk)
+				_ = conn.Write(r.Context(), coderws.MessageBinary, []byte("PCM:"+chunk))
+			case "finish-task":
+				_ = conn.Write(r.Context(), coderws.MessageText, []byte(`{"header":{"event":"task-finished","task_id":"`+tid+`"},"payload":{"usage":{"input_tokens":18,"output_tokens":90}}}`))
+				return
+			}
+		}
+	}))
+	defer upstreamWS.Close()
+
+	gw, slots, usageRepo := newDashScopeTestHandler(t, upstreamWS.URL, nil, []string{"dashscope_tts", "dashscope_asr"})
+	doneBot := &DoneBotHandler{
+		mobileIdentityOverride: func(c *gin.Context) (mobilehub.Identity, bool) {
+			return mobilehub.Identity{Owner: 10, Session: "sess-1", Version: 1}, true
+		},
+		mobileSessionCheckOverride: func(context.Context, mobilehub.Identity) error { return nil },
+		mobileVoiceKeyResolver: func(context.Context, int64) (*service.APIKey, error) {
+			return dashScopeTestAPIKey(nil, true), nil
+		},
+	}
+	doneBot.ConfigureMobileVoice(gw, nil, []string{"https://app.donebot.cn"})
+
+	router := gin.New()
+	router.POST("/api/v1/donebot/mobile/voice/asr-ticket", doneBot.MobileVoiceASRTicket)
+	router.POST("/api/v1/donebot/mobile/voice/tts-ticket", doneBot.MobileVoiceTTSTicket)
+	router.GET("/api/v1/donebot/mobile/voice/tts", doneBot.MobileVoiceTTSWS)
+	srv := httptest.NewServer(router)
+	defer srv.Close()
+
+	// 1. ASR model is rejected on tts-ticket with 400.
+	badModelResp, err := http.Post(srv.URL+"/api/v1/donebot/mobile/voice/tts-ticket", "application/json", strings.NewReader(`{"model":"qwen-audio-3.1-asr-flash-streaming"}`))
+	require.NoError(t, err)
+	_ = badModelResp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, badModelResp.StatusCode)
+
+	// 2. An ASR ticket cannot be used on the TTS WS endpoint (domain isolation).
+	asrTicketResp, err := http.Post(srv.URL+"/api/v1/donebot/mobile/voice/asr-ticket", "application/json", strings.NewReader(`{"model":"qwen-audio-3.1-asr-flash-streaming"}`))
+	require.NoError(t, err)
+	asrTicketBytes, _ := io.ReadAll(asrTicketResp.Body)
+	_ = asrTicketResp.Body.Close()
+	require.Equal(t, http.StatusOK, asrTicketResp.StatusCode)
+	asrTicket := gjson.GetBytes(asrTicketBytes, "ticket").String()
+
+	ttsWSURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/api/v1/donebot/mobile/voice/tts"
+	_, crossResp, err := coderws.Dial(context.Background(), ttsWSURL, &coderws.DialOptions{
+		HTTPHeader:   http.Header{"Origin": []string{"capacitor://localhost"}},
+		Subprotocols: []string{"donebot-tts.v1", "donebot-ticket." + asrTicket},
+	})
+	require.Error(t, err)
+	require.Equal(t, http.StatusUnauthorized, crossResp.StatusCode)
+
+	// 3. Valid TTS ticket opens bidirectional WS, locks model, streams multiple continue-task text chunks -> PCM frames -> bills once.
+	ttsTicketResp, err := http.Post(srv.URL+"/api/v1/donebot/mobile/voice/tts-ticket", "application/json", strings.NewReader(`{"model":"qwen-audio-3.1-tts-flash"}`))
+	require.NoError(t, err)
+	ttsTicketBytes, _ := io.ReadAll(ttsTicketResp.Body)
+	_ = ttsTicketResp.Body.Close()
+	require.Equal(t, http.StatusOK, ttsTicketResp.StatusCode, string(ttsTicketBytes))
+	require.Equal(t, "donebot-tts.v1", gjson.GetBytes(ttsTicketBytes, "protocol").String())
+	require.Equal(t, "/api/v1/donebot/mobile/voice/tts", gjson.GetBytes(ttsTicketBytes, "ws_path").String())
+	ttsTicket := gjson.GetBytes(ttsTicketBytes, "ticket").String()
+
+	ws, httpResp, err := coderws.Dial(context.Background(), ttsWSURL, &coderws.DialOptions{
+		HTTPHeader:      http.Header{"Origin": []string{"capacitor://localhost"}},
+		Subprotocols:    []string{"donebot-tts.v1", "donebot-ticket." + ttsTicket},
+		CompressionMode: coderws.CompressionContextTakeover,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "donebot-tts.v1", httpResp.Header.Get("Sec-WebSocket-Protocol"))
+	require.Empty(t, httpResp.Header.Get("Sec-WebSocket-Extensions"))
+
+	// Attempt to spoof a different model in run-task; gateway must lock it to qwen-audio-3.1-tts-flash.
+	require.NoError(t, ws.Write(context.Background(), coderws.MessageText, []byte(`{"header":{"action":"run-task","task_id":"tts-1","streaming":"duplex"},"payload":{"model":"evil-model","parameters":{"voice":"longanhuan_v3.1","format":"pcm","sample_rate":24000},"input":{}}}`)))
+	_, startedMsg, err := ws.Read(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "task-started", gjson.GetBytes(startedMsg, "header.event").String())
+
+	require.NoError(t, ws.Write(context.Background(), coderws.MessageText, []byte(`{"header":{"action":"continue-task","task_id":"tts-1","streaming":"duplex"},"payload":{"input":{"text":"第一句先播出来，"}}}`)))
+	mt1, pcm1, err := ws.Read(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, coderws.MessageBinary, mt1)
+	require.Equal(t, "PCM:第一句先播出来，", string(pcm1))
+
+	require.NoError(t, ws.Write(context.Background(), coderws.MessageText, []byte(`{"header":{"action":"continue-task","task_id":"tts-1","streaming":"duplex"},"payload":{"input":{"text":"第二句无缝衔接。"}}}`)))
+	mt2, pcm2, err := ws.Read(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, coderws.MessageBinary, mt2)
+	require.Equal(t, "PCM:第二句无缝衔接。", string(pcm2))
+
+	require.NoError(t, ws.Write(context.Background(), coderws.MessageText, []byte(`{"header":{"action":"finish-task","task_id":"tts-1","streaming":"duplex"},"payload":{"input":{}}}`)))
+	_, doneMsg, err := ws.Read(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "task-finished", gjson.GetBytes(doneMsg, "header.event").String())
+	_ = ws.Close(coderws.StatusNormalClosure, "")
+
+	require.Equal(t, service.DashScopeTTSFlashModel, seenModel)
+	require.Equal(t, []string{"第一句先播出来，", "第二句无缝衔接。"}, seenChunks)
+	require.Eventually(t, func() bool { return len(usageRepo.snapshot()) == 1 }, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, 18, usageRepo.snapshot()[0].InputTokens)
+	require.Equal(t, 90, usageRepo.snapshot()[0].OutputTokens)
+	slots.assertReleased(t)
+}

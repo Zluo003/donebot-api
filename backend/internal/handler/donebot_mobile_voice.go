@@ -25,6 +25,7 @@ import (
 
 const (
 	mobileVoiceASRProtocol       = "donebot-asr.v1"
+	mobileVoiceTTSProtocol       = "donebot-tts.v1"
 	mobileVoiceTicketProtoPrefix = "donebot-ticket."
 	mobileVoiceTicketTTL         = 60 * time.Second
 	mobileVoiceTicketRedisPrefix = "donebot:mobile:asr:ticket:"
@@ -34,6 +35,7 @@ const (
 var mobileVoiceTicketTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
 
 type mobileVoiceASRTicket struct {
+	Kind           string    `json:"kind,omitempty"` // "asr" (default) or "tts"
 	UserID         int64     `json:"user_id"`
 	SessionID      string    `json:"session_id"`
 	TokenVersion   int64     `json:"token_version"`
@@ -346,6 +348,7 @@ func (h *DoneBotHandler) MobileVoiceASRTicket(c *gin.Context) {
 
 	idem := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	ticket, err := h.mobileVoiceTickets.issue(c.Request.Context(), mobileVoiceASRTicket{
+		Kind:           "asr",
 		UserID:         who.Owner,
 		SessionID:      who.Session,
 		TokenVersion:   who.Version,
@@ -390,7 +393,7 @@ func (h *DoneBotHandler) MobileVoiceASRWS(c *gin.Context) {
 		h.openAIGateway.errorResponse(c, http.StatusForbidden, "permission_error", "Origin is not allowed for mobile voice WebSocket")
 		return
 	}
-	hasProtocol, ticketToken := parseMobileVoiceWSProtocols(c.Request.Header.Values("Sec-WebSocket-Protocol"))
+	hasProtocol, ticketToken := parseMobileVoiceWSProtocols(c.Request.Header.Values("Sec-WebSocket-Protocol"), mobileVoiceASRProtocol)
 	if !hasProtocol || ticketToken == "" {
 		h.openAIGateway.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Valid Sec-WebSocket-Protocol ticket is required")
 		return
@@ -404,7 +407,7 @@ func (h *DoneBotHandler) MobileVoiceASRWS(c *gin.Context) {
 		h.openAIGateway.errorResponse(c, http.StatusServiceUnavailable, "api_error", "ASR ticket store unavailable")
 		return
 	}
-	if !ok || payload == nil {
+	if !ok || payload == nil || (payload.Kind != "" && payload.Kind != "asr") {
 		h.openAIGateway.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid or expired ASR ticket")
 		return
 	}
@@ -440,6 +443,183 @@ func (h *DoneBotHandler) MobileVoiceASRWS(c *gin.Context) {
 	})
 }
 
+// MobileVoiceTTSTicket handles POST /api/v1/donebot/mobile/voice/tts-ticket.
+func (h *DoneBotHandler) MobileVoiceTTSTicket(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	who, ok := h.mobileVoiceIdentity(c)
+	if !ok {
+		return
+	}
+	if h.openAIGateway == nil || h.openAIGateway.gatewayService == nil || h.openAIGateway.billingCacheService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Mobile voice TTS unavailable")
+		return
+	}
+	if h.mobileVoiceTickets == nil {
+		h.mobileVoiceTickets = newMobileVoiceTicketStore(nil)
+	}
+	var in struct {
+		Model          string `json:"model"`
+		InstallationID string `json:"installationId"`
+	}
+	if c.Request.Body != nil {
+		raw, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, 16*1024))
+		if err != nil {
+			response.BadRequest(c, "Invalid TTS ticket request")
+			return
+		}
+		if len(strings.TrimSpace(string(raw))) > 0 {
+			dec := json.NewDecoder(strings.NewReader(string(raw)))
+			dec.DisallowUnknownFields()
+			if dec.Decode(&in) != nil || dec.Decode(new(any)) != io.EOF {
+				response.BadRequest(c, "Invalid TTS ticket request")
+				return
+			}
+		}
+	}
+	model := strings.TrimSpace(in.Model)
+	if model == "" {
+		model = service.DashScopeTTSFlashModel
+	}
+
+	apiKey, err := h.mobileVoiceBillingKey(c.Request.Context(), who.Owner)
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	if apiKey.Group == nil || (apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite) {
+		h.openAIGateway.errorResponse(c, http.StatusNotFound, "not_found_error", "DashScope TTS is not available for this platform")
+		return
+	}
+	if !apiKey.Group.ModelAllowlist.Allows(model) {
+		h.openAIGateway.errorResponse(c, http.StatusNotFound, "not_found_error", "Model is not available for this group")
+		return
+	}
+	if err := h.openAIGateway.billingCacheService.CheckBillingEligibility(
+		c.Request.Context(), apiKey.User, apiKey, apiKey.Group, nil, service.QuotaPlatform(c.Request.Context(), apiKey),
+	); err != nil {
+		status, code, msg, _ := billingErrorDetailsForRequest(c, err)
+		h.openAIGateway.errorResponse(c, status, code, msg)
+		return
+	}
+	ctx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
+	routingModel := model
+	if apiKey.Group.Platform == service.PlatformComposite && h.openAIGateway.compositeResolver != nil {
+		if decision, resolveErr := h.openAIGateway.compositeResolver.Resolve(ctx, apiKey.Group.ID, model, service.CompositeRouteEndpointAny); resolveErr == nil && decision.Matched {
+			ctx = service.WithCompositeRouteDecision(ctx, decision)
+			if decision.UpstreamModel != "" {
+				routingModel = decision.UpstreamModel
+			}
+		}
+	}
+	mapping, _ := h.openAIGateway.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, routingModel)
+	mappedModel := firstNonEmpty(mapping.MappedModel, routingModel)
+	upstreamModel, ttsOK := h.openAIGateway.gatewayService.ResolveDashScopeTTSUpstreamModel(ctx, apiKey.GroupID, routingModel, mappedModel)
+	if !ttsOK {
+		if service.IsDashScopeASRModel(model) || service.IsDashScopeASRModel(mappedModel) {
+			h.openAIGateway.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Requested model is not a DashScope TTS model")
+			return
+		}
+		h.openAIGateway.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No eligible DashScope TTS accounts")
+		return
+	}
+	billingModel := h.openAIGateway.gatewayService.DashScopeBillingModel(ctx, apiKey, mappedModel, model, upstreamModel)
+	if !h.openAIGateway.gatewayService.DashScopePricingConfigured(ctx, apiKey, billingModel, upstreamModel) {
+		h.openAIGateway.errorResponse(c, http.StatusServiceUnavailable, "api_error", "DashScope TTS model has no configured local price")
+		return
+	}
+
+	idem := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	ticket, err := h.mobileVoiceTickets.issue(c.Request.Context(), mobileVoiceASRTicket{
+		Kind:           "tts",
+		UserID:         who.Owner,
+		SessionID:      who.Session,
+		TokenVersion:   who.Version,
+		InstallationID: strings.TrimSpace(in.InstallationID),
+		Model:          model,
+		IdempotencyKey: idem,
+	}, mobileVoiceTicketTTL)
+	if err != nil {
+		response.Error(c, http.StatusServiceUnavailable, "Failed to issue TTS ticket")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"ticket":     ticket,
+		"expires_in": int(mobileVoiceTicketTTL.Seconds()),
+		"ws_path":    "/api/v1/donebot/mobile/voice/tts",
+		"protocol":   mobileVoiceTTSProtocol,
+		"model":      model,
+	})
+}
+
+// MobileVoiceTTSWS handles GET /api/v1/donebot/mobile/voice/tts duplex TTS WebSocket upgrades.
+func (h *DoneBotHandler) MobileVoiceTTSWS(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if h.openAIGateway == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Mobile voice TTS unavailable")
+		return
+	}
+	if c.Request == nil || !isOpenAIWSUpgradeRequest(c.Request) {
+		h.openAIGateway.errorResponse(c, http.StatusUpgradeRequired, "invalid_request_error", "WebSocket upgrade required (Upgrade: websocket)")
+		return
+	}
+	q := c.Request.URL.Query()
+	for _, forbidden := range []string{"token", "ticket", "jwt", "access_token", "authorization"} {
+		if q.Has(forbidden) {
+			h.openAIGateway.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Credentials must not be passed in URL query")
+			return
+		}
+	}
+	origin := strings.TrimSpace(c.GetHeader("Origin"))
+	if origin != "" && !h.isAllowedMobileVoiceWSOrigin(c.Request, origin) {
+		h.openAIGateway.errorResponse(c, http.StatusForbidden, "permission_error", "Origin is not allowed for mobile voice WebSocket")
+		return
+	}
+	hasProtocol, ticketToken := parseMobileVoiceWSProtocols(c.Request.Header.Values("Sec-WebSocket-Protocol"), mobileVoiceTTSProtocol)
+	if !hasProtocol || ticketToken == "" {
+		h.openAIGateway.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Valid Sec-WebSocket-Protocol ticket is required")
+		return
+	}
+	if h.mobileVoiceTickets == nil {
+		h.openAIGateway.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid or expired TTS ticket")
+		return
+	}
+	payload, ok, err := h.mobileVoiceTickets.consume(c.Request.Context(), ticketToken)
+	if err != nil {
+		h.openAIGateway.errorResponse(c, http.StatusServiceUnavailable, "api_error", "TTS ticket store unavailable")
+		return
+	}
+	if !ok || payload == nil || payload.Kind != "tts" {
+		h.openAIGateway.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid or expired TTS ticket")
+		return
+	}
+	who := mobilehub.Identity{
+		Owner:   payload.UserID,
+		Session: payload.SessionID,
+		Version: payload.TokenVersion,
+	}
+	if err := h.checkMobileVoiceSession(c.Request.Context(), who); err != nil {
+		h.openAIGateway.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Mobile login session ended")
+		return
+	}
+	apiKey, err := h.mobileVoiceBillingKey(c.Request.Context(), payload.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	attachMobileVoiceGatewayContext(c, apiKey)
+
+	idem := payload.IdempotencyKey
+	if idem == "" {
+		idem = ticketToken
+	}
+	h.openAIGateway.DashScopeTTSRealtimeWithOptions(c, DashScopeTTSHandlerOptions{
+		Model:            payload.Model,
+		IdempotencyKey:   idem,
+		Subprotocols:     []string{mobileVoiceTTSProtocol},
+		OriginPatterns:   []string{"*"},
+		SkipOriginVerify: true,
+	})
+}
+
 func (h *DoneBotHandler) isAllowedMobileVoiceWSOrigin(r *http.Request, origin string) bool {
 	if middleware.IsAllowedDoneBotMobileOrigin(origin, h.mobileAllowedOrigins) {
 		return true
@@ -451,11 +631,11 @@ func (h *DoneBotHandler) isAllowedMobileVoiceWSOrigin(r *http.Request, origin st
 	return r != nil && strings.EqualFold(parsed.Host, r.Host)
 }
 
-func parseMobileVoiceWSProtocols(headerValues []string) (hasBaseProtocol bool, ticket string) {
+func parseMobileVoiceWSProtocols(headerValues []string, expectedBaseProtocol string) (hasBaseProtocol bool, ticket string) {
 	for _, header := range headerValues {
 		for _, part := range strings.Split(header, ",") {
 			token := strings.TrimSpace(part)
-			if token == mobileVoiceASRProtocol {
+			if token == expectedBaseProtocol {
 				hasBaseProtocol = true
 				continue
 			}

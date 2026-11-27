@@ -107,6 +107,7 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 		authenticated.POST("/donebot/mobile/voice/speech", h.DoneBot.MobileVoiceSpeech)
 		authenticated.POST("/donebot/mobile/voice/transcribe", h.DoneBot.MobileVoiceTranscribe)
 		authenticated.POST("/donebot/mobile/voice/asr-ticket", h.DoneBot.MobileVoiceASRTicket)
+		authenticated.POST("/donebot/mobile/voice/tts-ticket", h.DoneBot.MobileVoiceTTSTicket)
 		authenticated.GET("/donebot/cloud/plan", h.DoneBot.CloudPlanInfo)
 		authenticated.DELETE("/donebot/cloud/browser-sessions", h.DoneBot.CloudBrowserRevoke)
 		authenticated.POST("/donebot/cloud/instances/:id/browser-launch", h.DoneBot.CloudBrowserLaunch)
@@ -260,4 +261,5 @@ func RegisterDoneBotMobileVoiceRoutes(v1 *gin.RouterGroup, h *handler.Handlers, 
 	}
 	h.DoneBot.ConfigureMobileVoice(h.OpenAIGateway, redisClient, allowedOrigins)
 	v1.GET("/donebot/mobile/voice/asr", h.DoneBot.MobileVoiceASRWS)
+	v1.GET("/donebot/mobile/voice/tts", h.DoneBot.MobileVoiceTTSWS)
 }

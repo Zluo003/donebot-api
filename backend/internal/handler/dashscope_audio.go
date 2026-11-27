@@ -890,6 +890,271 @@ func (h *OpenAIGatewayHandler) DashScopeTranscribe(c *gin.Context) {
 	h.errorResponse(c, http.StatusBadGateway, "upstream_error", "DashScope ASR upstream unavailable")
 }
 
+// DashScopeTTSHandlerOptions customizes WebSocket acceptance and billing keys for
+// duplex text-streaming TTS (/v1/audio/speech/realtime & /api/v1/donebot/mobile/voice/tts).
+type DashScopeTTSHandlerOptions struct {
+	Model            string
+	IdempotencyKey   string
+	Subprotocols     []string
+	OriginPatterns   []string
+	SkipOriginVerify bool
+	ProxyOptions     service.DashScopeTTSProxyOptions
+}
+
+// DashScopeTTSRealtime handles GET /v1/audio/speech/realtime WebSocket upgrades.
+func (h *OpenAIGatewayHandler) DashScopeTTSRealtime(c *gin.Context) {
+	h.DashScopeTTSRealtimeWithOptions(c, DashScopeTTSHandlerOptions{
+		Model:          strings.TrimSpace(c.Query("model")),
+		IdempotencyKey: strings.TrimSpace(c.GetHeader("Idempotency-Key")),
+	})
+}
+
+func (h *OpenAIGatewayHandler) DashScopeTTSRealtimeWithOptions(c *gin.Context, opts DashScopeTTSHandlerOptions) {
+	if c == nil || c.Request == nil || !isOpenAIWSUpgradeRequest(c.Request) {
+		h.errorResponse(c, http.StatusUpgradeRequired, "invalid_request_error", "WebSocket upgrade required (Upgrade: websocket)")
+		return
+	}
+	key, ok := middleware.GetAPIKeyFromContext(c)
+	if !ok || key == nil || key.Group == nil {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+	if key.Group.Platform != service.PlatformOpenAI && key.Group.Platform != service.PlatformComposite {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "DashScope TTS is not available for this platform")
+		return
+	}
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return
+	}
+	reqLog := requestLogger(c, "handler.openai_gateway.dashscope_tts_realtime")
+	if !h.ensureResponsesDependencies(c, reqLog) {
+		return
+	}
+
+	publicModel := strings.TrimSpace(opts.Model)
+	if publicModel == "" {
+		publicModel = service.DashScopeTTSFlashModel
+	}
+	if !key.Group.ModelAllowlist.Allows(publicModel) {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model is not available for this group")
+		return
+	}
+	setOpsRequestContext(c, publicModel, true)
+
+	subscription, _ := middleware.GetSubscriptionFromContext(c)
+	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), key.User, key, key.Group, subscription, service.QuotaPlatform(c.Request.Context(), key)); err != nil {
+		status, code, message, retryAfter := billingErrorDetailsForRequest(c, err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.errorResponse(c, status, code, message)
+		return
+	}
+
+	ctx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
+	routingModel := publicModel
+	if key.Group.Platform == service.PlatformComposite && h.compositeResolver != nil {
+		if decision, resolveErr := h.compositeResolver.Resolve(ctx, key.Group.ID, publicModel, service.CompositeRouteEndpointAny); resolveErr == nil && decision.Matched {
+			ctx = service.WithCompositeRouteDecision(ctx, decision)
+			if decision.UpstreamModel != "" {
+				routingModel = decision.UpstreamModel
+			}
+		}
+	}
+
+	mapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, key.GroupID, routingModel)
+	mappedModel := firstNonEmpty(mapping.MappedModel, routingModel)
+	provisionalBillingModel := h.gatewayService.DashScopeBillingModel(ctx, key, mappedModel, publicModel, mappedModel)
+
+	streamStarted := false
+	userRelease, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, false, &streamStarted, reqLog)
+	if !acquired {
+		return
+	}
+	if userRelease != nil {
+		defer userRelease()
+	}
+
+	failed := map[int64]struct{}{}
+	var (
+		selection     *service.AccountSelectionResult
+		accountSlot   func()
+		upstream      *service.DashScopeTTSUpstream
+		upstreamModel string
+		billingModel  string
+		reservation   *service.InflightReservation
+		candidateSeen bool
+		pricingErr    bool
+	)
+	defer func() {
+		reservation.HandlerDone()
+	}()
+
+	for attempts := 0; attempts < 4; attempts++ {
+		candidate, _, selectErr := h.gatewayService.SelectAccountWithSchedulerForCapability(
+			ctx, key.GroupID, "", "", routingModel, failed,
+			service.OpenAIUpstreamTransportHTTPSSE, service.OpenAIEndpointCapabilityDashScopeTTS,
+			false, false, false, service.PlatformOpenAI,
+		)
+		if selectErr != nil || candidate == nil || candidate.Account == nil {
+			if candidate != nil && candidate.Acquired && candidate.ReleaseFunc != nil {
+				candidate.ReleaseFunc()
+			}
+			break
+		}
+		var releaseCandidate func()
+		if candidate.Acquired && candidate.ReleaseFunc != nil {
+			releaseCandidate = wrapReleaseOnDone(ctx, candidate.ReleaseFunc)
+			candidate.ReleaseFunc = releaseCandidate
+		}
+		releaseEarly := func() {
+			if releaseCandidate != nil {
+				releaseCandidate()
+				releaseCandidate = nil
+			}
+		}
+
+		candidateSeen = true
+		account := candidate.Account
+		if !account.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityDashScopeTTS) {
+			releaseEarly()
+			failed[account.ID] = struct{}{}
+			continue
+		}
+		candUpstream := account.GetMappedModel(mappedModel)
+		if !service.IsDashScopeTTSModel(candUpstream) {
+			releaseEarly()
+			failed[account.ID] = struct{}{}
+			continue
+		}
+		fields := clientRequestedUsageFields(c, mapping, routingModel, candUpstream)
+		candBilling := provisionalBillingModel
+		switch fields.BillingModelSource {
+		case service.BillingModelSourceRequested:
+			candBilling = fields.OriginalModel
+		case service.BillingModelSourceChannelMapped:
+			candBilling = mappedModel
+		case service.BillingModelSourceUpstream:
+			candBilling = candUpstream
+		}
+		candBilling = h.gatewayService.DashScopeBillingModel(ctx, key, candBilling, publicModel, candUpstream)
+		if !h.gatewayService.DashScopePricingConfigured(ctx, key, candBilling, candUpstream) {
+			releaseEarly()
+			pricingErr = true
+			break
+		}
+		if reservation == nil {
+			amount, priced := h.gatewayService.EstimateDashScopeSpeechReservation(ctx, key, candBilling, candUpstream, 200)
+			if !priced {
+				releaseEarly()
+				pricingErr = true
+				break
+			}
+			if h.cfg == nil || h.cfg.RunMode != config.RunModeSimple {
+				var reserveErr error
+				reservation, reserveErr = h.billingCacheService.ReserveFixedCharge(ctx, key.User, key, key.Group, subscription, amount)
+				if reserveErr != nil {
+					releaseEarly()
+					status, code, msg, retryAfter := billingErrorDetailsForRequest(c, reserveErr)
+					if retryAfter > 0 {
+						c.Header("Retry-After", strconv.Itoa(retryAfter))
+					}
+					h.errorResponse(c, status, code, msg)
+					return
+				}
+				reservation.KeepAlive()
+				c.Request = c.Request.WithContext(service.WithInflightReservation(c.Request.Context(), reservation))
+			}
+		}
+
+		var slotStatus openAISlotAcquireResult
+		accountSlot, slotStatus = h.acquireResponsesAccountSlot(c, key.GroupID, "", candidate, false, &streamStarted, reqLog)
+		if slotStatus != openAISlotAcquireOK {
+			releaseEarly()
+			if slotStatus == openAISlotAcquireFailed {
+				return
+			}
+			failed[account.ID] = struct{}{}
+			continue
+		}
+		releaseCandidate = nil
+
+		dialCtx, cancelDial := context.WithTimeout(c.Request.Context(), service.DefaultDashScopeASRDialTimeout)
+		candConn, openErr := h.gatewayService.OpenDashScopeTTS(dialCtx, account, candUpstream)
+		cancelDial()
+		if openErr != nil {
+			reqLog.Warn("dashscope_tts_realtime.pre_accept_failed", zap.Int64("account_id", account.ID), zap.Error(openErr))
+			if accountSlot != nil {
+				accountSlot()
+				accountSlot = nil
+			}
+			failed[account.ID] = struct{}{}
+			continue
+		}
+		selection = candidate
+		upstream = candConn
+		upstreamModel = candUpstream
+		billingModel = candBilling
+		break
+	}
+
+	if pricingErr {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "DashScope TTS model has no configured local price")
+		return
+	}
+	if selection == nil || selection.Account == nil || accountSlot == nil || upstream == nil {
+		if !candidateSeen {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No eligible DashScope TTS accounts")
+		} else {
+			h.errorResponse(c, http.StatusBadGateway, "upstream_error", "DashScope TTS upstream unavailable")
+		}
+		return
+	}
+	defer accountSlot()
+	defer func() { _ = upstream.Close() }()
+
+	// Disable permessage-deflate on downstream PCM audio WebSockets for iOS WKWebView stability.
+	acceptOpts := &coderws.AcceptOptions{
+		CompressionMode:    coderws.CompressionDisabled,
+		Subprotocols:       opts.Subprotocols,
+		OriginPatterns:     opts.OriginPatterns,
+		InsecureSkipVerify: opts.SkipOriginVerify,
+	}
+	conn, err := coderws.Accept(c.Writer, c.Request, acceptOpts)
+	if err != nil {
+		reqLog.Warn("dashscope_tts_realtime.accept_failed", zap.Error(err))
+		return
+	}
+	defer func() { _ = conn.CloseNow() }()
+
+	started := time.Now()
+	stats, proxyErr := h.gatewayService.ProxyDashScopeTTSConn(c.Request.Context(), conn, upstream, opts.ProxyOptions)
+	elapsed := time.Since(started)
+
+	if proxyErr != nil {
+		switch {
+		case errors.Is(proxyErr, service.ErrDashScopeTTSIdleTimeout):
+			_ = conn.Close(coderws.StatusGoingAway, "idle timeout")
+		case errors.Is(proxyErr, service.ErrDashScopeTTSInvalidMessage):
+			_ = conn.Close(coderws.StatusPolicyViolation, "invalid tts frame")
+		case !isExpectedGrokRealtimeClose(proxyErr):
+			reqLog.Info("dashscope_tts_realtime.proxy_failed", zap.Error(proxyErr))
+			_ = conn.Close(coderws.StatusInternalError, "upstream tts websocket failed")
+		}
+	} else {
+		_ = conn.Close(coderws.StatusNormalClosure, "")
+	}
+
+	if result := service.DashScopeTTSRealtimeBillingResult(key.ID, opts.IdempotencyKey, publicModel, billingModel, upstreamModel, elapsed, stats); result != nil {
+		if err := h.recordDashScopeAudioUsage(c, key, subscription, selection.Account, result, publicModel); err != nil {
+			reqLog.Error("dashscope_tts_realtime.record_usage_failed", zap.Int64("api_key_id", key.ID), zap.Error(err))
+		}
+	}
+	h.gatewayService.ReportOpenAIAccountScheduleResult(selection.Account, upstreamModel, true, nil)
+}
+
 func (h *OpenAIGatewayHandler) recordDashScopeAudioUsage(
 	c *gin.Context,
 	key *service.APIKey,

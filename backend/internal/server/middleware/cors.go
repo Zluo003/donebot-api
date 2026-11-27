@@ -157,7 +157,8 @@ func doneBotMobileVoiceCORSMethod(path string) string {
 		return http.MethodGet
 	case "/api/v1/donebot/mobile/voice/speech",
 		"/api/v1/donebot/mobile/voice/transcribe",
-		"/api/v1/donebot/mobile/voice/asr-ticket":
+		"/api/v1/donebot/mobile/voice/asr-ticket",
+		"/api/v1/donebot/mobile/voice/tts-ticket":
 		return http.MethodPost
 	default:
 		return ""

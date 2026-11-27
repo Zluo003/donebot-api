@@ -151,6 +151,33 @@ func (s *OpenAIGatewayService) ResolveDashScopeASRUpstreamModel(ctx context.Cont
 	return "", false
 }
 
+// ResolveDashScopeTTSUpstreamModel checks schedulable DashScope TTS accounts for
+// the group and returns the resolved upstream TTS model name when supported.
+func (s *OpenAIGatewayService) ResolveDashScopeTTSUpstreamModel(ctx context.Context, groupID *int64, routingModel, mappedModel string) (string, bool) {
+	if s == nil || (s.accountRepo == nil && s.schedulerSnapshot == nil) {
+		return "", false
+	}
+	accounts, err := s.listSchedulableAccounts(ctx, groupID, PlatformOpenAI)
+	if err != nil {
+		return "", false
+	}
+	effectiveMapped := firstNonEmpty(strings.TrimSpace(mappedModel), strings.TrimSpace(routingModel))
+	for i := range accounts {
+		a := &accounts[i]
+		if !a.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityDashScopeTTS) {
+			continue
+		}
+		if routingModel != "" && !a.IsModelSupported(routingModel) && !a.IsModelSupported(effectiveMapped) {
+			continue
+		}
+		cand := a.GetMappedModel(effectiveMapped)
+		if IsDashScopeTTSModel(cand) {
+			return cand, true
+		}
+	}
+	return "", false
+}
+
 // DashScopeSpeechRequest holds validated deterministic parameters for Qwen-Audio-3.1 TTS.
 type DashScopeSpeechRequest struct {
 	Model             string
@@ -665,6 +692,14 @@ func DashScopeASRBillingRequestID(apiKeyID int64, idempotencyKey, taskID string)
 		return "dashscope:asr:idem:" + hex.EncodeToString(sum[:16])
 	}
 	return "dashscope:asr:" + StableGrokRealtimeBillingRequestID(taskID)
+}
+
+func DashScopeTTSRealtimeBillingRequestID(apiKeyID int64, idempotencyKey, taskID string) string {
+	if trimmed := strings.TrimSpace(idempotencyKey); trimmed != "" {
+		sum := sha256.Sum256([]byte(fmt.Sprintf("%d:%s", apiKeyID, trimmed)))
+		return "dashscope:tts:ws:idem:" + hex.EncodeToString(sum[:16])
+	}
+	return "dashscope:tts:ws:" + StableGrokAudioBillingRequestID(taskID)
 }
 
 func estimateDashScopeAudioTokens(audioBytes int64, format string, sampleRate int) int {
