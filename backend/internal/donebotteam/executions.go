@@ -154,7 +154,7 @@ func (s *Service) PrepareExecution(ctx context.Context, in ExecutionRequest) (*E
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	member, err := access(ctx, tx, in.TeamID, in.Actor, true)
 	if err != nil {
 		return nil, err
@@ -275,7 +275,7 @@ func (s *Service) AuthorizeExecution(ctx context.Context, token string, expected
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	e, err := s.executionGrant(ctx, tx, token, expected)
 	if err != nil {
 		return nil, err
@@ -299,7 +299,7 @@ func (s *Service) admitExecution(ctx context.Context, token string, expected Exe
 	if err != nil {
 		return nil, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	e, err := s.executionGrant(ctx, tx, token, expected)
 	if err != nil {
 		return nil, false, err

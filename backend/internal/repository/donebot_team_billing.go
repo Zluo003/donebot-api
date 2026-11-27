@@ -12,7 +12,7 @@ func (r *doneBotInstallRepository) TeamBillingOwner(ctx context.Context, teamID 
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
 			return 0, err
@@ -29,7 +29,7 @@ func (r *doneBotInstallRepository) TeamBillingBinding(ctx context.Context, teamI
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, rows.Err()
 	}

@@ -138,7 +138,7 @@ func TestTeamCoordinatorHTTPPostgres(t *testing.T) {
 		if e != nil {
 			return 0, nil, e
 		}
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		bytes, e = io.ReadAll(res.Body)
 		if res.StatusCode == 200 && res.Header.Get("Cache-Control") != "no-store" {
 			return 0, nil, io.ErrUnexpectedEOF
@@ -211,7 +211,7 @@ func TestTeamCoordinatorHTTPPostgres(t *testing.T) {
 		res, e := server.Client().Do(r)
 		require.NoError(t, e)
 		bytes, e := io.ReadAll(res.Body)
-		res.Body.Close()
+		_ = res.Body.Close()
 		require.NoError(t, e)
 		if actor == "4" || actor == "" {
 			require.NotEqual(t, 200, res.StatusCode)
@@ -230,7 +230,7 @@ func TestTeamCoordinatorHTTPPostgres(t *testing.T) {
 		r.Header.Set("Authorization", "Bearer "+credential)
 		res, e := server.Client().Do(r)
 		require.NoError(t, e)
-		res.Body.Close()
+		_ = res.Body.Close()
 		if credential == token {
 			require.Equal(t, 200, res.StatusCode)
 			require.Equal(t, team.ID, models.team)
@@ -259,7 +259,7 @@ func TestTeamCoordinatorHTTPPostgres(t *testing.T) {
 	r.Header.Set("X-Fixture-Actor", "3")
 	res, e := server.Client().Do(r)
 	require.NoError(t, e)
-	res.Body.Close()
+	_ = res.Body.Close()
 	require.Equal(t, http.StatusNotFound, res.StatusCode)
 	t.Setenv("DONEBOT_TEAMS_ENABLED", "0")
 	_, err = cloud.TeamCoordinator(ctx, instance, token)

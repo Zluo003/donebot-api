@@ -37,7 +37,7 @@ func (s *Service) ResolveModelExecution(ctx context.Context, token, method, uri 
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	e, err := scanExecution(tx.QueryRowContext(ctx, `SELECT `+executionColumns+` FROM donebot_team_execution_grants g
 		JOIN donebot_team_executions e ON e.id=g.execution_id WHERE g.token_hash=$1 AND g.expires_at>clock_timestamp()`, tokenHash(token)))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -131,7 +131,7 @@ func (s *Service) ModelExecutionStatus(ctx context.Context, coordinator *Coordin
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	e, err := scanExecution(tx.QueryRowContext(ctx, `SELECT `+executionColumns+` FROM donebot_team_executions e
 		WHERE e.id=$1::uuid AND e.team_id=$2::uuid AND e.coordinator_id=$3::uuid AND e.coordinator_generation=$4`, id, coordinator.TeamID, coordinator.InstanceID, coordinator.Generation))
 	if errors.Is(err, sql.ErrNoRows) {

@@ -33,15 +33,15 @@ const (
 )
 
 type ChatMessage struct {
-	ID                 int64     `json:"id"`
-	ScopeType          string    `json:"scope_type"`
-	TargetID           string    `json:"target_id"`
-	SenderID           int64     `json:"sender_id"`
-	SenderKind         string    `json:"sender_kind"` // "user" | "bot"
-	SenderEmail        string    `json:"sender_email"`
-	SenderNickname     string    `json:"sender_nickname,omitempty"`
-	SenderAvatarURL    string    `json:"sender_avatar_url,omitempty"`
-	SenderRemark       string    `json:"sender_remark,omitempty"`
+	ID                        int64     `json:"id"`
+	ScopeType                 string    `json:"scope_type"`
+	TargetID                  string    `json:"target_id"`
+	SenderID                  int64     `json:"sender_id"`
+	SenderKind                string    `json:"sender_kind"` // "user" | "bot"
+	SenderEmail               string    `json:"sender_email"`
+	SenderNickname            string    `json:"sender_nickname,omitempty"`
+	SenderAvatarURL           string    `json:"sender_avatar_url,omitempty"`
+	SenderRemark              string    `json:"sender_remark,omitempty"`
 	SenderBotID               string    `json:"sender_bot_id,omitempty"`
 	SenderBotName             string    `json:"sender_bot_name,omitempty"`
 	SenderBotColor            string    `json:"sender_bot_color,omitempty"`
@@ -54,15 +54,15 @@ type ChatMessage struct {
 	SenderBotAvatarFocusX     *float64  `json:"sender_bot_avatar_focus_x,omitempty"`
 	SenderBotAvatarFocusY     *float64  `json:"sender_bot_avatar_focus_y,omitempty"`
 	Kind                      string    `json:"kind"` // "text" | "file"
-	Body               string    `json:"body"`
-	FileID             string    `json:"file_id,omitempty"`
-	FileName           string    `json:"file_name,omitempty"`
-	FileMime           string    `json:"file_mime,omitempty"`
-	FileSize           int64     `json:"file_size,omitempty"`
-	FileSha256         string    `json:"file_sha256,omitempty"`
-	TriggeredBotIDs    []string  `json:"triggered_bot_ids,omitempty"`
-	DeniedBotNames     []string  `json:"denied_bot_names,omitempty"`
-	CreatedAt          time.Time `json:"created_at"`
+	Body                      string    `json:"body"`
+	FileID                    string    `json:"file_id,omitempty"`
+	FileName                  string    `json:"file_name,omitempty"`
+	FileMime                  string    `json:"file_mime,omitempty"`
+	FileSize                  int64     `json:"file_size,omitempty"`
+	FileSha256                string    `json:"file_sha256,omitempty"`
+	TriggeredBotIDs           []string  `json:"triggered_bot_ids,omitempty"`
+	DeniedBotNames            []string  `json:"denied_bot_names,omitempty"`
+	CreatedAt                 time.Time `json:"created_at"`
 }
 
 type ChatSummary struct {
@@ -388,7 +388,7 @@ func (s *Service) ChatSummaries(ctx context.Context, actor int64) ([]ChatSummary
 	if err != nil {
 		return nil, err
 	}
-	defer fRows.Close()
+	defer func() { _ = fRows.Close() }()
 	for fRows.Next() {
 		var peerID int64
 		if err = fRows.Scan(&peerID); err != nil {
@@ -411,7 +411,7 @@ func (s *Service) ChatSummaries(ctx context.Context, actor int64) ([]ChatSummary
 	if err != nil {
 		return nil, err
 	}
-	defer tRows.Close()
+	defer func() { _ = tRows.Close() }()
 	for tRows.Next() {
 		var teamID string
 		if err = tRows.Scan(&teamID); err != nil {
@@ -703,6 +703,7 @@ func (s *Service) SendChatFile(
 	if dir == "" {
 		dir = "data/collab-chat"
 	}
+	//nolint:gosec // G703: dir is the server-configured collab storage root (s.chatDir), never user input.
 	if err = os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -716,7 +717,7 @@ func (s *Service) SendChatFile(
 	tmpPath := tmpFile.Name()
 	cleanupTmp := func() {
 		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath)
+		removeCollabFile(tmpPath)
 	}
 
 	hasher := sha256.New()
@@ -737,36 +738,37 @@ func (s *Service) SendChatFile(
 		return nil, infraerrors.BadRequest("COLLAB_FILE_EMPTY", "不能发送空文件。")
 	}
 	if err = tmpFile.Close(); err != nil {
-		_ = os.Remove(tmpPath)
+		removeCollabFile(tmpPath)
 		return nil, err
 	}
+	//nolint:gosec // G703: tmpPath is created by os.CreateTemp inside server-configured dir and finalPath joins dir with uuid.NewString().
 	if err = os.Rename(tmpPath, finalPath); err != nil {
-		_ = os.Remove(tmpPath)
+		removeCollabFile(tmpPath)
 		return nil, err
 	}
 
 	shaHex := hex.EncodeToString(hasher.Sum(nil))
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		_ = os.Remove(finalPath)
+		removeCollabFile(finalPath)
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var msgID int64
 	if err = tx.QueryRowContext(ctx, `INSERT INTO donebot_collab_messages(
 			scope_type, scope_key, sender_id, kind, body, file_id, file_name, file_mime, file_size, file_sha256
 		) VALUES($1, $2, $3, 'file', $4, $5::uuid, $6, $7, $8, $9) RETURNING id`,
 		normType, scopeKey, actor, caption, fileID, fileName, fileMime, written, shaHex).Scan(&msgID); err != nil {
-		_ = os.Remove(finalPath)
+		removeCollabFile(finalPath)
 		return nil, err
 	}
 	if err = s.upsertChatRead(ctx, tx, actor, normType, scopeKey, msgID); err != nil {
-		_ = os.Remove(finalPath)
+		removeCollabFile(finalPath)
 		return nil, err
 	}
 	if err = tx.Commit(); err != nil {
-		_ = os.Remove(finalPath)
+		removeCollabFile(finalPath)
 		return nil, err
 	}
 	return s.fetchChatMessageByID(ctx, actor, msgID, targetID)
@@ -822,6 +824,7 @@ func (s *Service) OpenChatFile(ctx context.Context, actor int64, fileID string) 
 	if dir == "" {
 		dir = "data/collab-chat"
 	}
+	//nolint:gosec // G703: dir is server-configured s.chatDir and fileID is verified as a UUID by validUUID above.
 	f, err := os.Open(filepath.Join(dir, fileID))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ChatFileMeta{}, infraerrors.NotFound("COLLAB_FILE_NOT_FOUND", "文件已过期或不存在。")
@@ -830,4 +833,9 @@ func (s *Service) OpenChatFile(ctx context.Context, actor int64, fileID string) 
 		return nil, ChatFileMeta{}, err
 	}
 	return f, meta, nil
+}
+
+func removeCollabFile(p string) {
+	//nolint:gosec // G703: callers only pass server-generated temp/UUID paths inside server-configured s.chatDir.
+	_ = os.Remove(p)
 }

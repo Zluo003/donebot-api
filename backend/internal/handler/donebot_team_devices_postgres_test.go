@@ -108,7 +108,7 @@ func TestTeamDevicesHTTPPostgres(t *testing.T) {
 		req.Header.Set("X-User-Id", "1")
 		res, e := server.Client().Do(req)
 		require.NoError(t, e)
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		data, e := io.ReadAll(res.Body)
 		require.NoError(t, e)
 		require.Equal(t, status, res.StatusCode, string(data))

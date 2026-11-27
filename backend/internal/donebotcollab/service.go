@@ -168,7 +168,7 @@ func (s *Service) ListFriends(ctx context.Context, actor int64) (*FriendsSnapsho
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var f Friend
 		if err = rows.Scan(&f.UserID, &f.Email, &f.Nickname, &f.AvatarURL, &f.Remark, &f.CreatedAt); err != nil {
@@ -192,7 +192,7 @@ func (s *Service) ListFriends(ctx context.Context, actor int64) (*FriendsSnapsho
 	if err != nil {
 		return nil, err
 	}
-	defer reqRows.Close()
+	defer func() { _ = reqRows.Close() }()
 	for reqRows.Next() {
 		var req FriendRequest
 		if err = reqRows.Scan(&req.ID, &req.RequesterID, &req.RequesterEmail, &req.RequesterNickname, &req.RequesterAvatarURL,
@@ -231,7 +231,7 @@ func (s *Service) SendFriendRequest(ctx context.Context, actor int64, rawEmail, 
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var actorEmail string
 	if err = tx.QueryRowContext(ctx, `SELECT email FROM users WHERE id=$1 AND deleted_at IS NULL AND status='active'`, actor).Scan(&actorEmail); err != nil {
@@ -323,7 +323,7 @@ func (s *Service) AcceptFriendRequest(ctx context.Context, actor int64, requestI
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var requesterID int64
 	var requesterEmail string
@@ -388,7 +388,7 @@ func (s *Service) RemoveFriend(ctx context.Context, actor, friendUserID int64) e
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	a, b := pairOrder(actor, friendUserID)
 	res, err := tx.ExecContext(ctx, `DELETE FROM donebot_friends WHERE user_a=$1 AND user_b=$2`, a, b)
@@ -504,7 +504,7 @@ func (s *Service) LookupUserProfiles(ctx context.Context, actor int64, userIDs [
 	if err != nil {
 		return out, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var p UserProfile
 		if err = rows.Scan(&p.UserID, &p.Email, &p.Nickname, &p.AvatarURL, &p.Remark); err != nil {
@@ -650,7 +650,7 @@ func (s *Service) ListFolders(ctx context.Context, actor int64) (*FoldersSnapsho
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var item OwnedFolder
 		if err = rows.Scan(&item.ID, &item.InstallationID, &item.DeviceName, &item.Name, &item.Enabled, &item.UpdatedAt); err != nil {
@@ -683,7 +683,7 @@ func (s *Service) ListFolders(ctx context.Context, actor int64) (*FoldersSnapsho
 		if err != nil {
 			return nil, err
 		}
-		defer gRows.Close()
+		defer func() { _ = gRows.Close() }()
 		for gRows.Next() {
 			var folderID string
 			var grant FolderGrant
@@ -741,7 +741,7 @@ func (s *Service) querySharedFolders(ctx context.Context, actor int64) ([]Shared
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type folderAgg struct {
 		item    SharedFolder
@@ -843,7 +843,7 @@ func (s *Service) SaveFolder(ctx context.Context, actor int64, in SaveFolderInpu
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var installActive bool
 	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(
@@ -1170,7 +1170,7 @@ func (s *Service) ListBots(ctx context.Context, actor int64) (*SharedBotsSnapsho
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var item OwnedSharedBot
 		if err = rows.Scan(&item.ID, &item.SourceBotID, &item.Name, &item.Title, &item.Description, &item.SkillCount, &item.HasSoul, &item.UpdatedAt); err != nil {
@@ -1202,7 +1202,7 @@ func (s *Service) ListBots(ctx context.Context, actor int64) (*SharedBotsSnapsho
 		if err != nil {
 			return nil, err
 		}
-		defer gRows.Close()
+		defer func() { _ = gRows.Close() }()
 		for gRows.Next() {
 			var botID string
 			var grant BotGrant
@@ -1248,7 +1248,7 @@ func (s *Service) ListBots(ctx context.Context, actor int64) (*SharedBotsSnapsho
 	if err != nil {
 		return nil, err
 	}
-	defer sRows.Close()
+	defer func() { _ = sRows.Close() }()
 
 	type botAgg struct {
 		item    SharedBot
@@ -1369,7 +1369,7 @@ func (s *Service) SaveBot(ctx context.Context, actor int64, in SaveBotInput) (*O
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var existingOwner int64
 	var existingPkg json.RawMessage

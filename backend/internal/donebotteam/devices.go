@@ -38,7 +38,7 @@ func (s *Service) Devices(ctx context.Context, teamID string, actor int64) ([]De
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []Device{}
 	for rows.Next() {
 		var d Device
@@ -63,7 +63,7 @@ func (s *Service) DeviceHeartbeat(ctx context.Context, teamID string, actor int6
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	member, err := access(ctx, tx, teamID, actor, true)
 	if err != nil {
 		return err
@@ -102,7 +102,7 @@ func (s *Service) SetDevice(ctx context.Context, teamID string, actor int64, ins
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	member, err := access(ctx, tx, teamID, actor, true)
 	if err != nil {
 		return nil, err
@@ -145,7 +145,7 @@ func (s *Service) RevokeDevice(ctx context.Context, teamID string, actor int64, 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	member, err := access(ctx, tx, teamID, actor, true)
 	if err != nil {
 		return err
@@ -158,7 +158,7 @@ func (s *Service) RevokeDevice(ctx context.Context, teamID string, actor int64, 
 	} else if err != nil {
 		return err
 	}
-	if actor != holder && !(member.Role == Owner || member.Role == Admin && role == Member) {
+	if actor != holder && member.Role != Owner && (member.Role != Admin || role != Member) {
 		return infraerrors.Forbidden("TEAM_DEVICE_REVOKE_DENIED", "Only the device holder or an authorized team administrator can revoke participation")
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE donebot_team_devices SET enabled=FALSE,revoked_at=clock_timestamp(),version=version+1,last_seen=NULL WHERE id=$1::uuid`, deviceID); err != nil {

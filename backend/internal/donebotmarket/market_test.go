@@ -503,7 +503,7 @@ func TestReviewPlanSingleBotFullSkillNoTruncationAndScriptPriority(t *testing.T)
 	if scriptIdx < 0 || refIdx < 0 || licenseIdx < 0 {
 		t.Fatalf("expected script, reference, and license paths in skills section")
 	}
-	if !(scriptIdx < refIdx && refIdx < licenseIdx) {
+	if scriptIdx >= refIdx || refIdx >= licenseIdx {
 		t.Fatalf("expected scripts prioritized ahead of references and LICENSE, got script=%d ref=%d license=%d", scriptIdx, refIdx, licenseIdx)
 	}
 }
@@ -557,8 +557,8 @@ func TestReviewPlanOversizedMultiChunkFullCoverageAndMerge(t *testing.T) {
 		if strings.Contains(p.UserPrompt, "...(truncated)") {
 			t.Fatalf("pass %d (%s) unexpectedly truncated", i, p.Label)
 		}
-		combined.WriteString(p.UserPrompt)
-		combined.WriteByte('\n')
+		_, _ = combined.WriteString(p.UserPrompt)
+		_ = combined.WriteByte('\n')
 	}
 	allPrompts := combined.String()
 	for _, marker := range []string{scriptMarker, hugeTailMarker, lateRefMarker} {

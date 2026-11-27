@@ -83,7 +83,7 @@ func (r *usageBillingRepository) PendingTeamUsage(ctx context.Context, limit int
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	ids := make([]string, 0, limit)
 	for rows.Next() {
 		var id string
@@ -100,7 +100,7 @@ func (r *usageBillingRepository) ApplyTeamUsage(ctx context.Context, id string) 
 	if err != nil {
 		return nil, nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var command, snapshot []byte
 	var settled sql.NullTime
 	pending := &service.DoneBotTeamPendingUsage{ExecutionID: id}

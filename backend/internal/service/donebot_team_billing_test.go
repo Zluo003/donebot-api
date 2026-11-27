@@ -113,7 +113,8 @@ func TestTeamBillingNeverRecreatesOrRebindsAnIdentity(t *testing.T) {
 func TestTeamCatalogUsesIndependentScopesAndExistingCNYPrices(t *testing.T) {
 	s, repo, _, team := teamBillingFixture()
 	admin, stub := doneBotCatalogFixture()
-	accounts := admin.accounts.(doneBotCatalogAccountsStub)
+	accounts, ok := admin.accounts.(doneBotCatalogAccountsStub)
+	require.True(t, ok)
 	accounts.accounts[0].Type = AccountTypeAPIKey
 	accounts.accounts[0].Extra = map[string]any{"openai_responses_supported": false}
 	s.settings = &doneBotSettingFake{value: "7"}

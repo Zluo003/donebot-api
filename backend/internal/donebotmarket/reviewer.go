@@ -117,33 +117,33 @@ func RunHardRuleCheck(in ReviewInput) *AIReviewReport {
 
 func buildReviewCorpus(in ReviewInput, dept *DepartmentReviewContext) string {
 	var b strings.Builder
-	b.WriteString(in.Name)
-	b.WriteByte('\n')
-	b.WriteString(in.Tagline)
-	b.WriteByte('\n')
-	b.WriteString(in.Description)
-	b.WriteByte('\n')
+	_, _ = b.WriteString(in.Name)
+	_ = b.WriteByte('\n')
+	_, _ = b.WriteString(in.Tagline)
+	_ = b.WriteByte('\n')
+	_, _ = b.WriteString(in.Description)
+	_ = b.WriteByte('\n')
 	for _, bot := range in.BotsSummary {
-		b.WriteString(bot.Name)
-		b.WriteByte(' ')
-		b.WriteString(bot.Role)
-		b.WriteByte('\n')
+		_, _ = b.WriteString(bot.Name)
+		_ = b.WriteByte(' ')
+		_, _ = b.WriteString(bot.Role)
+		_ = b.WriteByte('\n')
 	}
-	b.WriteString(in.SoulText)
+	_, _ = b.WriteString(in.SoulText)
 	for _, s := range effectiveReviewSkills(in) {
-		b.WriteString("\n--- SKILL: ")
-		b.WriteString(s.Name)
-		b.WriteString(" ---\n")
-		b.WriteString(s.Description)
-		b.WriteByte('\n')
-		b.WriteString(s.Instructions)
+		_, _ = b.WriteString("\n--- SKILL: ")
+		_, _ = b.WriteString(s.Name)
+		_, _ = b.WriteString(" ---\n")
+		_, _ = b.WriteString(s.Description)
+		_ = b.WriteByte('\n')
+		_, _ = b.WriteString(s.Instructions)
 		for _, f := range s.Files {
-			b.WriteString("\n--- SKILL FILE: ")
-			b.WriteString(s.Name)
-			b.WriteByte('/')
-			b.WriteString(f.Path)
-			b.WriteString(" ---\n")
-			b.WriteString(f.Content)
+			_, _ = b.WriteString("\n--- SKILL FILE: ")
+			_, _ = b.WriteString(s.Name)
+			_ = b.WriteByte('/')
+			_, _ = b.WriteString(f.Path)
+			_, _ = b.WriteString(" ---\n")
+			_, _ = b.WriteString(f.Content)
 		}
 	}
 	appendDepartmentCorpus(&b, dept)
@@ -469,8 +469,8 @@ func (s *Service) AdminReviewOptions(ctx context.Context) (*ReviewOptions, error
 
 	for rows.Next() {
 		var (
-			opt                ReviewAccountOption
-			credRaw, extraRaw  []byte
+			opt               ReviewAccountOption
+			credRaw, extraRaw []byte
 		)
 		if err := rows.Scan(&opt.ID, &opt.Name, &opt.Platform, &opt.Type, &opt.Status, &opt.Schedulable, &credRaw, &extraRaw); err != nil {
 			continue
@@ -555,8 +555,7 @@ func buildAccountReviewerTarget(
 		return nil, errors.New("请选择或填写审核模型名称")
 	}
 
-	protocol := "openai"
-	authScheme := "bearer"
+	var protocol, authScheme string
 	switch {
 	case p == "anthropic" || apiProto == "anthropic" || apiProto == "messages":
 		protocol = "anthropic"
@@ -789,7 +788,11 @@ func (s *Service) httpClientForTarget(proxyRaw string) *http.Client {
 		}
 		return &http.Client{Timeout: 95 * time.Second}
 	}
-	tr := http.DefaultTransport.(*http.Transport).Clone()
+	baseTr, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		baseTr = &http.Transport{}
+	}
+	tr := baseTr.Clone()
 	tr.Proxy = http.ProxyURL(parsedProxy)
 	return &http.Client{Timeout: 95 * time.Second, Transport: tr}
 }
@@ -887,6 +890,7 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 		return "", "", errors.New("审核模型 API 地址无效")
 	}
 
+	//nolint:gosec // G704: endpoint is resolved from admin-configured reviewer accounts/settings, never untrusted user input.
 	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, bytes.NewReader(rawReq))
 	if err != nil {
 		return "", "", err
@@ -905,6 +909,7 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 		}
 	}
 
+	//nolint:gosec // G704: target endpoint and proxyURL come from admin-configured reviewer accounts/settings, not user input.
 	resp, err := s.httpClientForTarget(target.proxyURL).Do(httpReq)
 	if err != nil {
 		return "", "", err
@@ -932,7 +937,7 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 		if text := extractResponsesText(body); text != "" {
 			return text, target.model, nil
 		}
-		return "", "", errors.New("Responses 审核模型返回为空")
+		return "", "", errors.New("responses 审核模型返回为空")
 	case "anthropic":
 		var parsed struct {
 			Content []struct {
@@ -946,7 +951,7 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 		var sb strings.Builder
 		for _, blk := range parsed.Content {
 			if blk.Text != "" {
-				sb.WriteString(blk.Text)
+				_, _ = sb.WriteString(blk.Text)
 			}
 		}
 		if strings.TrimSpace(sb.String()) == "" {
@@ -970,7 +975,7 @@ func (s *Service) callReviewerTarget(ctx context.Context, target *resolvedReview
 		if len(parsed.Candidates) > 0 {
 			for _, part := range parsed.Candidates[0].Content.Parts {
 				if part.Text != "" {
-					sb.WriteString(part.Text)
+					_, _ = sb.WriteString(part.Text)
 				}
 			}
 		}
@@ -1014,7 +1019,7 @@ func extractResponsesText(body []byte) string {
 		for _, item := range parsed.Output {
 			for _, c := range item.Content {
 				if c.Text != "" {
-					sb.WriteString(c.Text)
+					_, _ = sb.WriteString(c.Text)
 				}
 			}
 		}
@@ -1043,7 +1048,7 @@ func extractResponsesText(body []byte) string {
 		}
 		if json.Unmarshal([]byte(raw), &ev) == nil {
 			if ev.Type == "response.output_text.delta" && ev.Delta != "" {
-				deltas.WriteString(ev.Delta)
+				_, _ = deltas.WriteString(ev.Delta)
 			} else if ev.Type == "response.completed" && strings.TrimSpace(ev.Response.OutputText) != "" {
 				return ev.Response.OutputText
 			}
@@ -1343,8 +1348,7 @@ func (s *Service) applyAIReviewOutcome(ctx context.Context, listingID, releaseID
 	}
 	reportJSON, _ := json.Marshal(report)
 
-	reviewStatus := "manual_review"
-	listingStatus := "manual_review"
+	var reviewStatus, listingStatus string
 	publish := false
 
 	switch report.Verdict {

@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	MaxChannelsPerTeam   = 50
-	MaxChannelNameRunes  = 60
-	MaxChannelDescRunes  = 200
-	MaxJobTitleRunes     = 40
-	DefaultChannelName   = "大厅"
+	MaxChannelsPerTeam  = 50
+	MaxChannelNameRunes = 60
+	MaxChannelDescRunes = 200
+	MaxJobTitleRunes    = 40
+	DefaultChannelName  = "大厅"
 )
 
 type TeamChannel struct {
@@ -104,15 +104,15 @@ func ensureDefaultTeamChannel(ctx context.Context, db queryExecer, teamID string
 }
 
 type authorizedChannel struct {
-	ID          string
-	TeamID      string
-	TeamName    string
-	Name        string
-	IsDefault   bool
-	IsPrivate   bool
-	CreatedBy   int64
-	ArchivedAt  *time.Time
-	ActorRole   string
+	ID         string
+	TeamID     string
+	TeamName   string
+	Name       string
+	IsDefault  bool
+	IsPrivate  bool
+	CreatedBy  int64
+	ArchivedAt *time.Time
+	ActorRole  string
 }
 
 func (s *Service) authorizeTeamChannel(ctx context.Context, actor int64, channelID string) (*authorizedChannel, error) {

@@ -41,8 +41,8 @@ func SignInstallToken(secret string, claims InstallTokenClaims) (string, error) 
 	}
 	encoded := base64.RawURLEncoding.EncodeToString(payload)
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte("v1."))
-	mac.Write([]byte(encoded))
+	_, _ = mac.Write([]byte("v1."))
+	_, _ = mac.Write([]byte(encoded))
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	return "v1." + encoded + "." + sig, nil
 }
@@ -58,8 +58,8 @@ func VerifyInstallToken(secret, token string, now time.Time) (*InstallTokenClaim
 		return nil, ErrInvalidInstallToken
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte("v1."))
-	mac.Write([]byte(parts[1]))
+	_, _ = mac.Write([]byte("v1."))
+	_, _ = mac.Write([]byte(parts[1]))
 	expectedSig := mac.Sum(nil)
 	gotSig, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil || !hmac.Equal(expectedSig, gotSig) {

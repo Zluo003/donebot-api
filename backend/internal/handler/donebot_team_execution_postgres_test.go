@@ -60,7 +60,10 @@ func TestTeamBillingCrashHelper(t *testing.T) {
 	if err != nil {
 		os.Exit(41)
 	}
-	repo := repository.NewUsageBillingRepository(nil, db).(service.DoneBotTeamUsageRepository)
+	repo, ok := repository.NewUsageBillingRepository(nil, db).(service.DoneBotTeamUsageRepository)
+	if !ok {
+		os.Exit(41)
+	}
 	_, _, err = repo.ApplyTeamUsage(context.Background(), os.Getenv("DONEBOT_TEAM_BILLING_CRASH_EXECUTION"))
 	if err != nil {
 		os.Exit(41)
@@ -181,9 +184,11 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"fixture\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000000,\"completion_tokens\":1000000}}\n\ndata: [DONE]\n\n")
 		case 5:
-			conn, _, err := w.(http.Hijacker).Hijack()
-			if err == nil {
-				_ = conn.Close()
+			if hijacker, ok := w.(http.Hijacker); ok {
+				conn, _, err := hijacker.Hijack()
+				if err == nil {
+					_ = conn.Close()
+				}
 			}
 		default:
 			_, _ = io.WriteString(w, `{"id":"fixture","model":"deepseek-flash","choices":[{"index":0,"message":{"role":"assistant","content":"fixture"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000000,"completion_tokens":1000000}}`)
@@ -191,7 +196,9 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 	}))
 	t.Cleanup(provider.Close)
 	rawBilling := repository.NewUsageBillingRepository(client, db)
-	billing := &interruptedTeamBilling{UsageBillingRepository: rawBilling, DoneBotTeamUsageRepository: rawBilling.(service.DoneBotTeamUsageRepository)}
+	teamBillingRepo, ok := rawBilling.(service.DoneBotTeamUsageRepository)
+	require.True(t, ok)
+	billing := &interruptedTeamBilling{UsageBillingRepository: rawBilling, DoneBotTeamUsageRepository: teamBillingRepo}
 	billingService := service.NewBillingService(cfg, nil)
 	usageLogs := repository.NewUsageLogRepository(client, db)
 	forwarder := service.NewOpenAIGatewayService(nil, usageLogs, billing,
@@ -266,7 +273,7 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 		if e != nil {
 			return 0, "", e
 		}
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		bytes, e := io.ReadAll(res.Body)
 		return res.StatusCode, string(bytes), e
 	}
@@ -542,6 +549,7 @@ func TestTeamModelDispatchHTTPPostgres(t *testing.T) {
 				_, e = db.Exec(`DROP TRIGGER fixture_reject_usage ON usage_logs; DROP FUNCTION fixture_reject_usage()`)
 				require.NoError(t, e)
 			} else {
+				//nolint:gosec // G702: re-execs the current test binary with a fixed -test.run filter.
 				child := exec.Command(os.Args[0], "-test.run=^TestTeamBillingCrashHelper$")
 				child.Env = append(os.Environ(), "DONEBOT_TEAM_BILLING_CRASH_HELPER=1", "DONEBOT_TEAM_BILLING_CRASH_DATABASE="+u.String(), "DONEBOT_TEAM_BILLING_CRASH_EXECUTION="+next.Execution.ID)
 				e = child.Run()

@@ -311,18 +311,18 @@ func Validate(raw string) error {
 		folded := unicode.ToLower(foldFullwidth(r))
 
 		if (folded >= 'a' && folded <= 'z') || (folded >= '0' && folded <= '9') {
-			curToken.WriteRune(folded)
+			_, _ = curToken.WriteRune(folded)
 		} else {
 			flushToken()
 		}
 
 		if unicode.IsLetter(folded) || unicode.IsDigit(folded) {
-			compact.WriteRune(folded)
+			_, _ = compact.WriteRune(folded)
 		}
 
 		leet := mapLeet(folded)
 		if unicode.IsLetter(leet) || unicode.IsDigit(leet) {
-			leetCompact.WriteRune(leet)
+			_, _ = leetCompact.WriteRune(leet)
 		}
 	}
 	flushToken()

@@ -826,10 +826,10 @@ func safePublicAuthorName(userID int64, role, rawName string) string {
 
 func scanPublicListing(scanner interface{ Scan(...any) error }) (ListingSummary, error) {
 	var (
-		item                                                    ListingSummary
-		authorRole                                              string
-		botsSummaryRaw, evalSamplesRaw                          []byte
-		tagsRaw, promptsRaw, appRaw, snRaw                      []byte
+		item                               ListingSummary
+		authorRole                         string
+		botsSummaryRaw, evalSamplesRaw     []byte
+		tagsRaw, promptsRaw, appRaw, snRaw []byte
 	)
 	err := scanner.Scan(
 		&item.ID, &item.ListingType, &item.BotCount, &botsSummaryRaw, &item.EvalVerified, &evalSamplesRaw, &item.CostTier,
@@ -992,9 +992,9 @@ func (s *Service) GetListingDetail(ctx context.Context, listingID string, viewer
 
 func (s *Service) loadRelease(ctx context.Context, releaseID string, includePackage bool) (*ReleaseDetail, error) {
 	var (
-		rel                 ReleaseDetail
-		skillsRaw, pkgRaw   []byte
-		reportRaw           []byte
+		rel               ReleaseDetail
+		skillsRaw, pkgRaw []byte
+		reportRaw         []byte
 	)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, listing_id, version, changelog, soul_text, skills_json, package_json,

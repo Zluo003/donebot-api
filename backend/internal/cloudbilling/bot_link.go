@@ -217,7 +217,9 @@ func (s *Service) serveBotLinkPair(w http.ResponseWriter, r *http.Request, cfg *
 	r.Header.Set("Authorization", "Bearer "+credential.Token)
 	return s.proxyAuthorizedWithOptions(
 		w, r, id, r.URL.Path, cfg.Master.String(),
-		func(ctx context.Context) (*Instance, *url.URL, error) { return s.proxyTarget(ctx, id, credential.Owner) },
+		func(ctx context.Context) (*Instance, *url.URL, error) {
+			return s.proxyTarget(ctx, id, credential.Owner)
+		},
 		identity,
 		nil,
 		proxyOptions{

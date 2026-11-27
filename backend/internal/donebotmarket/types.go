@@ -13,30 +13,30 @@ import (
 )
 
 const (
-	MaxPackageBytes       = 4 << 20 // 4 MiB (matches DoneBot PACKAGE_MAX_BYTES)
-	MaxTagsPerListing     = 6
-	MaxSamplePrompts      = 3
-	MaxSkillsPerBot       = 30
-	MaxSkillsPerStudio    = 90
-	MaxBotsPerStudio      = 8
-	MaxEvalSamples        = 5
-	MinSoulRunes          = 20
-	MaxSoulRunes          = 100000
+	MaxPackageBytes         = 4 << 20 // 4 MiB (matches DoneBot PACKAGE_MAX_BYTES)
+	MaxTagsPerListing       = 6
+	MaxSamplePrompts        = 3
+	MaxSkillsPerBot         = 30
+	MaxSkillsPerStudio      = 90
+	MaxBotsPerStudio        = 8
+	MaxEvalSamples          = 5
+	MinSoulRunes            = 20
+	MaxSoulRunes            = 100000
 	MaxSkillDescRunes       = 2000       // DoneBot SKILL.md DESCRIPTION_MAX=1024 with safety headroom
 	MaxSkillInstrRunes      = 256 * 1024 // Matches DoneBot SKILL_FILE_MAX_BYTES=256 KiB
 	MaxSupportFilesPerSkill = 30         // Matches DoneBot SKILL_FILE_LIMITS.files
 	MaxSupportFileBytes     = 128 * 1024 // Matches DoneBot SKILL_FILE_LIMITS.fileBytes
 	MaxSupportBytesPerSkill = 512 * 1024 // Matches DoneBot SKILL_FILE_LIMITS.bytes
-	MinTransferAmount     = 1.0
-	InstallTokenHeader    = "X-DoneBot-Market-Install"
-	BotIDHeader           = "X-DoneBot-Bot-Id"
-	DefaultAttrDays       = 180
-	DefaultFreezeDays     = 7
-	DefaultMinWithdraw    = 100.0
-	DefaultRebateLLM      = 5.0
-	DefaultRebateImage    = 3.0
-	DefaultRebateVideo    = 2.0
-	DefaultRebateMusic    = 2.0
+	MinTransferAmount       = 1.0
+	InstallTokenHeader      = "X-DoneBot-Market-Install"
+	BotIDHeader             = "X-DoneBot-Bot-Id"
+	DefaultAttrDays         = 180
+	DefaultFreezeDays       = 7
+	DefaultMinWithdraw      = 100.0
+	DefaultRebateLLM        = 5.0
+	DefaultRebateImage      = 3.0
+	DefaultRebateVideo      = 2.0
+	DefaultRebateMusic      = 2.0
 )
 
 type Settings struct {
@@ -102,14 +102,14 @@ type ReviewTestInput struct {
 }
 
 type ReviewTestResult struct {
-	OK         bool   `json:"ok"`
-	Model      string `json:"model"`
-	Account    string `json:"account,omitempty"`
-	LatencyMs  int64  `json:"latency_ms"`
-	Verdict    string `json:"verdict,omitempty"`
-	RiskScore  int    `json:"risk_score,omitempty"`
-	Summary    string `json:"summary,omitempty"`
-	Error      string `json:"error,omitempty"`
+	OK        bool   `json:"ok"`
+	Model     string `json:"model"`
+	Account   string `json:"account,omitempty"`
+	LatencyMs int64  `json:"latency_ms"`
+	Verdict   string `json:"verdict,omitempty"`
+	RiskScore int    `json:"risk_score,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 type Category struct {

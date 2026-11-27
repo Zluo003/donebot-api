@@ -147,7 +147,7 @@ func (h *DoneBotHandler) CollabChatFileDownload(c *gin.Context) {
 	if response.ErrorFrom(c, err) {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	contentType := strings.TrimSpace(meta.FileMime)
 	if contentType == "" || strings.EqualFold(contentType, "application/octet-stream") {

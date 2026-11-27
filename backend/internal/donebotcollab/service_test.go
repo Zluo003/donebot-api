@@ -17,7 +17,7 @@ import (
 
 func TestBotMemoryGuard(t *testing.T) {
 	clean := map[string]any{
-		"format": "openmaus.package",
+		"format":  "openmaus.package",
 		"version": 2,
 		"package": map[string]any{
 			"name": "Reviewer",
@@ -55,7 +55,7 @@ func TestCollabPostgres(t *testing.T) {
 	}
 	db, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	db.SetMaxOpenConns(1)
 	ctx := context.Background()
 

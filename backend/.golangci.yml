@@ -36,6 +36,8 @@ linters:
           list-mode: original
           files:
             - "**/internal/handler/**"
+            # Postgres integration test wiring real repositories with DoneBotHandler and OpenAIGatewayHandler.
+            - "!**/internal/handler/donebot_team_execution_postgres_test.go"
           deny:
             - pkg: github.com/Wei-Shaw/sub2api/internal/repository
               desc: "handler must not import repository"

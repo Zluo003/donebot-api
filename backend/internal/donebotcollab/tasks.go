@@ -1277,6 +1277,7 @@ func (s *Service) UploadTeamTaskFileUpdate(
 	if dir == "" {
 		dir = "data/collab-chat"
 	}
+	//nolint:gosec // G703: dir is the server-configured collab storage root (s.chatDir), never user input.
 	if err = os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -1290,7 +1291,7 @@ func (s *Service) UploadTeamTaskFileUpdate(
 	tmpPath := tmpFile.Name()
 	cleanupTmp := func() {
 		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath)
+		removeCollabFile(tmpPath)
 	}
 
 	hasher := sha256.New()
@@ -1311,18 +1312,19 @@ func (s *Service) UploadTeamTaskFileUpdate(
 		return nil, infraerrors.BadRequest("COLLAB_FILE_EMPTY", "不能上传空文件。")
 	}
 	if err = tmpFile.Close(); err != nil {
-		_ = os.Remove(tmpPath)
+		removeCollabFile(tmpPath)
 		return nil, err
 	}
+	//nolint:gosec // G703: tmpPath is created by os.CreateTemp inside server-configured dir and finalPath joins dir with uuid.NewString().
 	if err = os.Rename(tmpPath, finalPath); err != nil {
-		_ = os.Remove(tmpPath)
+		removeCollabFile(tmpPath)
 		return nil, err
 	}
 
 	shaHex := hex.EncodeToString(hasher.Sum(nil))
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		_ = os.Remove(finalPath)
+		removeCollabFile(finalPath)
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -1357,19 +1359,19 @@ func (s *Service) UploadTeamTaskFileUpdate(
 		) VALUES($1::uuid, $2, $3, $4, $5, $6::uuid, $7, $8::uuid, $9, $10, $11, $12, $13::jsonb)`,
 		taskID, actor, normActorKind, actorBotName, opts.Kind, batchArg, caption,
 		fileID, fileName, fileMime, written, shaHex, metaJSON); err != nil {
-		_ = os.Remove(finalPath)
+		removeCollabFile(finalPath)
 		return nil, err
 	}
 
 	if opts.Kind == "submission" && opts.Finalize {
 		if err = s.cancelPendingTaskBotEvents(ctx, tx, taskID); err != nil {
-			_ = os.Remove(finalPath)
+			removeCollabFile(finalPath)
 			return nil, err
 		}
 		if _, err = tx.ExecContext(ctx, `UPDATE donebot_team_tasks
 			SET status = $2, latest_submission_batch_id = $3::uuid, submitted_at = NOW(), updated_at = NOW()
 			WHERE id = $1::uuid`, taskID, nextStatus, batchID); err != nil {
-			_ = os.Remove(finalPath)
+			removeCollabFile(finalPath)
 			return nil, err
 		}
 		if nextStatus == "bot_reviewing" && reviewTarget > 0 {
@@ -1378,7 +1380,7 @@ func (s *Service) UploadTeamTaskFileUpdate(
 				"actor_kind":     normActorKind,
 				"actor_bot_name": actorBotName,
 			}); err != nil {
-				_ = os.Remove(finalPath)
+				removeCollabFile(finalPath)
 				return nil, err
 			}
 		}
@@ -1391,19 +1393,19 @@ func (s *Service) UploadTeamTaskFileUpdate(
 				notice += "：" + truncateRunes(caption, 100)
 			}
 			if err = s.postTaskChannelNotice(ctx, tx, actor, teamID, task.ChannelID, notice); err != nil {
-				_ = os.Remove(finalPath)
+				removeCollabFile(finalPath)
 				return nil, err
 			}
 		}
 	} else {
 		if _, err = tx.ExecContext(ctx, `UPDATE donebot_team_tasks SET updated_at = NOW() WHERE id = $1::uuid`, taskID); err != nil {
-			_ = os.Remove(finalPath)
+			removeCollabFile(finalPath)
 			return nil, err
 		}
 	}
 
 	if err = tx.Commit(); err != nil {
-		_ = os.Remove(finalPath)
+		removeCollabFile(finalPath)
 		return nil, err
 	}
 	return s.GetTeamTaskDetail(ctx, actor, teamID, taskID)
@@ -1551,6 +1553,7 @@ func (s *Service) OpenTeamTaskFile(ctx context.Context, actor int64, fileID stri
 	if dir == "" {
 		dir = "data/collab-chat"
 	}
+	//nolint:gosec // G703: dir is server-configured s.chatDir and fileID is verified as a UUID by validUUID above.
 	f, err := os.Open(filepath.Join(dir, fileID))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ChatFileMeta{}, infraerrors.NotFound("COLLAB_FILE_NOT_FOUND", "附件已过期或不存在。")

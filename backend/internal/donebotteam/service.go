@@ -122,7 +122,7 @@ func (s *Service) List(ctx context.Context, actor int64) ([]Team, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []Team{}
 	for rows.Next() {
 		var t Team
@@ -148,7 +148,7 @@ func (s *Service) Create(ctx context.Context, actor int64, name, key string) (*T
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var id string
 	err = tx.QueryRowContext(ctx, `INSERT INTO donebot_teams(id,name,owner_id,request_key) SELECT $1::uuid,$2,id,$4::uuid FROM users WHERE id=$3 AND deleted_at IS NULL AND status='active' ON CONFLICT(owner_id,request_key) DO UPDATE SET request_key=EXCLUDED.request_key RETURNING id::text`, uuid.NewString(), name, actor, key).Scan(&id)
 	if err != nil {
@@ -189,7 +189,7 @@ func (s *Service) Rename(ctx context.Context, id string, actor int64, name strin
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	t, err := access(ctx, tx, id, actor, true)
 	if err != nil {
 		return nil, err
@@ -214,7 +214,7 @@ func (s *Service) Members(ctx context.Context, id string, actor int64) ([]TeamMe
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []TeamMember{}
 	for rows.Next() {
 		var m TeamMember
@@ -233,7 +233,7 @@ func (s *Service) ChangeMember(ctx context.Context, id string, actor, target int
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	t, err := access(ctx, tx, id, actor, true)
 	if err != nil {
 		return err
@@ -281,7 +281,7 @@ func (s *Service) Invite(ctx context.Context, id string, actor int64, email stri
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	t, err := access(ctx, tx, id, actor, true)
 	if err != nil {
 		return nil, err
@@ -316,7 +316,7 @@ func (s *Service) Accept(ctx context.Context, actor int64, token string) (*Team,
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var id string
 	if err = tx.QueryRowContext(ctx, `SELECT team_id::text FROM donebot_team_invitations WHERE token_hash=$1`, tokenHash(token)).Scan(&id); errors.Is(err, sql.ErrNoRows) {
 		return nil, notFound()
@@ -376,7 +376,7 @@ func (s *Service) RevokeInvitation(ctx context.Context, id string, actor int64, 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	t, err := access(ctx, tx, id, actor, true)
 	if err != nil {
 		return err
@@ -419,7 +419,7 @@ func (s *Service) TeamInvitations(ctx context.Context, id string, actor int64) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []Invitation{}
 	for rows.Next() {
 		var inv Invitation
@@ -450,7 +450,7 @@ func (s *Service) IncomingInvitations(ctx context.Context, actor int64) ([]Incom
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []IncomingInvitation{}
 	for rows.Next() {
 		var inv IncomingInvitation
@@ -473,7 +473,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, actor int64, invitationI
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var teamID string
 	if err = tx.QueryRowContext(ctx, `SELECT team_id::text FROM donebot_team_invitations WHERE id=$1::uuid`, invitationID).Scan(&teamID); errors.Is(err, sql.ErrNoRows) {
 		return nil, notFound()
@@ -561,7 +561,7 @@ func (s *Service) Leave(ctx context.Context, id string, actor int64) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	t, err := access(ctx, tx, id, actor, true)
 	if err != nil {
 		return err

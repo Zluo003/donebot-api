@@ -341,43 +341,43 @@ func appendDepartmentCorpus(b *strings.Builder, dept *DepartmentReviewContext) {
 		return
 	}
 	if dept.TeamName != "" {
-		b.WriteString("\n--- TEAM NAME ---\n")
-		b.WriteString(dept.TeamName)
+		_, _ = b.WriteString("\n--- TEAM NAME ---\n")
+		_, _ = b.WriteString(dept.TeamName)
 	}
 	if dept.TeamBrief != "" {
-		b.WriteString("\n--- TEAM BRIEF ---\n")
-		b.WriteString(dept.TeamBrief)
+		_, _ = b.WriteString("\n--- TEAM BRIEF ---\n")
+		_, _ = b.WriteString(dept.TeamBrief)
 	}
 	for _, ag := range dept.Agents {
-		b.WriteString("\n--- AGENT: ")
-		b.WriteString(ag.Name)
-		b.WriteString(" ---\n")
-		b.WriteString(ag.Title)
-		b.WriteByte('\n')
-		b.WriteString(ag.Description)
-		b.WriteByte('\n')
-		b.WriteString(ag.Soul)
+		_, _ = b.WriteString("\n--- AGENT: ")
+		_, _ = b.WriteString(ag.Name)
+		_, _ = b.WriteString(" ---\n")
+		_, _ = b.WriteString(ag.Title)
+		_ = b.WriteByte('\n')
+		_, _ = b.WriteString(ag.Description)
+		_ = b.WriteByte('\n')
+		_, _ = b.WriteString(ag.Soul)
 	}
 	for _, rm := range dept.Rooms {
-		b.WriteString("\n--- ROOM: ")
-		b.WriteString(rm.Name)
-		b.WriteString(" ---\n")
-		b.WriteString(rm.Prompt)
-		b.WriteByte('\n')
-		b.WriteString(rm.Bulletin)
+		_, _ = b.WriteString("\n--- ROOM: ")
+		_, _ = b.WriteString(rm.Name)
+		_, _ = b.WriteString(" ---\n")
+		_, _ = b.WriteString(rm.Prompt)
+		_ = b.WriteByte('\n')
+		_, _ = b.WriteString(rm.Bulletin)
 	}
 	for _, rt := range dept.Routines {
-		b.WriteString("\n--- ROUTINE: ")
-		b.WriteString(rt.Name)
-		b.WriteString(" ---\n")
-		b.WriteString(rt.Prompt)
+		_, _ = b.WriteString("\n--- ROUTINE: ")
+		_, _ = b.WriteString(rt.Name)
+		_, _ = b.WriteString(" ---\n")
+		_, _ = b.WriteString(rt.Prompt)
 	}
 	for _, conn := range dept.Connections {
-		b.WriteString("\n--- CONNECTION: ")
-		b.WriteString(conn.Label)
-		b.WriteByte(' ')
-		b.WriteString(conn.URL)
-		b.WriteByte('\n')
+		_, _ = b.WriteString("\n--- CONNECTION: ")
+		_, _ = b.WriteString(conn.Label)
+		_ = b.WriteByte(' ')
+		_, _ = b.WriteString(conn.URL)
+		_ = b.WriteByte('\n')
 	}
 }
 
