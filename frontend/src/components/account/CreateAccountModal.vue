@@ -4816,14 +4816,16 @@ const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapabili
   { value: 'muse', label: 'Muse Video' },
   { value: 'apimart_images', label: 'APIMart Seedream' },
   { value: 'apimart_suno', label: 'APIMart Suno' },
-  { value: 'apimart_tts', label: 'APIMart TTS' }
+  { value: 'apimart_tts', label: 'APIMart TTS' },
+  { value: 'dashscope_tts', label: 'DashScope TTS (3.1)' },
+  { value: 'dashscope_asr', label: 'DashScope ASR (3.1)' }
 ])
 const openAITextGenerationCapabilityEnabled = computed(() =>
   openAIEndpointCapabilities.value.includes('chat_completions')
 )
 
 const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
-  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance', 'muse', 'apimart_images', 'apimart_suno', 'apimart_tts']
+  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance', 'muse', 'apimart_images', 'apimart_suno', 'apimart_tts', 'dashscope_tts', 'dashscope_asr']
   const selected = allowed.filter((value) => values.includes(value))
   return selected.length > 0 ? selected : ['chat_completions', 'embeddings'] as OpenAIEndpointCapability[]
 }

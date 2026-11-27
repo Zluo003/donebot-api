@@ -195,7 +195,7 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 				if native, _ := doneBotNativeMediaKind(model, accounts); native != "" && !doneBotHasNativeMediaAccount(model, price.Platform, native, accounts) {
 					continue
 				}
-				if kind == "audio" && (price.BillingMode != BillingModePerRequest || !doneBotHasAudioAccount(model, price.Platform, accounts)) {
+				if kind == "audio" && (!doneBotAudioPriceMatchesUnit(&price, audioUnit) || !doneBotHasAudioAccount(model, price.Platform, accounts)) {
 					continue
 				}
 				if kind == "llm" && price.BillingMode != "" && price.BillingMode != BillingModeToken {
@@ -231,7 +231,7 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 					if native, _ := doneBotNativeMediaKind(upstream, accounts); native != "" && !doneBotHasNativeMediaAccount(upstream, price.Platform, native, accounts) {
 						continue
 					}
-					if kind == "audio" && (price.BillingMode != BillingModePerRequest || !doneBotHasAudioAccount(upstream, price.Platform, accounts)) {
+					if kind == "audio" && (!doneBotAudioPriceMatchesUnit(&price, audioUnit) || !doneBotHasAudioAccount(upstream, price.Platform, accounts)) {
 						continue
 					}
 					if kind == "llm" && price.BillingMode != "" && price.BillingMode != BillingModeToken {
@@ -357,7 +357,7 @@ func (s *DoneBotAdminService) catalog(ctx context.Context, g *Group) ([]DoneBotM
 				row.EffectiveImagePrices[size] = multiplied(p, m)
 			}
 		}
-		row.PricingConfigured = doneBotPriceMatchesKind(price, row.Kind)
+		row.PricingConfigured = doneBotPriceMatchesRow(price, row.Kind, row.AudioPriceUnit)
 		if row.Kind == "images" && slices.Contains(row.ImageResolutions, "1.5K") {
 			row.PricingConfigured = row.PricingConfigured && doneBotCatalogPrice(row.EffectiveImagePrices["1K"], 1) != nil
 		}
@@ -607,6 +607,9 @@ func (s *DoneBotAdminService) requireModality(kind string) error {
 }
 
 func doneBotNativeAudioUnit(model string) string {
+	if unit := DashScopeAudioUnit(model); unit != "" {
+		return unit
+	}
 	switch strings.ToLower(model) {
 	case "suno":
 		return "request"
@@ -651,11 +654,17 @@ func doneBotHasAudioAccount(model, platform string, accounts []Account) bool {
 		if account.Platform != platform || !account.IsModelSupported(model) {
 			continue
 		}
-		capability := OpenAIEndpointCapability("apimart_tts")
-		switch doneBotNativeAudioUnit(account.GetMappedModel(model)) {
-		case "request":
-			capability = OpenAIEndpointCapability("apimart_suno")
-		case "million_characters":
+		native := account.GetMappedModel(model)
+		var capability OpenAIEndpointCapability
+		switch {
+		case IsDashScopeTTSModel(native):
+			capability = OpenAIEndpointCapabilityDashScopeTTS
+		case IsDashScopeASRModel(native):
+			capability = OpenAIEndpointCapabilityDashScopeASR
+		case strings.EqualFold(native, "suno"):
+			capability = OpenAIEndpointCapabilityAPIMartSuno
+		case strings.EqualFold(native, "gpt-4o-mini-tts"):
+			capability = OpenAIEndpointCapabilityAPIMartTTS
 		default:
 			continue
 		}

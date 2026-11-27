@@ -191,6 +191,9 @@ func doneBotEditablePrice(row *DoneBotModel, g *Group, price *ChannelModelPricin
 	case "images":
 		out.ImagePrices = row.EffectiveImagePrices
 	case "audio":
+		if row.AudioPriceUnit == "million_tokens" {
+			break
+		}
 		out.TierPrices = map[string]*float64{}
 		tiers := []string{"v6", "v6-wild", "v6-mini", "custom-model"}
 		if row.AudioPriceUnit == "million_characters" {
@@ -314,6 +317,18 @@ func (s *DoneBotAdminService) prepareModelPricingUpdate(ctx context.Context, g *
 			}
 			slices.SortFunc(p.Intervals, func(a, b PricingInterval) int { return strings.Compare(a.TierLabel, b.TierLabel) })
 		case "audio":
+			if row.AudioPriceUnit == "million_tokens" {
+				if value.CacheReadPrice != nil || value.CacheWritePrice != nil || len(value.ImagePrices) > 0 || len(value.TierPrices) > 0 || len(value.VideoPrices) > 0 {
+					return nil, invalid()
+				}
+				if (value.InputPrice == nil) != (value.OutputPrice == nil) {
+					return nil, invalid()
+				}
+				p.BillingMode = BillingModeToken
+				p.InputPrice = base(value.InputPrice)
+				p.OutputPrice = base(value.OutputPrice)
+				break
+			}
 			if value.InputPrice != nil || value.OutputPrice != nil || value.CacheReadPrice != nil || value.CacheWritePrice != nil || len(value.ImagePrices) > 0 || len(value.VideoPrices) > 0 {
 				return nil, invalid()
 			}
@@ -416,6 +431,10 @@ func (s *DoneBotAdminService) prepareModelPricingUpdate(ctx context.Context, g *
 }
 
 func doneBotPriceMatchesKind(price *ChannelModelPricing, kind string) bool {
+	return doneBotPriceMatchesRow(price, kind, "")
+}
+
+func doneBotPriceMatchesRow(price *ChannelModelPricing, kind, audioUnit string) bool {
 	if price == nil || !doneBotHasPrice(*price) {
 		return false
 	}
@@ -425,9 +444,20 @@ func doneBotPriceMatchesKind(price *ChannelModelPricing, kind string) bool {
 	case "images":
 		return price.BillingMode == BillingModeImage || price.BillingMode == BillingModePerRequest
 	case "audio":
-		return price.BillingMode == BillingModePerRequest
+		return doneBotAudioPriceMatchesUnit(price, audioUnit)
 	case "video":
 		return price.BillingMode == BillingModeVideo
 	}
 	return false
+}
+
+func doneBotAudioPriceMatchesUnit(price *ChannelModelPricing, audioUnit string) bool {
+	if price == nil || !doneBotHasPrice(*price) {
+		return false
+	}
+	if audioUnit == "million_tokens" {
+		return (price.BillingMode == "" || price.BillingMode == BillingModeToken) &&
+			price.InputPrice != nil && price.OutputPrice != nil
+	}
+	return price.BillingMode == BillingModePerRequest
 }

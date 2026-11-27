@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"database/sql"
 	"net"
 	"net/http"
 	"net/netip"
@@ -46,20 +47,33 @@ func doneBotUserInstallation(install *service.DoneBotInstall) doneBotUserInstall
 }
 
 type DoneBotHandler struct {
-	mobile       *mobilehub.Service
-	mobileAuth   *service.AuthService
-	cloud        *cloudbilling.Service
-	collab       *donebotcollab.Service
-	market       *donebotmarket.Service
-	templates    *service.DoneBotTemplateService
-	installs     doneBotClaimer
-	settings     service.SettingRepository
-	cfg          *config.Config
-	catalog      doneBotCatalogReader
-	account      doneBotAccountReader
-	media        *service.DoneBotMediaService
-	webTools     doneBotWebToolsRunner
-	webToolOwner doneBotWebToolsOwner
+	mobile                     *mobilehub.Service
+	mobileAuth                 *service.AuthService
+	cloud                      *cloudbilling.Service
+	collab                     *donebotcollab.Service
+	market                     *donebotmarket.Service
+	templates                  *service.DoneBotTemplateService
+	installs                   doneBotClaimer
+	settings                   service.SettingRepository
+	cfg                        *config.Config
+	catalog                    doneBotCatalogReader
+	account                    doneBotAccountReader
+	media                      *service.DoneBotMediaService
+	webTools                   doneBotWebToolsRunner
+	webToolOwner               doneBotWebToolsOwner
+	openAIGateway              *OpenAIGatewayHandler
+	mobileVoiceTickets         *mobileVoiceTicketStore
+	mobileAllowedOrigins       map[string]struct{}
+	mobileVoiceKeyResolver     func(context.Context, int64) (*service.APIKey, error)
+	mobileIdentityOverride     func(*gin.Context) (mobilehub.Identity, bool)
+	mobileSessionCheckOverride func(context.Context, mobilehub.Identity) error
+}
+
+func (h *DoneBotHandler) mobileDB() *sql.DB {
+	if h == nil || h.mobile == nil {
+		return nil
+	}
+	return h.mobile.DB
 }
 
 func NewDoneBotHandler(installs *service.DoneBotService, settings service.SettingRepository, cfg *config.Config) *DoneBotHandler {

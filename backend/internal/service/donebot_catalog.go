@@ -148,6 +148,20 @@ func (s *DoneBotCatalogService) TeamModels(ctx context.Context, teamID string) (
 	return s.modelsForScope(ctx, *key.GroupID, 0, "team:"+teamID)
 }
 
+func (s *DoneBotCatalogService) ModelsForUser(ctx context.Context, userID int64) (*DoneBotCatalogResult, error) {
+	if userID <= 0 {
+		return nil, ErrDoneBotUserInactive
+	}
+	if err := s.installs.enabled(); err != nil {
+		return nil, err
+	}
+	groupID, err := s.installs.groupID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.modelsForScope(ctx, groupID, userID, fmt.Sprintf("mobile:%d", userID))
+}
+
 func (s *DoneBotCatalogService) modelsForScope(ctx context.Context, groupID, userID int64, scope string) (*DoneBotCatalogResult, error) {
 	inputs, err := s.loadCatalog(ctx, groupID)
 	if err != nil {
@@ -660,8 +674,13 @@ func buildDoneBotPublicCatalog(group *Group, userID int64, installation string, 
 		case "images":
 			pricing.ImageSizes = doneBotCatalogPrices(row.EffectiveImagePrices)
 		case "audio":
-			pricing.PerRequest = doneBotCatalogPrice(row.EffectivePerRequestPrice, 1)
-			pricing.Tiers = doneBotCatalogPrices(row.EffectiveTierPrices)
+			if row.AudioPriceUnit == "million_tokens" {
+				pricing.InputPerMillion = doneBotCatalogPrice(row.EffectiveInputPrice, 1e6)
+				pricing.OutputPerMillion = doneBotCatalogPrice(row.EffectiveOutputPrice, 1e6)
+			} else {
+				pricing.PerRequest = doneBotCatalogPrice(row.EffectivePerRequestPrice, 1)
+				pricing.Tiers = doneBotCatalogPrices(row.EffectiveTierPrices)
+			}
 			pricing.Unit = row.AudioPriceUnit
 		case "video":
 			pricing.Tiers = map[string]float64{}
@@ -778,6 +797,14 @@ func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account
 		if row.AudioPriceUnit == "request" {
 			endpoints["openai.music"] = "music"
 		}
+		if row.AudioPriceUnit == "million_tokens" {
+			if doneBotAudioRowHasASR(row, activeAccounts, activeRoutes) {
+				endpoints["openai.audio.transcriptions.realtime"] = "audio_transcriptions_realtime"
+			}
+			if doneBotAudioRowHasSpeech(row, activeAccounts, activeRoutes) {
+				endpoints["openai.audio.speech"] = "audio_speech"
+			}
+		}
 	}
 	for iface, endpoint := range endpoints {
 		upstream := row.Model
@@ -845,12 +872,66 @@ func doneBotPublicInterfaces(groupID int64, row DoneBotModel, accounts []Account
 	return interfaces, nativeIDs
 }
 
+func doneBotAudioRowCandidates(row DoneBotModel, accounts []Account, routes []CompositeModelRoute) []string {
+	candidates := []string{row.Model}
+	if row.routingModel != "" {
+		candidates = append(candidates, row.routingModel)
+	}
+	for _, route := range routes {
+		if route.Enabled && route.TargetPlatform == row.Platform && strings.EqualFold(route.PublicModel, row.Model) && route.UpstreamModel != "" {
+			candidates = append(candidates, route.UpstreamModel)
+		}
+	}
+	base := slices.Clone(candidates)
+	for i := range accounts {
+		a := &accounts[i]
+		if a.Platform != row.Platform {
+			continue
+		}
+		for _, candidate := range base {
+			if doneBotCatalogRawMappingSupports(a, candidate) {
+				candidates = append(candidates, a.GetMappedModel(candidate))
+			}
+		}
+	}
+	return candidates
+}
+
+func doneBotAudioRowHasASR(row DoneBotModel, accounts []Account, routes []CompositeModelRoute) bool {
+	for _, candidate := range doneBotAudioRowCandidates(row, accounts, routes) {
+		if IsDashScopeASRModel(candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func doneBotAudioRowHasSpeech(row DoneBotModel, accounts []Account, routes []CompositeModelRoute) bool {
+	for _, candidate := range doneBotAudioRowCandidates(row, accounts, routes) {
+		if IsDashScopeTTSModel(candidate) || strings.EqualFold(candidate, "gpt-4o-mini-tts") {
+			return true
+		}
+	}
+	return false
+}
+
 func doneBotAccountUsesNativeInterface(account *Account, model, kind, iface string) bool {
 	if kind == "images" {
 		return iface == "openai.images" && (account.Platform == PlatformOpenAI || account.Platform == PlatformGrok)
 	}
 	if kind == "audio" {
-		return doneBotHasAudioAccount(model, account.Platform, []Account{*account})
+		native := account.GetMappedModel(model)
+		switch iface {
+		case "openai.audio.transcriptions.realtime":
+			return IsDashScopeASRModel(native) && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityDashScopeASR)
+		case "openai.audio.speech":
+			return (IsDashScopeTTSModel(native) && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityDashScopeTTS)) ||
+				(strings.EqualFold(native, "gpt-4o-mini-tts") && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAPIMartTTS))
+		case "openai.music":
+			return strings.EqualFold(native, "suno") && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAPIMartSuno)
+		default:
+			return false
+		}
 	}
 	if kind == "video" {
 		return iface == "openai.videos" && doneBotHasNativeMediaAccount(model, account.Platform, "video", []Account{*account})

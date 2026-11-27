@@ -74,6 +74,12 @@ func doneBotMediaProtocol(adapter string) *DoneBotCatalogMediaProtocol {
 		}
 	case "apimart.speech.v1":
 		protocol.Submit.Path, protocol.Submit.ResponseKind = "/v1/audio/speech", "binary"
+	case "dashscope.speech.v1":
+		protocol.Submit.Path, protocol.Submit.ResponseKind = "/v1/audio/speech", "binary"
+	case "dashscope.asr.realtime.v1":
+		protocol.Submit.Method = "GET"
+		protocol.Submit.ContentType = ""
+		protocol.Submit.Path, protocol.Submit.ResponseKind = "/v1/audio/transcriptions/realtime", "websocket"
 	case "muse.videos.v1":
 		protocol.Submit.Path, protocol.TaskIDPath = "/v1/videos", "task_id"
 		protocol.Poll = &DoneBotCatalogMediaPoll{DoneBotCatalogMediaEndpoint: DoneBotCatalogMediaEndpoint{Method: "GET", Path: "/v1/videos/{task_id}", ResponseKind: "json"}, StatusPaths: []string{"status"}, CompletedStatuses: []string{"completed"}, FailedStatuses: []string{"failed"}, ResultPaths: []string{"video_url", "url", "output.0.url"}}
@@ -295,6 +301,13 @@ func doneBotAccountMediaParameters(account *Account, model string, row DoneBotMo
 		}
 		if native == "gpt-4o-mini-tts" && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAPIMartTTS) {
 			return &DoneBotCatalogMediaParameters{Operations: []string{"generate"}, Protocol: doneBotMediaProtocol("apimart.speech.v1"), Voices: []string{"alloy", "echo", "fable", "onyx", "nova", "shimmer"}, Formats: []string{"opus", "aac", "flac", "wav", "pcm"}}
+		}
+		if IsDashScopeTTSModel(native) && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityDashScopeTTS) {
+			// Voice registries belong to the downstream client; gateway validates structure and routes deterministically.
+			return &DoneBotCatalogMediaParameters{Operations: []string{"generate"}, Protocol: doneBotMediaProtocol("dashscope.speech.v1"), Formats: []string{"pcm", "wav", "mp3", "opus"}}
+		}
+		if IsDashScopeASRModel(native) && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityDashScopeASR) {
+			return &DoneBotCatalogMediaParameters{Operations: []string{"generate"}, Protocol: doneBotMediaProtocol("dashscope.asr.realtime.v1"), Formats: []string{"pcm", "wav", "opus"}}
 		}
 	}
 	return nil

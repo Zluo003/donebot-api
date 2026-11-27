@@ -1572,7 +1572,7 @@ export interface CodexUsageSnapshot {
 
 export type OpenAICompactMode = 'auto' | 'force_on' | 'force_off'
 export type OpenAIResponsesMode = 'auto' | 'force_responses' | 'force_chat_completions'
-export type OpenAIEndpointCapability = 'chat_completions' | 'embeddings' | 'seedance' | 'muse' | 'apimart_images' | 'apimart_suno' | 'apimart_tts'
+export type OpenAIEndpointCapability = 'chat_completions' | 'embeddings' | 'seedance' | 'muse' | 'apimart_images' | 'apimart_suno' | 'apimart_tts' | 'dashscope_tts' | 'dashscope_asr'
 
 export interface OpenAICompactState {
   openai_compact_mode?: OpenAICompactMode

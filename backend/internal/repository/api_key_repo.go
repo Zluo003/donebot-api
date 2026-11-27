@@ -741,7 +741,7 @@ func (r *apiKeyRepository) SearchAPIKeys(ctx context.Context, userID int64, keyw
 func (r *apiKeyRepository) ClearGroupIDByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	result, err := clientFromContext(ctx, r.client).ExecContext(ctx, `
 		UPDATE api_keys SET group_id = NULL, updated_at = CURRENT_TIMESTAMP
-		WHERE group_id = $1 AND deleted_at IS NULL AND key NOT LIKE 'sk-dbteam-%'
+		WHERE group_id = $1 AND deleted_at IS NULL AND key NOT LIKE 'sk-dbteam-%' AND key NOT LIKE 'sk-dbmob-%'
 		  AND NOT EXISTS (SELECT 1 FROM donebot_installs i WHERE i.api_key_id = api_keys.id)`, groupID)
 	if err != nil {
 		return 0, err
@@ -754,7 +754,7 @@ func (r *apiKeyRepository) ClearGroupIDByGroupID(ctx context.Context, groupID in
 func (r *apiKeyRepository) UpdateGroupIDByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
 	result, err := clientFromContext(ctx, r.client).ExecContext(ctx, `
 		UPDATE api_keys SET group_id = $1, updated_at = CURRENT_TIMESTAMP
-		WHERE user_id = $2 AND group_id = $3 AND deleted_at IS NULL AND key NOT LIKE 'sk-dbteam-%'
+		WHERE user_id = $2 AND group_id = $3 AND deleted_at IS NULL AND key NOT LIKE 'sk-dbteam-%' AND key NOT LIKE 'sk-dbmob-%'
 		  AND NOT EXISTS (SELECT 1 FROM donebot_installs i WHERE i.api_key_id = api_keys.id)`, newGroupID, userID, oldGroupID)
 	if err != nil {
 		return 0, err

@@ -609,6 +609,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		ctx = withTokenPricingRequestedModel(ctx, result.Model)
 	}
 	billingModel := firstUsageBillingModel(billingModels)
+	if result != nil && strings.HasPrefix(result.ResponseID, "dashscope:") {
+		return s.calculateDashScopeAudioUsageCost(ctx, apiKey, result, billingModel, webSearchMultiplier)
+	}
 	if result != nil && strings.HasPrefix(result.ResponseID, "apimart:") {
 		return s.calculateAPIMartUsageCost(ctx, apiKey, result, billingModel, imageMultiplier, webSearchMultiplier)
 	}

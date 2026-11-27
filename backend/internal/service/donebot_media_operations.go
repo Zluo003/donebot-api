@@ -319,7 +319,8 @@ func (s *DoneBotMediaService) Complete(ctx context.Context, owner DoneBotMediaOw
 			completion.Status = "uncertain"
 		}
 	}
-	streamSettled := completion.Provider == "apimart" && strings.HasPrefix(completion.UsageRequestID, "apimart:tts:")
+	streamSettled := (completion.Provider == "apimart" || completion.Provider == "dashscope") &&
+		(strings.HasPrefix(completion.UsageRequestID, "apimart:tts:") || strings.HasPrefix(completion.UsageRequestID, "dashscope:tts:"))
 	if completion.HTTPStatus != 0 && completion.Body == nil && completion.TaskID == "" && completion.Status == "completed" && !streamSettled {
 		completion.Status = "uncertain"
 	}

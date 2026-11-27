@@ -500,6 +500,11 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 			return nil, ErrAPIKeyNotFound
 		}
 	}
+	if req.CustomKey != nil && isDoneBotMobileVoiceKey(*req.CustomKey) {
+		if trusted, _ := ctx.Value(doneBotMobileVoiceKeyContext{}).(bool); !trusted {
+			return nil, ErrAPIKeyNotFound
+		}
+	}
 	// 验证用户存在
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -740,7 +745,7 @@ func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) 
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
 	}
-	if apiKey != nil && !mayManageDoneBotTeamKey(ctx, apiKey.Key) {
+	if apiKey != nil && !mayManageDoneBotInternalKey(ctx, apiKey.Key) {
 		return nil, ErrAPIKeyNotFound
 	}
 	s.compileAPIKeyIPRules(apiKey)
@@ -755,7 +760,7 @@ func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, erro
 	if len(key) == 0 || len(key) > MaxAPIKeyCredentialBytes {
 		return nil, ErrAPIKeyNotFound
 	}
-	if isDoneBotTeamKey(key) {
+	if isDoneBotInternalBillingKey(key) {
 		return nil, ErrAPIKeyNotFound
 	}
 	if strings.HasPrefix(key, "dbte_") {
@@ -834,7 +839,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
 	}
-	if !mayManageDoneBotTeamKey(ctx, apiKey.Key) {
+	if !mayManageDoneBotInternalKey(ctx, apiKey.Key) {
 		return nil, ErrAPIKeyNotFound
 	}
 
@@ -994,7 +999,7 @@ func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) erro
 	if err != nil {
 		return fmt.Errorf("get api key: %w", err)
 	}
-	if !mayManageDoneBotTeamKey(ctx, key) {
+	if !mayManageDoneBotInternalKey(ctx, key) {
 		return ErrAPIKeyNotFound
 	}
 

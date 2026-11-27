@@ -88,6 +88,34 @@ func CORS(cfg config.CORSConfig) gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		if mobileMethod := doneBotMobileVoiceCORSMethod(c.Request.URL.EscapedPath()); mobileMethod != "" {
+			origin := strings.TrimSpace(c.GetHeader("Origin"))
+			mobileAllowed := IsAllowedDoneBotMobileOrigin(origin, allowedSet)
+			if c.Request.Method == http.MethodOptions {
+				if requested := c.GetHeader("Access-Control-Request-Method"); requested != "" && requested != mobileMethod {
+					c.AbortWithStatus(http.StatusForbidden)
+					return
+				}
+				if !mobileAllowed {
+					c.AbortWithStatus(http.StatusForbidden)
+					return
+				}
+			}
+			if origin != "" && mobileAllowed {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+				c.Writer.Header().Add("Vary", "Origin")
+				c.Writer.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-DoneBot-Installation")
+				c.Writer.Header().Set("Access-Control-Allow-Methods", mobileMethod+", OPTIONS")
+				c.Writer.Header().Set("Access-Control-Expose-Headers", "X-DoneBot-Receipt-ID, X-Request-Id, X-DoneBot-Stream-Status, X-Audio-Sample-Rate")
+				c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+			}
+			if c.Request.Method == http.MethodOptions {
+				c.AbortWithStatus(http.StatusNoContent)
+				return
+			}
+			c.Next()
+			return
+		}
 		origin := strings.TrimSpace(c.GetHeader("Origin"))
 		originAllowed := allowAll
 		if origin != "" && !allowAll {
@@ -121,6 +149,35 @@ func CORS(cfg config.CORSConfig) gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+func doneBotMobileVoiceCORSMethod(path string) string {
+	switch path {
+	case "/api/v1/donebot/mobile/voice/models":
+		return http.MethodGet
+	case "/api/v1/donebot/mobile/voice/speech", "/api/v1/donebot/mobile/voice/asr-ticket":
+		return http.MethodPost
+	default:
+		return ""
+	}
+}
+
+// IsAllowedDoneBotMobileOrigin checks Capacitor 8 WebView origins plus explicitly
+// configured CORS allowed origins.
+func IsAllowedDoneBotMobileOrigin(origin string, allowedSet map[string]struct{}) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return false
+	}
+	if origin == "capacitor://localhost" || origin == "https://localhost" {
+		return true
+	}
+	if len(allowedSet) > 0 {
+		if _, ok := allowedSet[origin]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func publicMCPOAuthMethod(path string) string {

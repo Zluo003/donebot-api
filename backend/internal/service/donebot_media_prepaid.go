@@ -588,6 +588,12 @@ func doneBotPrepaidActual(snapshot DoneBotMediaPriceSnapshot, result *OpenAIForw
 	return &CostBreakdown{ActualCost: a, TotalCost: t, BillingMode: snapshot.Kind}, nil
 }
 
+func isDoneBotNonPrepaidVoiceRequestID(requestID string) bool {
+	return strings.HasPrefix(requestID, "apimart:tts:") ||
+		strings.HasPrefix(requestID, "dashscope:tts:") ||
+		strings.HasPrefix(requestID, "dashscope:asr:")
+}
+
 func (s *OpenAIGatewayService) recordDoneBotPrepaidUsage(ctx context.Context, input *OpenAIRecordUsageInput) (bool, error) {
 	if !DoneBotMediaPrepaidSettlementEnabled(ctx) {
 		return false, nil
@@ -600,7 +606,7 @@ func (s *OpenAIGatewayService) recordDoneBotPrepaidUsage(ctx context.Context, in
 	}
 	repo := s.doneBotPrepaidRepository()
 	if repo == nil {
-		if DoneBotMediaReceiptID(ctx) != "" && input.Result.AudioUsage == nil {
+		if DoneBotMediaReceiptID(ctx) != "" && input.Result.AudioUsage == nil && !isDoneBotNonPrepaidVoiceRequestID(input.Result.RequestID) {
 			return true, ErrDoneBotMediaPrepaidUnavailable
 		}
 		return false, nil
@@ -611,7 +617,8 @@ func (s *OpenAIGatewayService) recordDoneBotPrepaidUsage(ctx context.Context, in
 		return true, err
 	}
 	if p == nil {
-		if !strings.HasPrefix(input.Result.RequestID, "apimart:tts:") && (DoneBotMediaReceiptID(ctx) != "" || strings.HasPrefix(input.APIKey.Key, "sk-donebot-")) {
+		if !isDoneBotNonPrepaidVoiceRequestID(input.Result.RequestID) &&
+			(DoneBotMediaReceiptID(ctx) != "" || strings.HasPrefix(input.APIKey.Key, "sk-donebot-")) {
 			return true, ErrDoneBotMediaPrepaidUnavailable
 		}
 		return false, nil

@@ -87,7 +87,7 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 	case "music":
 		mediaType, iface, adapters = "music", "openai.music", []string{"apimart.music.v1"}
 	case "speech":
-		mediaType, iface, adapters = "audio", "openai.audio.speech", []string{"apimart.speech.v1"}
+		mediaType, iface, adapters = "audio", "openai.audio.speech", []string{"apimart.speech.v1", "dashscope.speech.v1"}
 	default:
 		return ErrDoneBotMediaInvalid
 	}
@@ -96,6 +96,28 @@ func validateDoneBotMediaModel(model *DoneBotCatalogModel, kind, path string, pa
 	}
 	if selected, exists := parameters["model"]; exists && selected != model.ID {
 		return ErrDoneBotMediaInvalid
+	}
+
+	if protocol.Adapter == "dashscope.speech.v1" {
+		native := make(map[string]any, len(parameters)+1)
+		for key, value := range parameters {
+			native[key] = value
+		}
+		if _, exists := native["model"]; !exists {
+			native["model"] = model.ID
+		}
+		body, err := json.Marshal(native)
+		if err != nil {
+			return ErrDoneBotMediaInvalid
+		}
+		parsed, err := ParseDashScopeSpeechRequest(body)
+		if err != nil {
+			return ErrDoneBotMediaInvalid
+		}
+		if len(media.Formats) > 0 && !slices.Contains(media.Formats, parsed.ResponseFormat) {
+			return ErrDoneBotMediaInvalid
+		}
+		return nil
 	}
 
 	if protocol.Adapter == "muse.videos.v1" {
@@ -364,6 +386,19 @@ func estimateDoneBotMediaModel(model *DoneBotCatalogModel, parameters map[string
 		if parameters["max_mode"] == true {
 			units = decimal.NewFromInt(2)
 		}
+	case "dashscope.speech.v1":
+		if model.Pricing.Unit != "million_characters" {
+			return nil
+		}
+		input, ok := parameters["input"].(string)
+		if !ok || !utf8.ValidString(input) || utf8.RuneCountInString(input) == 0 || utf8.RuneCountInString(input) > dashScopeTTSMaxChars {
+			return nil
+		}
+		tariff = valueAt(model.Pricing.Tiers, "tts")
+		if tariff == nil {
+			tariff = doneBotCatalogPrice(model.Pricing.PerRequest, 1)
+		}
+		units = decimal.NewFromInt(int64(utf8.RuneCountInString(input))).Div(decimal.NewFromInt(1000000))
 	case "apimart.speech.v1":
 		input, ok := parameters["input"].(string)
 		if !ok || !utf8.ValidString(input) || utf8.RuneCountInString(input) == 0 || utf8.RuneCountInString(input) > 4096 || model.Pricing.Unit != "million_characters" {

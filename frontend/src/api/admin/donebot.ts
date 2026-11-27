@@ -21,7 +21,7 @@ export interface DoneBotModel extends ModelToggle {
  effective_input_price: number | null; effective_output_price: number | null
  effective_per_request_price?: number | null
  effective_tier_prices?: Record<string, number | null>
- audio_price_unit?: 'request' | 'million_characters'
+ audio_price_unit?: 'request' | 'million_characters' | 'million_tokens'
  effective_image_prices?: Record<string, number | null>
 }
 export interface ModelsResult {

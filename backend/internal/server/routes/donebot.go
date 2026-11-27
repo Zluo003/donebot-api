@@ -1,9 +1,11 @@
 package routes
 
 import (
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handlers) {
@@ -101,6 +103,9 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 		authenticated.DELETE("/donebot/mobile/push/subscription", h.DoneBot.MobileUnsubscribe)
 		authenticated.GET("/donebot/mobile/push/stream", h.DoneBot.MobilePushStream)
 		authenticated.DELETE("/donebot/mobile/session", h.DoneBot.MobileDisconnect)
+		authenticated.GET("/donebot/mobile/voice/models", h.DoneBot.MobileVoiceModels)
+		authenticated.POST("/donebot/mobile/voice/speech", h.DoneBot.MobileVoiceSpeech)
+		authenticated.POST("/donebot/mobile/voice/asr-ticket", h.DoneBot.MobileVoiceASRTicket)
 		authenticated.GET("/donebot/cloud/plan", h.DoneBot.CloudPlanInfo)
 		authenticated.DELETE("/donebot/cloud/browser-sessions", h.DoneBot.CloudBrowserRevoke)
 		authenticated.POST("/donebot/cloud/instances/:id/browser-launch", h.DoneBot.CloudBrowserLaunch)
@@ -240,4 +245,18 @@ func RegisterDoneBotClientReleaseRoutes(v1 *gin.RouterGroup, h *handler.Handlers
 	client.GET("/mobile-releases/:version/:platform/:filename", h.Admin.DoneBot.DownloadMobileRelease)
 	client.GET("/updates/:platform/latest.yml", h.Admin.DoneBot.ClientUpdateFeed)
 	client.GET("/updates/:platform/latest-mac.yml", h.Admin.DoneBot.ClientUpdateFeed)
+}
+
+// RegisterDoneBotMobileVoiceRoutes configures mobile voice dependencies and
+// registers the ticket-authenticated WebSocket ASR endpoint directly on v1.
+func RegisterDoneBotMobileVoiceRoutes(v1 *gin.RouterGroup, h *handler.Handlers, redisClient *redis.Client, cfg *config.Config) {
+	if h == nil || h.DoneBot == nil {
+		return
+	}
+	var allowedOrigins []string
+	if cfg != nil {
+		allowedOrigins = cfg.CORS.AllowedOrigins
+	}
+	h.DoneBot.ConfigureMobileVoice(h.OpenAIGateway, redisClient, allowedOrigins)
+	v1.GET("/donebot/mobile/voice/asr", h.DoneBot.MobileVoiceASRWS)
 }

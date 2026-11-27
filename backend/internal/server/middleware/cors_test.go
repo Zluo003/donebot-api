@@ -406,3 +406,59 @@ func TestNormalizeOrigins(t *testing.T) {
 		})
 	}
 }
+
+func TestCORSDoneBotMobileVoiceNarrowPolicy(t *testing.T) {
+	mw := CORS(config.CORSConfig{AllowedOrigins: []string{"https://console.example.com"}, AllowCredentials: true})
+
+	for _, tc := range []struct {
+		path, method string
+	}{
+		{"/api/v1/donebot/mobile/voice/models", http.MethodGet},
+		{"/api/v1/donebot/mobile/voice/speech", http.MethodPost},
+		{"/api/v1/donebot/mobile/voice/asr-ticket", http.MethodPost},
+	} {
+		for _, origin := range []string{"capacitor://localhost", "https://localhost", "https://console.example.com"} {
+			t.Run(tc.path+"_"+origin, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(w)
+				c.Request = httptest.NewRequest(http.MethodOptions, tc.path, nil)
+				c.Request.Header.Set("Origin", origin)
+				c.Request.Header.Set("Access-Control-Request-Method", tc.method)
+				mw(c)
+
+				assert.Equal(t, http.StatusNoContent, w.Code)
+				assert.Equal(t, origin, w.Header().Get("Access-Control-Allow-Origin"))
+				assert.Contains(t, w.Header().Values("Vary"), "Origin")
+				assert.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "Authorization")
+				assert.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "Idempotency-Key")
+				assert.Contains(t, w.Header().Get("Access-Control-Expose-Headers"), "X-DoneBot-Stream-Status")
+				assert.Contains(t, w.Header().Get("Access-Control-Expose-Headers"), "X-Audio-Sample-Rate")
+				assert.Empty(t, w.Header().Get("Access-Control-Allow-Credentials"))
+			})
+		}
+
+		t.Run(tc.path+"_disallowed_origin", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodOptions, tc.path, nil)
+			c.Request.Header.Set("Origin", "https://evil.example.com")
+			c.Request.Header.Set("Access-Control-Request-Method", tc.method)
+			mw(c)
+
+			assert.Equal(t, http.StatusForbidden, w.Code)
+			assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+		})
+
+		t.Run(tc.path+"_disallowed_method", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodOptions, tc.path, nil)
+			c.Request.Header.Set("Origin", "capacitor://localhost")
+			c.Request.Header.Set("Access-Control-Request-Method", http.MethodDelete)
+			mw(c)
+
+			assert.Equal(t, http.StatusForbidden, w.Code)
+			assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+		})
+	}
+}

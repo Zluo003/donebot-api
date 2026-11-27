@@ -69,7 +69,7 @@ const validPrices = computed(() => drafts.value.every(validPriceDraft))
 const descriptions = computed<Record<Modality, string>>(() => ({
   llm: 'LLM 按渠道价格 × 每模型倍率计费。',
   images: '图片按模型与尺寸逐张计费（USD / 张）。Seedream 1.5K 与 1K 使用相同价格；2K 也须配置低档价，以便按实际产出结算。Seedream 5.5 的输入参考图单独按张计费。',
-  audio: 'Suno 按版本配置每次生成价格，Max 模式为 2 倍；TTS 按百万字符配置价格。',
+  audio: 'Suno 按版本配置每次生成价格，Max 模式为 2 倍；字符计费 TTS 按百万字符配置；Qwen-Audio-3.1 流式模型按百万输入/输出 Token 配置。',
   video: t('admin.donebot.pricing.videoDescription')
 }))
 const emptyMessages: Record<Modality, string> = {
@@ -83,12 +83,14 @@ function canEnable(row: DoneBotModel, draft?: ModelPriceDraft) {
   if (row.pricing_configured !== false) return true
   if (props.kind === 'llm' || !draft || !validPriceDraft(draft)) return false
   if (props.kind === 'images' && row.image_resolutions?.includes('1.5K')) return draft.fields.some(field => field.key === 'image-1K' && String(field.value).trim() !== '')
+  if (props.kind === 'audio' && row.audio_price_unit === 'million_tokens') return draft.fields.length > 0 && draft.fields.every(field => String(field.value).trim() !== '')
   return draft.fields.some(field => String(field.value).trim() !== '')
 }
 function priceUnit(row: DoneBotModel) {
   if (props.kind === 'llm') return '×'
   if (props.kind === 'images') return 'USD / 张'
   if (props.kind === 'video') return 'USD / 秒（实际成片时长）'
+  if (row.audio_price_unit === 'million_tokens') return 'USD / 百万 Token'
   return row.audio_price_unit === 'million_characters' || row.model === 'gpt-4o-mini-tts' || drafts.value.find(draft => draft.model === row.model)?.fields.some(field => field.label === 'tts') ? 'USD / 百万字符' : 'USD / 次生成'
 }
 function videoResolutions(draft: ModelPriceDraft) { return [...new Set(draft.fields.map(field => field.resolution!))] }
