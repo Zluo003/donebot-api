@@ -400,3 +400,188 @@ func DashScopeASRBillingResult(
 		},
 	}
 }
+
+const (
+	dashScopeTranscribeChunkBytes   = 3200
+	dashScopeTranscribeStartTimeout = 15 * time.Second
+	dashScopeTranscribeMaxDuration  = 90 * time.Second
+)
+
+// TranscribeDashScopeAudio performs one-shot recording transcription over the
+// configured DashScope Qwen-Audio-3.1 ASR upstream WebSocket so mobile push-to-talk
+// can post a recorded clip over plain HTTP without maintaining a client WebSocket.
+func (s *OpenAIGatewayService) TranscribeDashScopeAudio(
+	ctx context.Context,
+	account *Account,
+	upstreamModel string,
+	req DashScopeTranscribeRequest,
+) (string, DashScopeASRSessionStats, string, error) {
+	stats := DashScopeASRSessionStats{
+		AudioFormat: firstNonEmpty(req.Format, "pcm"),
+		SampleRate:  req.SampleRate,
+	}
+	if stats.SampleRate <= 0 {
+		stats.SampleRate = dashScopeASRDefaultHz
+	}
+
+	sessionCtx, cancelSession := context.WithTimeout(ctx, dashScopeTranscribeMaxDuration)
+	defer cancelSession()
+
+	dialCtx, cancelDial := context.WithTimeout(sessionCtx, DefaultDashScopeASRDialTimeout)
+	upstream, err := s.OpenDashScopeASR(dialCtx, account, upstreamModel)
+	cancelDial()
+	if err != nil {
+		return "", stats, "", err
+	}
+	defer func() { _ = upstream.Close() }()
+
+	taskID := uuid.NewString()
+	stats.TaskID = taskID
+	params := map[string]any{
+		"format":               stats.AudioFormat,
+		"sample_rate":          stats.SampleRate,
+		"max_sentence_silence": 800,
+	}
+	if len(req.Vocabulary) > 0 {
+		params["vocabulary"] = req.Vocabulary
+	}
+	if len(req.LanguageHints) > 0 {
+		params["language_hints"] = req.LanguageHints
+	}
+
+	runTask := dashScopeTTSTaskEnvelope{
+		Header: dashScopeTaskHeader{Action: "run-task", TaskID: taskID, Streaming: "duplex"},
+		Payload: dashScopeTaskPayload{
+			TaskGroup:  "audio",
+			Task:       "asr",
+			Function:   "recognition",
+			Model:      upstream.upstreamModel,
+			Parameters: params,
+			Input:      map[string]any{},
+		},
+	}
+	startCtx, cancelStart := context.WithTimeout(sessionCtx, dashScopeTranscribeStartTimeout)
+	defer cancelStart()
+	if err := upstream.conn.WriteJSON(startCtx, runTask); err != nil {
+		return "", stats, "", err
+	}
+
+	for {
+		msgType, payload, readErr := upstream.frameConn.ReadFrame(startCtx)
+		if readErr != nil {
+			return "", stats, "", readErr
+		}
+		if msgType != coderws.MessageText || !gjson.ValidBytes(payload) {
+			continue
+		}
+		event := strings.TrimSpace(gjson.GetBytes(payload, "header.event").String())
+		switch event {
+		case "task-started":
+			goto started
+		case "task-failed":
+			msg := sanitizeDashScopeErrorMessage(gjson.GetBytes(payload, "header.error_message").String())
+			return "", stats, msg, nil
+		}
+	}
+
+started:
+	type readOutcome struct {
+		text    string
+		taskErr string
+		err     error
+		stats   DashScopeASRSessionStats
+	}
+	doneCh := make(chan readOutcome, 1)
+	go func() {
+		localStats := stats
+		var committed []string
+		var interim string
+		for {
+			msgType, payload, readErr := upstream.frameConn.ReadFrame(sessionCtx)
+			if readErr != nil {
+				text := strings.TrimSpace(strings.Join(append(committed, interim), ""))
+				doneCh <- readOutcome{text: text, err: readErr, stats: localStats}
+				return
+			}
+			if msgType != coderws.MessageText || !gjson.ValidBytes(payload) {
+				continue
+			}
+			event := strings.TrimSpace(gjson.GetBytes(payload, "header.event").String())
+			if v := gjson.GetBytes(payload, "payload.usage.input_tokens"); v.Exists() && int(v.Int()) > localStats.InputTokens {
+				localStats.InputTokens = int(v.Int())
+			}
+			if v := gjson.GetBytes(payload, "payload.usage.output_tokens"); v.Exists() && int(v.Int()) > localStats.OutputTokens {
+				localStats.OutputTokens = int(v.Int())
+			}
+			if v := gjson.GetBytes(payload, "payload.usage.total_tokens"); v.Exists() && int(v.Int()) > localStats.TotalTokens {
+				localStats.TotalTokens = int(v.Int())
+			}
+			switch event {
+			case "result-generated":
+				sentence := gjson.GetBytes(payload, "payload.output.sentence")
+				if !sentence.Exists() || sentence.Get("heartbeat").Bool() {
+					continue
+				}
+				piece := strings.TrimSpace(sentence.Get("text").String())
+				if piece == "" {
+					continue
+				}
+				if sentence.Get("sentence_end").Bool() {
+					committed = append(committed, piece)
+					interim = ""
+					localStats.TranscriptRunes += utf8.RuneCountInString(piece)
+				} else {
+					interim = piece
+				}
+			case "task-finished":
+				if interim != "" {
+					committed = append(committed, interim)
+					localStats.TranscriptRunes += utf8.RuneCountInString(interim)
+				}
+				doneCh <- readOutcome{text: strings.TrimSpace(strings.Join(committed, "")), stats: localStats}
+				return
+			case "task-failed":
+				msg := sanitizeDashScopeErrorMessage(gjson.GetBytes(payload, "header.error_message").String())
+				doneCh <- readOutcome{taskErr: msg, stats: localStats}
+				return
+			}
+		}
+	}()
+
+	var sentBytes int64
+	for offset := 0; offset < len(req.Audio); offset += dashScopeTranscribeChunkBytes {
+		end := offset + dashScopeTranscribeChunkBytes
+		if end > len(req.Audio) {
+			end = len(req.Audio)
+		}
+		chunk := req.Audio[offset:end]
+		if writeErr := upstream.frameConn.WriteFrame(sessionCtx, coderws.MessageBinary, chunk); writeErr != nil {
+			cancelSession()
+			res := <-doneCh
+			res.stats.AudioBytes = sentBytes
+			if res.taskErr != "" {
+				return "", res.stats, res.taskErr, nil
+			}
+			return "", res.stats, "", writeErr
+		}
+		sentBytes += int64(len(chunk))
+	}
+
+	finishTask := dashScopeTTSTaskEnvelope{
+		Header:  dashScopeTaskHeader{Action: "finish-task", TaskID: taskID, Streaming: "duplex"},
+		Payload: dashScopeTaskPayload{Input: map[string]any{}},
+	}
+	if writeErr := upstream.conn.WriteJSON(sessionCtx, finishTask); writeErr != nil {
+		cancelSession()
+		res := <-doneCh
+		res.stats.AudioBytes = sentBytes
+		if res.taskErr != "" {
+			return "", res.stats, res.taskErr, nil
+		}
+		return "", res.stats, "", writeErr
+	}
+
+	res := <-doneCh
+	res.stats.AudioBytes = sentBytes
+	return res.text, res.stats, res.taskErr, res.err
+}

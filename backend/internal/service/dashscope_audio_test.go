@@ -129,6 +129,8 @@ func TestBuildDashScopeInferenceWSURLAndHeaders(t *testing.T) {
 		name, baseURL, want string
 	}{
 		{"beijing default", "https://dashscope.aliyuncs.com", "wss://dashscope.aliyuncs.com/api-ws/v1/inference"},
+		{"beijing compatible mode v1", "https://dashscope.aliyuncs.com/compatible-mode/v1", "wss://dashscope.aliyuncs.com/api-ws/v1/inference"},
+		{"beijing api v1", "https://dashscope.aliyuncs.com/api/v1/", "wss://dashscope.aliyuncs.com/api-ws/v1/inference"},
 		{"maas workspace", "https://ws-123.cn-beijing.maas.aliyuncs.com/", "wss://ws-123.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference"},
 		{"singapore with path", "wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference", "wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference"},
 		{"local http test", "http://127.0.0.1:18080", "ws://127.0.0.1:18080/api-ws/v1/inference"},

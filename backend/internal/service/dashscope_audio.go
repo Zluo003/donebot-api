@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -26,11 +27,12 @@ const (
 	OpenAIEndpointCapabilityDashScopeTTS OpenAIEndpointCapability = "dashscope_tts"
 	OpenAIEndpointCapabilityDashScopeASR OpenAIEndpointCapability = "dashscope_asr"
 
-	dashScopeInferenceWSPath = "/api-ws/v1/inference"
-	dashScopeTTSMaxChars     = 20000
-	dashScopeDefaultRateHz   = 24000
-	dashScopeASRDefaultHz    = 16000
-	dashScopeTokensPerSec    = 25.0
+	dashScopeInferenceWSPath       = "/api-ws/v1/inference"
+	dashScopeTTSMaxChars           = 20000
+	dashScopeDefaultRateHz         = 24000
+	dashScopeASRDefaultHz          = 16000
+	dashScopeTokensPerSec          = 25.0
+	dashScopeTranscribeMaxRawBytes = 4 * 1024 * 1024
 )
 
 var (
@@ -39,6 +41,8 @@ var (
 	dashScopeAllowedSampleRates    = []int{8000, 12000, 16000, 22050, 24000, 44100, 48000}
 	dashScopeAllowedOpusSampleRate = []int{8000, 12000, 16000, 24000, 48000}
 	dashScopeAllowedTTSFormats     = []string{"pcm", "wav", "mp3", "opus"}
+	dashScopeAllowedASRFormats     = []string{"pcm", "wav"}
+	dashScopeAllowedASRSampleRates = []int{8000, 16000}
 )
 
 func IsDashScopeTTSPlusModel(model string) bool {
@@ -319,6 +323,13 @@ func buildDashScopeInferenceWSURL(s *OpenAIGatewayService, account *Account) (st
 	}
 	trimmedPath := strings.TrimRight(wsURL.Path, "/")
 	if !strings.HasSuffix(trimmedPath, dashScopeInferenceWSPath) {
+		lowerPath := strings.ToLower(trimmedPath)
+		for _, suffix := range []string{"/compatible-mode/v1", "/compatible-mode", "/api/v1", "/v1"} {
+			if strings.HasSuffix(lowerPath, suffix) {
+				trimmedPath = strings.TrimRight(trimmedPath[:len(trimmedPath)-len(suffix)], "/")
+				break
+			}
+		}
 		wsURL.Path = trimmedPath + dashScopeInferenceWSPath
 	} else {
 		wsURL.Path = trimmedPath
@@ -326,6 +337,124 @@ func buildDashScopeInferenceWSURL(s *OpenAIGatewayService, account *Account) (st
 	wsURL.RawQuery = ""
 	wsURL.Fragment = ""
 	return wsURL.String(), nil
+}
+
+// DashScopeTranscribeRequest holds validated parameters for one-shot recording
+// transcription over DashScope Qwen-Audio-3.1 ASR.
+type DashScopeTranscribeRequest struct {
+	Model         string
+	Audio         []byte
+	Format        string
+	SampleRate    int
+	Vocabulary    map[string]int
+	LanguageHints []string
+}
+
+func ParseDashScopeTranscribeRequest(body []byte) (DashScopeTranscribeRequest, error) {
+	var req DashScopeTranscribeRequest
+	if !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
+		return req, fmt.Errorf("request body must be a JSON object")
+	}
+	root := gjson.ParseBytes(body)
+	allowed := []string{"model", "audio_base64", "format", "sample_rate", "vocabulary", "language_hints"}
+	var unknownField string
+	root.ForEach(func(k, _ gjson.Result) bool {
+		if !slices.Contains(allowed, k.String()) {
+			unknownField = k.String()
+			return false
+		}
+		return true
+	})
+	if unknownField != "" {
+		return req, fmt.Errorf("unsupported request field %q", unknownField)
+	}
+
+	req.Model = strings.TrimSpace(root.Get("model").String())
+	if req.Model == "" {
+		req.Model = DashScopeASRStreamingModel
+	}
+
+	rawB64 := root.Get("audio_base64")
+	if rawB64.Type != gjson.String || strings.TrimSpace(rawB64.String()) == "" {
+		return req, fmt.Errorf("audio_base64 is required")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(rawB64.String()))
+	if err != nil {
+		return req, fmt.Errorf("invalid audio_base64 encoding")
+	}
+	if len(decoded) == 0 {
+		return req, fmt.Errorf("audio payload is empty")
+	}
+	if len(decoded) > dashScopeTranscribeMaxRawBytes {
+		return req, fmt.Errorf("audio payload exceeds maximum size of %d bytes", dashScopeTranscribeMaxRawBytes)
+	}
+	req.Audio = decoded
+
+	req.Format = "pcm"
+	if v := root.Get("format"); v.Exists() {
+		if v.Type != gjson.String || !slices.Contains(dashScopeAllowedASRFormats, strings.ToLower(strings.TrimSpace(v.String()))) {
+			return req, fmt.Errorf("format must be pcm or wav")
+		}
+		req.Format = strings.ToLower(strings.TrimSpace(v.String()))
+	}
+
+	req.SampleRate = dashScopeASRDefaultHz
+	if v := root.Get("sample_rate"); v.Exists() {
+		if v.Type != gjson.Number || math.Trunc(v.Float()) != v.Float() || !slices.Contains(dashScopeAllowedASRSampleRates, int(v.Int())) {
+			return req, fmt.Errorf("sample_rate must be 8000 or 16000")
+		}
+		req.SampleRate = int(v.Int())
+	}
+
+	if v := root.Get("vocabulary"); v.Exists() {
+		if !v.IsObject() {
+			return req, fmt.Errorf("vocabulary must be an object")
+		}
+		vocab := make(map[string]int)
+		var vocabErr error
+		v.ForEach(func(k, val gjson.Result) bool {
+			word := strings.TrimSpace(k.String())
+			if word == "" || utf8.RuneCountInString(word) > 32 {
+				return true
+			}
+			if val.Type != gjson.Number || math.Trunc(val.Float()) != val.Float() {
+				vocabErr = fmt.Errorf("invalid vocabulary weight")
+				return false
+			}
+			weight := int(val.Int())
+			if weight != 50 && (weight < 1 || weight > 5) {
+				vocabErr = fmt.Errorf("vocabulary weight must be 1-5 or 50")
+				return false
+			}
+			vocab[word] = weight
+			return len(vocab) < 50
+		})
+		if vocabErr != nil {
+			return req, vocabErr
+		}
+		if len(vocab) > 0 {
+			req.Vocabulary = vocab
+		}
+	}
+
+	if v := root.Get("language_hints"); v.Exists() {
+		if !v.IsArray() {
+			return req, fmt.Errorf("language_hints must be an array of strings")
+		}
+		items := v.Array()
+		if len(items) > 8 {
+			return req, fmt.Errorf("language_hints supports at most 8 items")
+		}
+		req.LanguageHints = make([]string, 0, len(items))
+		for _, item := range items {
+			if item.Type != gjson.String || !dashScopeLanguageHintPattern.MatchString(item.String()) {
+				return req, fmt.Errorf("invalid language_hints entry")
+			}
+			req.LanguageHints = append(req.LanguageHints, item.String())
+		}
+	}
+
+	return req, nil
 }
 
 func buildDashScopeWSHeaders(account *Account) (http.Header, error) {

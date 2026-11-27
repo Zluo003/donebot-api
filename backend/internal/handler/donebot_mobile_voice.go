@@ -240,6 +240,26 @@ func (h *DoneBotHandler) MobileVoiceSpeech(c *gin.Context) {
 	h.openAIGateway.Speech(c)
 }
 
+// MobileVoiceTranscribe handles POST /api/v1/donebot/mobile/voice/transcribe
+// for one-shot push-to-talk audio clip recognition over plain HTTP.
+func (h *DoneBotHandler) MobileVoiceTranscribe(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	who, ok := h.mobileVoiceIdentity(c)
+	if !ok {
+		return
+	}
+	if h.openAIGateway == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Mobile voice gateway unavailable")
+		return
+	}
+	apiKey, err := h.mobileVoiceBillingKey(c.Request.Context(), who.Owner)
+	if response.ErrorFrom(c, err) {
+		return
+	}
+	attachMobileVoiceGatewayContext(c, apiKey)
+	h.openAIGateway.DashScopeTranscribe(c)
+}
+
 // MobileVoiceASRTicket handles POST /api/v1/donebot/mobile/voice/asr-ticket.
 func (h *DoneBotHandler) MobileVoiceASRTicket(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
@@ -409,13 +429,14 @@ func (h *DoneBotHandler) MobileVoiceASRWS(c *gin.Context) {
 		idem = ticketToken
 	}
 	// Only echo donebot-asr.v1 (never echo donebot-ticket.*). Origin has already
-	// been validated strictly above, so pass OriginPatterns:["*"] to coderws.Accept
-	// to allow capacitor://localhost / https://localhost WebView origins.
+	// been validated strictly above, so skip redundant coderws host pattern checks
+	// for capacitor://localhost / https://localhost WebView origins.
 	h.openAIGateway.DashScopeASRRealtimeWithOptions(c, DashScopeASRHandlerOptions{
-		Model:          payload.Model,
-		IdempotencyKey: idem,
-		Subprotocols:   []string{mobileVoiceASRProtocol},
-		OriginPatterns: []string{"*"},
+		Model:            payload.Model,
+		IdempotencyKey:   idem,
+		Subprotocols:     []string{mobileVoiceASRProtocol},
+		OriginPatterns:   []string{"*"},
+		SkipOriginVerify: true,
 	})
 }
 

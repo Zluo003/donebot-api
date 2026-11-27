@@ -391,11 +391,12 @@ func streamDashScopeSpeech(c *gin.Context, resp *service.APIMartResponse, settle
 // DashScopeASRHandlerOptions customizes WebSocket acceptance and billing keys for
 // shared desktop (/v1/audio/transcriptions/realtime) and mobile (/api/v1/donebot/mobile/voice/asr) routes.
 type DashScopeASRHandlerOptions struct {
-	Model          string
-	IdempotencyKey string
-	Subprotocols   []string
-	OriginPatterns []string
-	ProxyOptions   service.DashScopeASRProxyOptions
+	Model            string
+	IdempotencyKey   string
+	Subprotocols     []string
+	OriginPatterns   []string
+	SkipOriginVerify bool
+	ProxyOptions     service.DashScopeASRProxyOptions
 }
 
 // DashScopeASRRealtime handles GET /v1/audio/transcriptions/realtime WebSocket upgrades.
@@ -615,13 +616,18 @@ func (h *OpenAIGatewayHandler) DashScopeASRRealtimeWithOptions(c *gin.Context, o
 	defer accountSlot()
 	defer func() { _ = upstream.Close() }()
 
+	// Disable permessage-deflate on downstream PCM audio WebSockets: iOS WKWebView
+	// (NSURLSessionWebSocketTask) has known frame-drop bugs with context-takeover
+	// deflate, and raw PCM audio does not benefit from zlib compression.
 	acceptOpts := &coderws.AcceptOptions{
-		CompressionMode: coderws.CompressionContextTakeover,
-		Subprotocols:    opts.Subprotocols,
-		OriginPatterns:  opts.OriginPatterns,
+		CompressionMode:    coderws.CompressionDisabled,
+		Subprotocols:       opts.Subprotocols,
+		OriginPatterns:     opts.OriginPatterns,
+		InsecureSkipVerify: opts.SkipOriginVerify,
 	}
 	conn, err := coderws.Accept(c.Writer, c.Request, acceptOpts)
 	if err != nil {
+		reqLog.Warn("dashscope_asr.accept_failed", zap.Error(err))
 		return
 	}
 	defer func() { _ = conn.CloseNow() }()
@@ -650,6 +656,238 @@ func (h *OpenAIGatewayHandler) DashScopeASRRealtimeWithOptions(c *gin.Context, o
 		}
 	}
 	h.gatewayService.ReportOpenAIAccountScheduleResult(selection.Account, upstreamModel, true, nil)
+}
+
+// DashScopeTranscribe handles one-shot audio recording transcription over HTTP
+// using the configured DashScope Qwen-Audio-3.1 ASR upstream account and pricing.
+func (h *OpenAIGatewayHandler) DashScopeTranscribe(c *gin.Context) {
+	key, ok := middleware.GetAPIKeyFromContext(c)
+	if !ok || key == nil || key.Group == nil {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+	if key.Group.Platform != service.PlatformOpenAI && key.Group.Platform != service.PlatformComposite {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "DashScope ASR is not available for this platform")
+		return
+	}
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return
+	}
+	reqLog := requestLogger(c, "handler.openai_gateway.dashscope_transcribe")
+	if !h.ensureResponsesDependencies(c, reqLog) {
+		return
+	}
+
+	const maxTranscribeBodyBytes = 6 * 1024 * 1024
+	raw, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxTranscribeBodyBytes))
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+		} else {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read transcription request body")
+		}
+		return
+	}
+	req, parseErr := service.ParseDashScopeTranscribeRequest(raw)
+	if parseErr != nil {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", parseErr.Error())
+		return
+	}
+	publicModel := req.Model
+	if !key.Group.ModelAllowlist.Allows(publicModel) {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model is not available for this group")
+		return
+	}
+	setOpsRequestContext(c, publicModel, false)
+
+	subscription, _ := middleware.GetSubscriptionFromContext(c)
+	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), key.User, key, key.Group, subscription, service.QuotaPlatform(c.Request.Context(), key)); err != nil {
+		status, code, message, retryAfter := billingErrorDetailsForRequest(c, err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.errorResponse(c, status, code, message)
+		return
+	}
+
+	ctx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
+	routingModel := publicModel
+	if key.Group.Platform == service.PlatformComposite && h.compositeResolver != nil {
+		if decision, resolveErr := h.compositeResolver.Resolve(ctx, key.Group.ID, publicModel, service.CompositeRouteEndpointAny); resolveErr == nil && decision.Matched {
+			ctx = service.WithCompositeRouteDecision(ctx, decision)
+			if decision.UpstreamModel != "" {
+				routingModel = decision.UpstreamModel
+			}
+		}
+	}
+
+	mapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, key.GroupID, routingModel)
+	mappedModel := firstNonEmpty(mapping.MappedModel, routingModel)
+	provisionalBillingModel := h.gatewayService.DashScopeBillingModel(ctx, key, mappedModel, publicModel, mappedModel)
+
+	streamStarted := false
+	userRelease, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, false, &streamStarted, reqLog)
+	if !acquired {
+		return
+	}
+	if userRelease != nil {
+		defer userRelease()
+	}
+
+	failed := map[int64]struct{}{}
+	var (
+		reservation   *service.InflightReservation
+		candidateSeen bool
+		pricingErr    bool
+	)
+	defer func() {
+		reservation.HandlerDone()
+	}()
+
+	idem := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	for attempts := 0; attempts < 4; attempts++ {
+		candidate, _, selectErr := h.gatewayService.SelectAccountWithSchedulerForCapability(
+			ctx, key.GroupID, "", "", routingModel, failed,
+			service.OpenAIUpstreamTransportHTTPSSE, service.OpenAIEndpointCapabilityDashScopeASR,
+			false, false, false, service.PlatformOpenAI,
+		)
+		if selectErr != nil || candidate == nil || candidate.Account == nil {
+			if candidate != nil && candidate.Acquired && candidate.ReleaseFunc != nil {
+				candidate.ReleaseFunc()
+			}
+			break
+		}
+		var releaseCandidate func()
+		if candidate.Acquired && candidate.ReleaseFunc != nil {
+			releaseCandidate = wrapReleaseOnDone(ctx, candidate.ReleaseFunc)
+			candidate.ReleaseFunc = releaseCandidate
+		}
+		releaseEarly := func() {
+			if releaseCandidate != nil {
+				releaseCandidate()
+				releaseCandidate = nil
+			}
+		}
+
+		candidateSeen = true
+		account := candidate.Account
+		if !account.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityDashScopeASR) {
+			releaseEarly()
+			failed[account.ID] = struct{}{}
+			continue
+		}
+		candUpstream := account.GetMappedModel(mappedModel)
+		if !service.IsDashScopeASRModel(candUpstream) {
+			releaseEarly()
+			failed[account.ID] = struct{}{}
+			continue
+		}
+		fields := clientRequestedUsageFields(c, mapping, routingModel, candUpstream)
+		candBilling := provisionalBillingModel
+		switch fields.BillingModelSource {
+		case service.BillingModelSourceRequested:
+			candBilling = fields.OriginalModel
+		case service.BillingModelSourceChannelMapped:
+			candBilling = mappedModel
+		case service.BillingModelSourceUpstream:
+			candBilling = candUpstream
+		}
+		candBilling = h.gatewayService.DashScopeBillingModel(ctx, key, candBilling, publicModel, candUpstream)
+		if !h.gatewayService.DashScopePricingConfigured(ctx, key, candBilling, candUpstream) {
+			releaseEarly()
+			pricingErr = true
+			break
+		}
+		if reservation == nil {
+			amount, priced := h.gatewayService.EstimateDashScopeASRReservation(ctx, key, candBilling)
+			if !priced {
+				releaseEarly()
+				pricingErr = true
+				break
+			}
+			if h.cfg == nil || h.cfg.RunMode != config.RunModeSimple {
+				var reserveErr error
+				reservation, reserveErr = h.billingCacheService.ReserveFixedCharge(ctx, key.User, key, key.Group, subscription, amount)
+				if reserveErr != nil {
+					releaseEarly()
+					status, code, msg, retryAfter := billingErrorDetailsForRequest(c, reserveErr)
+					if retryAfter > 0 {
+						c.Header("Retry-After", strconv.Itoa(retryAfter))
+					}
+					h.errorResponse(c, status, code, msg)
+					return
+				}
+				reservation.KeepAlive()
+				c.Request = c.Request.WithContext(service.WithInflightReservation(c.Request.Context(), reservation))
+			}
+		}
+
+		accountSlot, slotStatus := h.acquireResponsesAccountSlot(c, key.GroupID, "", candidate, false, &streamStarted, reqLog)
+		if slotStatus != openAISlotAcquireOK {
+			releaseEarly()
+			if slotStatus == openAISlotAcquireFailed {
+				return
+			}
+			failed[account.ID] = struct{}{}
+			continue
+		}
+		releaseCandidate = nil
+
+		started := time.Now()
+		text, stats, taskErr, transErr := h.gatewayService.TranscribeDashScopeAudio(c.Request.Context(), account, candUpstream, req)
+		elapsed := time.Since(started)
+		if accountSlot != nil {
+			accountSlot()
+		}
+		if taskErr != "" {
+			if result := service.DashScopeASRBillingResult(key.ID, idem, publicModel, candBilling, candUpstream, elapsed, stats); result != nil {
+				if err := h.recordDashScopeAudioUsage(c, key, subscription, account, result, publicModel); err != nil {
+					reqLog.Error("dashscope_transcribe.record_usage_failed", zap.Int64("api_key_id", key.ID), zap.Error(err))
+				}
+			}
+			h.errorResponse(c, http.StatusBadGateway, "upstream_error", taskErr)
+			return
+		}
+		if transErr != nil {
+			reqLog.Warn("dashscope_transcribe.upstream_failed", zap.Int64("account_id", account.ID), zap.Error(transErr))
+			if stats.AudioBytes == 0 && stats.InputTokens == 0 && stats.OutputTokens == 0 {
+				failed[account.ID] = struct{}{}
+				continue
+			}
+			if result := service.DashScopeASRBillingResult(key.ID, idem, publicModel, candBilling, candUpstream, elapsed, stats); result != nil {
+				if err := h.recordDashScopeAudioUsage(c, key, subscription, account, result, publicModel); err != nil {
+					reqLog.Error("dashscope_transcribe.record_usage_failed", zap.Int64("api_key_id", key.ID), zap.Error(err))
+				}
+			}
+			h.errorResponse(c, http.StatusBadGateway, "upstream_error", "DashScope ASR upstream interrupted")
+			return
+		}
+
+		if result := service.DashScopeASRBillingResult(key.ID, idem, publicModel, candBilling, candUpstream, elapsed, stats); result != nil {
+			if err := h.recordDashScopeAudioUsage(c, key, subscription, account, result, publicModel); err != nil {
+				reqLog.Error("dashscope_transcribe.record_usage_failed", zap.Int64("api_key_id", key.ID), zap.Error(err))
+			}
+		}
+		h.gatewayService.ReportOpenAIAccountScheduleResult(account, candUpstream, true, nil)
+		c.JSON(http.StatusOK, gin.H{
+			"text":    text,
+			"model":   publicModel,
+			"task_id": stats.TaskID,
+		})
+		return
+	}
+
+	if pricingErr {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "DashScope ASR model has no configured local price")
+		return
+	}
+	if !candidateSeen {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No eligible DashScope ASR accounts")
+		return
+	}
+	h.errorResponse(c, http.StatusBadGateway, "upstream_error", "DashScope ASR upstream unavailable")
 }
 
 func (h *OpenAIGatewayHandler) recordDashScopeAudioUsage(

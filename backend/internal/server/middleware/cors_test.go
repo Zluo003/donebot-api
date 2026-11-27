@@ -415,6 +415,7 @@ func TestCORSDoneBotMobileVoiceNarrowPolicy(t *testing.T) {
 	}{
 		{"/api/v1/donebot/mobile/voice/models", http.MethodGet},
 		{"/api/v1/donebot/mobile/voice/speech", http.MethodPost},
+		{"/api/v1/donebot/mobile/voice/transcribe", http.MethodPost},
 		{"/api/v1/donebot/mobile/voice/asr-ticket", http.MethodPost},
 	} {
 		for _, origin := range []string{"capacitor://localhost", "https://localhost", "https://console.example.com"} {

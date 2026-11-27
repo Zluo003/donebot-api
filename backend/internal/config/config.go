@@ -2237,6 +2237,9 @@ func setDefaults() {
 		"generativelanguage.googleapis.com",
 		"cloudcode-pa.googleapis.com",
 		"*.openai.azure.com",
+		"dashscope.aliyuncs.com",
+		"dashscope-intl.aliyuncs.com",
+		"*.maas.aliyuncs.com",
 	})
 	viper.SetDefault("security.url_allowlist.pricing_hosts", []string{
 		"raw.githubusercontent.com",

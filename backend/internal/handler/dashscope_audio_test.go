@@ -4,6 +4,7 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -512,6 +513,7 @@ func TestMobileVoiceEndpointsAuthOriginTicketAndStreaming(t *testing.T) {
 				}
 			}
 			if action == "finish-task" {
+				_ = conn.Write(r.Context(), coderws.MessageText, []byte(`{"header":{"event":"result-generated","task_id":"`+tid+`"},"payload":{"output":{"sentence":{"sentence_id":1,"text":"帮我查一下今天日程","sentence_begin":false,"sentence_end":true,"heartbeat":false}}}}`))
 				_ = conn.Write(r.Context(), coderws.MessageText, []byte(`{"header":{"event":"task-finished","task_id":"`+tid+`"},"payload":{"usage":{"input_tokens":50,"output_tokens":10}}}`))
 				return
 			}
@@ -558,6 +560,7 @@ func TestMobileVoiceEndpointsAuthOriginTicketAndStreaming(t *testing.T) {
 	router := gin.New()
 	router.GET("/api/v1/donebot/mobile/voice/models", doneBot.MobileVoiceModels)
 	router.POST("/api/v1/donebot/mobile/voice/speech", doneBot.MobileVoiceSpeech)
+	router.POST("/api/v1/donebot/mobile/voice/transcribe", doneBot.MobileVoiceTranscribe)
 	router.POST("/api/v1/donebot/mobile/voice/asr-ticket", doneBot.MobileVoiceASRTicket)
 	router.GET("/api/v1/donebot/mobile/voice/asr", doneBot.MobileVoiceASRWS)
 	srv := httptest.NewServer(router)
@@ -614,17 +617,22 @@ func TestMobileVoiceEndpointsAuthOriginTicketAndStreaming(t *testing.T) {
 
 	// Account-mapped ASR alias ticket must also connect and settle on the WS endpoint when only the native ASR model carries pricing.
 	aliasWS, aliasHTTPResp, err := coderws.Dial(context.Background(), wsURL, &coderws.DialOptions{
-		HTTPHeader:   http.Header{"Origin": []string{"capacitor://localhost"}},
-		Subprotocols: []string{"donebot-asr.v1", "donebot-ticket." + aliasTicket},
+		HTTPHeader:      http.Header{"Origin": []string{"capacitor://localhost"}},
+		Subprotocols:    []string{"donebot-asr.v1", "donebot-ticket." + aliasTicket},
+		CompressionMode: coderws.CompressionContextTakeover,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "donebot-asr.v1", aliasHTTPResp.Header.Get("Sec-WebSocket-Protocol"))
+	require.Empty(t, aliasHTTPResp.Header.Get("Sec-WebSocket-Extensions"))
 	require.NoError(t, aliasWS.Write(context.Background(), coderws.MessageText, []byte(`{"header":{"action":"run-task","task_id":"mob-alias"},"payload":{"parameters":{"format":"pcm","sample_rate":16000},"input":{}}}`)))
 	_, aliasStarted, err := aliasWS.Read(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "task-started", gjson.GetBytes(aliasStarted, "header.event").String())
 	require.NoError(t, aliasWS.Write(context.Background(), coderws.MessageBinary, make([]byte, 3200)))
 	require.NoError(t, aliasWS.Write(context.Background(), coderws.MessageText, []byte(`{"header":{"action":"finish-task","task_id":"mob-alias"},"payload":{"input":{}}}`)))
+	_, aliasResult, err := aliasWS.Read(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "result-generated", gjson.GetBytes(aliasResult, "header.event").String())
 	_, aliasDone, err := aliasWS.Read(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "task-finished", gjson.GetBytes(aliasDone, "header.event").String())
@@ -658,10 +666,29 @@ func TestMobileVoiceEndpointsAuthOriginTicketAndStreaming(t *testing.T) {
 	require.Equal(t, "task-started", gjson.GetBytes(startedMsg, "header.event").String())
 	require.NoError(t, ws.Write(context.Background(), coderws.MessageBinary, make([]byte, 3200)))
 	require.NoError(t, ws.Write(context.Background(), coderws.MessageText, []byte(`{"header":{"action":"finish-task","task_id":"mob-1"},"payload":{"input":{}}}`)))
+	_, resultMsg, err := ws.Read(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "result-generated", gjson.GetBytes(resultMsg, "header.event").String())
 	_, doneMsg, err := ws.Read(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "task-finished", gjson.GetBytes(doneMsg, "header.event").String())
 	_ = ws.Close(coderws.StatusNormalClosure, "")
+
+	// 5b. MobileVoiceTranscribe transcribes a recorded PCM clip over plain HTTP and bills once.
+	pcmPayload := base64.StdEncoding.EncodeToString(make([]byte, 6400))
+	transcribeResp, err := http.Post(srv.URL+"/api/v1/donebot/mobile/voice/transcribe", "application/json", strings.NewReader(`{"model":"qwen-audio-3.1-asr-flash-streaming","audio_base64":"`+pcmPayload+`","format":"pcm","sample_rate":16000,"vocabulary":{"DoneBot":5}}`))
+	require.NoError(t, err)
+	transcribeBody, _ := io.ReadAll(transcribeResp.Body)
+	_ = transcribeResp.Body.Close()
+	require.Equal(t, http.StatusOK, transcribeResp.StatusCode, string(transcribeBody))
+	require.Equal(t, "帮我查一下今天日程", gjson.GetBytes(transcribeBody, "text").String())
+	require.Equal(t, service.DashScopeASRStreamingModel, gjson.GetBytes(transcribeBody, "model").String())
+
+	// Empty audio must be rejected with 400.
+	badTranscribeResp, err := http.Post(srv.URL+"/api/v1/donebot/mobile/voice/transcribe", "application/json", strings.NewReader(`{"audio_base64":""}`))
+	require.NoError(t, err)
+	_ = badTranscribeResp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, badTranscribeResp.StatusCode)
 
 	// 6. Replaying the same single-use ticket fails with 401.
 	_, httpResp, err = coderws.Dial(context.Background(), wsURL, &coderws.DialOptions{
@@ -681,7 +708,7 @@ func TestMobileVoiceEndpointsAuthOriginTicketAndStreaming(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, http.StatusUnauthorized, httpResp.StatusCode)
 
-	require.Eventually(t, func() bool { return len(usageRepo.snapshot()) == 3 }, 2*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return len(usageRepo.snapshot()) == 4 }, 2*time.Second, 10*time.Millisecond)
 	slots.assertReleased(t)
 }
 

@@ -105,6 +105,7 @@ func registerDoneBotUserRoutes(authenticated *gin.RouterGroup, h *handler.Handle
 		authenticated.DELETE("/donebot/mobile/session", h.DoneBot.MobileDisconnect)
 		authenticated.GET("/donebot/mobile/voice/models", h.DoneBot.MobileVoiceModels)
 		authenticated.POST("/donebot/mobile/voice/speech", h.DoneBot.MobileVoiceSpeech)
+		authenticated.POST("/donebot/mobile/voice/transcribe", h.DoneBot.MobileVoiceTranscribe)
 		authenticated.POST("/donebot/mobile/voice/asr-ticket", h.DoneBot.MobileVoiceASRTicket)
 		authenticated.GET("/donebot/cloud/plan", h.DoneBot.CloudPlanInfo)
 		authenticated.DELETE("/donebot/cloud/browser-sessions", h.DoneBot.CloudBrowserRevoke)
