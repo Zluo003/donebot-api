@@ -872,3 +872,59 @@ func TestMobileVoiceTTSRealtimeBidirectionalStreamingAndTicketIsolation(t *testi
 	require.Equal(t, 90, usageRepo.snapshot()[0].OutputTokens)
 	slots.assertReleased(t)
 }
+
+func TestDashScopeGatewayAudioTranscriptionsWithSegments(t *testing.T) {
+	upstreamWS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		var taskID string
+		for {
+			msgType, payload, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			if msgType == coderws.MessageText {
+				action := gjson.GetBytes(payload, "header.action").String()
+				if action == "run-task" {
+					taskID = gjson.GetBytes(payload, "header.task_id").String()
+					_ = conn.Write(r.Context(), coderws.MessageText, []byte(`{"header":{"event":"task-started","task_id":"`+taskID+`"}}`))
+				} else if action == "finish-task" {
+					_ = conn.Write(r.Context(), coderws.MessageText, []byte(`{"header":{"event":"result-generated","task_id":"`+taskID+`"},"payload":{"output":{"sentence":{"text":"欢迎来到直播间，","begin_time":400,"end_time":1850,"sentence_end":true}},"usage":{"input_tokens":40,"output_tokens":12,"total_tokens":52}}}`))
+					_ = conn.Write(r.Context(), coderws.MessageText, []byte(`{"header":{"event":"result-generated","task_id":"`+taskID+`"},"payload":{"output":{"sentence":{"text":"今天先看实测对比。","begin_time":2100,"end_time":4300,"sentence_end":true}},"usage":{"input_tokens":80,"output_tokens":24,"total_tokens":104}}}`))
+					_ = conn.Write(r.Context(), coderws.MessageText, []byte(`{"header":{"event":"task-finished","task_id":"`+taskID+`"}}`))
+					return
+				}
+			}
+		}
+	}))
+	defer upstreamWS.Close()
+
+	h, slots, usageRepo := newDashScopeTestHandler(t, upstreamWS.URL, nil, []string{"dashscope_asr"})
+	router := gin.New()
+	router.POST("/v1/audio/transcriptions", func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyAPIKey), dashScopeTestAPIKey(nil, true))
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 10, Concurrency: 5})
+		h.DashScopeTranscribe(c)
+	})
+
+	pcmPayload := base64.StdEncoding.EncodeToString(make([]byte, 6400))
+	req := httptest.NewRequest(http.MethodPost, "/v1/audio/transcriptions", strings.NewReader(`{"model":"qwen-audio-3.1-asr-flash-streaming","audio_base64":"`+pcmPayload+`","format":"pcm","sample_rate":16000,"language_hints":["zh"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "transcribe-seg-1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, "欢迎来到直播间，今天先看实测对比。", gjson.GetBytes(w.Body.Bytes(), "text").String())
+	require.Equal(t, int64(2), gjson.GetBytes(w.Body.Bytes(), "segments.#").Int())
+	require.Equal(t, int64(400), gjson.GetBytes(w.Body.Bytes(), "segments.0.begin_ms").Int())
+	require.Equal(t, int64(1850), gjson.GetBytes(w.Body.Bytes(), "segments.0.end_ms").Int())
+	require.Equal(t, "欢迎来到直播间，", gjson.GetBytes(w.Body.Bytes(), "segments.0.text").String())
+	require.Equal(t, int64(2100), gjson.GetBytes(w.Body.Bytes(), "segments.1.begin_ms").Int())
+	require.Equal(t, int64(4300), gjson.GetBytes(w.Body.Bytes(), "segments.1.end_ms").Int())
+	require.Eventually(t, func() bool { return len(usageRepo.snapshot()) == 1 }, 2*time.Second, 10*time.Millisecond)
+	slots.assertReleased(t)
+}

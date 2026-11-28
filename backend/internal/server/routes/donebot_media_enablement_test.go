@@ -42,6 +42,7 @@ func TestDoneBotMediaRoutesReachAuthenticationWithLegacySwitchesDisabled(t *test
 		{http.MethodPost, "/v1/music/generations"},
 		{http.MethodGet, "/v1/music/tasks/task-1"},
 		{http.MethodPost, "/v1/audio/speech"},
+		{http.MethodPost, "/v1/audio/transcriptions"},
 		{http.MethodPost, "/v1/tts"},
 		{http.MethodPost, "/tts"},
 		{http.MethodPost, "/v1/live"},

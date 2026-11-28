@@ -268,6 +268,7 @@ func RegisterGatewayRoutes(
 		gateway.GET("/music/tasks/:task_id", h.OpenAIGateway.APIMartMusicTask)
 		gateway.POST("/audio/speech", h.OpenAIGateway.Speech)
 		gateway.GET("/audio/speech/realtime", h.OpenAIGateway.DashScopeTTSRealtime)
+		gateway.POST("/audio/transcriptions", h.OpenAIGateway.DashScopeTranscribe)
 		gateway.GET("/audio/transcriptions/realtime", h.OpenAIGateway.DashScopeASRRealtime)
 		gateway.POST("/images/edits", imagesHandler)
 		gateway.POST("/images/generations/async", h.AsyncImage.Submit)

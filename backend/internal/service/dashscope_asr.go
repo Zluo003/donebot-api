@@ -56,6 +56,12 @@ type DashScopeASRProxyOptions struct {
 	MaxSessionDuration time.Duration
 }
 
+type DashScopeASRSegment struct {
+	BeginMs int64  `json:"begin_ms"`
+	EndMs   int64  `json:"end_ms"`
+	Text    string `json:"text"`
+}
+
 type DashScopeASRSessionStats struct {
 	TaskID          string
 	InputTokens     int
@@ -65,6 +71,7 @@ type DashScopeASRSessionStats struct {
 	AudioFormat     string
 	SampleRate      int
 	TranscriptRunes int
+	Segments        []DashScopeASRSegment
 }
 
 func (s *OpenAIGatewayService) OpenDashScopeASR(ctx context.Context, account *Account, upstreamModel string) (*DashScopeASRUpstream, error) {
@@ -496,6 +503,7 @@ started:
 		localStats := stats
 		var committed []string
 		var interim string
+		var interimBeginMs, interimEndMs int64
 		for {
 			msgType, payload, readErr := upstream.frameConn.ReadFrame(sessionCtx)
 			if readErr != nil {
@@ -526,16 +534,33 @@ started:
 				if piece == "" {
 					continue
 				}
+				beginMs := sentence.Get("begin_time").Int()
+				endMs := sentence.Get("end_time").Int()
+				if endMs < beginMs {
+					endMs = beginMs
+				}
 				if sentence.Get("sentence_end").Bool() {
 					committed = append(committed, piece)
+					localStats.Segments = append(localStats.Segments, DashScopeASRSegment{
+						BeginMs: beginMs,
+						EndMs:   endMs,
+						Text:    piece,
+					})
 					interim = ""
+					interimBeginMs, interimEndMs = 0, 0
 					localStats.TranscriptRunes += utf8.RuneCountInString(piece)
 				} else {
 					interim = piece
+					interimBeginMs, interimEndMs = beginMs, endMs
 				}
 			case "task-finished":
 				if interim != "" {
 					committed = append(committed, interim)
+					localStats.Segments = append(localStats.Segments, DashScopeASRSegment{
+						BeginMs: interimBeginMs,
+						EndMs:   interimEndMs,
+						Text:    interim,
+					})
 					localStats.TranscriptRunes += utf8.RuneCountInString(interim)
 				}
 				doneCh <- readOutcome{text: strings.TrimSpace(strings.Join(committed, "")), stats: localStats}

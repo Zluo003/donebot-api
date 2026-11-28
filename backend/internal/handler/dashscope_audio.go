@@ -871,11 +871,15 @@ func (h *OpenAIGatewayHandler) DashScopeTranscribe(c *gin.Context) {
 			}
 		}
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account, candUpstream, true, nil)
-		c.JSON(http.StatusOK, gin.H{
+		resp := gin.H{
 			"text":    text,
 			"model":   publicModel,
 			"task_id": stats.TaskID,
-		})
+		}
+		if len(stats.Segments) > 0 {
+			resp["segments"] = stats.Segments
+		}
+		c.JSON(http.StatusOK, resp)
 		return
 	}
 
